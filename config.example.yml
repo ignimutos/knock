@@ -1,0 +1,298 @@
+# 运行时使用的时区；不配置时默认使用系统时区（可选；默认: 使用系统时区；失败时回退 UTC）
+timezone: Asia/Shanghai
+
+# 日志与模板输出使用的时间戳格式（可选；默认: yyyy-MM-dd HH:mm:ss）
+timestampFormat: yyyy-MM-dd HH:mm:ss
+
+# SQLite 存储配置（可选；默认: 内置默认值）
+sqlite:
+  # SQLite 数据库文件路径（可选；默认: knock.db）
+  path: knock.db
+  # SQLite busy 等待超时（可选；默认: 5s）
+  busyTimeout: 5s
+  # SQLite journal 模式（可选；默认: WAL）
+  journalMode: WAL
+  # SQLite 清理保留策略（可选；默认: 内置默认值）
+  retention:
+    # SQLite 条目最大保留时长（可选；默认: 180d）
+    maxAge: 180d
+    # 每个 source 最大保留条目数（可选；默认: 1000）
+    maxEntriesPerSource: 1000
+    # SQLite 清理后 vacuum 策略（可选；默认: off）
+    vacuum: off
+
+# 投递目标定义（可选）
+deliveries:
+  # 本地文件投递示例
+  local:
+    file:
+      # 输出文件路径；相对路径基于 runtimeDir（必填）
+      path: outputs/releases.md
+      # 追加写入文件的 Liquid 模板（必填）
+      content: |
+        ## [{{ title }}]({{ link }})
+
+        {{ content | strip_html }}
+
+        ---
+      # 文件轮转配置（可选）
+      rotation:
+        # 是否启用轮转（可选）
+        enabled: true
+        # 按文件大小轮转（可选）
+        size: 10m
+        # 按文件年龄轮转（可选）
+        age: 7d
+        # 保留历史文件数量（可选）
+        backups: 3
+
+  # 通过 push 直连 Telegram Bot API（HTML）示例
+  telegram_webhook:
+    push:
+      http:
+        method: POST
+        url: "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+      request:
+        type: body
+        payload:
+          chat_id: "${TELEGRAM_CHAT_ID}"
+          parse_mode: "HTML"
+          link_preview_options:
+            url: "{{ link }}"
+            is_disabled: false
+            show_above_text: true
+          text: |
+            <b>{{ title }}</b>
+
+            {{ content | to_telegram_html }}
+
+            {{ link }}
+
+  # 通过 push 直连 Telegram Bot API（MarkdownV2）示例
+  telegram_webhook_md:
+    push:
+      http:
+        method: POST
+        url: "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+      request:
+        type: body
+        payload:
+          chat_id: "${TELEGRAM_CHAT_ID}"
+          parse_mode: "MarkdownV2"
+          text: |
+            {{ content | to_markdown | to_telegram_markdown_v2 }}
+
+  # HTTP / Webhook 投递示例
+  webhook:
+    push:
+      http:
+        # 超时（可选）
+        timeout: 10s
+        # 传输层重试（可选；未配置则禁用重试）
+        retry:
+          # 重试次数（可选；默认: 2）
+          limit: 2
+          # 触发重试的 HTTP 状态码（可选）
+          statusCodes: [408, 429, 500, 502, 503, 504]
+          # 超时是否重试（可选；默认: true）
+          retryOnTimeout: true
+          # 退避上限（可选；默认: 3s）
+          backoffLimit: 3s
+        # 请求头（可选）
+        headers:
+          Authorization: "Bearer ${WEBHOOK_TOKEN}"
+        # 请求方法（可选；默认: POST）
+        method: POST
+        # 目标 webhook URL（必填）
+        url: "${WEBHOOK_URL}"
+      request:
+        # 请求载荷编码方式：query / form / body（可选；默认: query）
+        type: body
+        payload:
+          text: "{{ entry.title }} => {{ entry.link }}"
+          meta:
+            source: "{{ source.id }}"
+            note: "${WEBHOOK_TAG}: {{ entry.published }}"
+            tags:
+              - release
+              - "${WEBHOOK_TAG}"
+      response:
+        # 成功判定表达式（可选）
+        predicate: "{{ ok }}"
+        # 失败时错误消息模板（可选）
+        message: "webhook failed: {{ status }} {{ body }}"
+
+  # SMTP 邮件投递示例
+  release_email:
+    email:
+      smtp:
+        # SMTP 主机（必填；支持 ${ENV_VAR}）
+        host: "${SMTP_HOST}"
+        # SMTP 端口（必填）
+        port: 587
+        # 安全模式：implicit / starttls / none（必填）
+        security: starttls
+        # 认证信息（可选；支持 ${ENV_VAR}）
+        auth:
+          username: "${SMTP_USERNAME}"
+          password: "${SMTP_PASSWORD}"
+      message:
+        # 下列字段都支持 Liquid；若同一字符串里同时有 ${ENV_VAR} 与 Liquid，会先展开环境变量，再在运行时渲染 Liquid
+        from: "bot+{{ source.id }}@example.com"
+        to:
+          - "team+{{ entry.id }}@example.com"
+        cc:
+          - "ops@example.com"
+        replyTo:
+          - "reply@example.com"
+        subject: "[{{ source.id }}] {{ entry.title }}"
+        text: |
+          {{ entry.title }}
+          {{ entry.link }}
+
+          {{ entry.description }}
+        html: |
+          <h2><a href="{{ entry.link }}">{{ entry.title }}</a></h2>
+          <p>{{ entry.description }}</p>
+        headers:
+          X-Knock-Source: "{{ source.id }}"
+
+# 数据源定义（可选）
+sources:
+  # 标准 Feed 数据源示例（RSS / Atom / JSON Feed）
+  deno:
+    # 数据源显示名称（可选）
+    name: Deno releases
+    # 是否启用该 source（可选；默认: true）
+    enabled: true
+    http:
+      # 订阅源 URL（必填）
+      url: https://github.com/denoland/deno/releases.atom
+      # 超时（可选）
+      timeout: 5s
+      # 传输层重试（可选；未配置则禁用重试）
+      retry:
+        # 重试次数（可选；默认: 2）
+        limit: 2
+        # 触发重试的 HTTP 状态码（可选）
+        statusCodes: [408, 429, 500, 502, 503, 504]
+        # 超时是否重试（可选；默认: true）
+        retryOnTimeout: true
+        # 退避上限（可选；默认: 3s）
+        backoffLimit: 3s
+      # 请求头（可选）
+      headers:
+        User-Agent: knock-example
+    # Croner 表达式，支持秒级 cron（可选）
+    schedule: "0 */30 * * * *"
+    # 关联的投递目标 ID 列表（可选）
+    deliveries:
+      - local
+      - telegram_webhook
+      - telegram_webhook_md
+      - webhook
+      - release_email
+    # 条目过滤表达式；返回 truthy 才会继续投递（可选）
+    # match_* 的最后一个布尔参数可反转结果，例如 `{{ title | match_regex: "release", "i", true }}`
+    filter: '{{ title | match_regex: "release", "i" }}'
+    syndication:
+      # entry 字段映射（可选）
+      entry:
+        # 条目唯一 ID
+        id: "{{ id }}"
+        # 条目标题
+        title: "{{ title }}"
+        # 条目链接
+        link: "{{ link }}"
+        # 条目摘要
+        description: "{{ description }}"
+        # 条目正文
+        content: "{{ content }}"
+        # 发布时间
+        published: "{{ published }}"
+        # 更新时间
+        updated: "{{ updated }}"
+
+  # XQuery 数据源示例（普通 HTML / XML 页面）
+  website_news:
+    http:
+      # 订阅源 URL（必填）
+      url: https://example.com/news
+    # 关联的投递目标 ID 列表（可选）
+    deliveries:
+      - local
+    # XQuery 提取配置（可选）
+    xquery:
+      # 每个条目的定位表达式（可选；省略时以 document 为 entry 上下文执行一次）
+      locate: //article
+      # 命名空间前缀映射（可选；仅对 locate 与对象映射生效）
+      namespaces:
+        xh: http://www.w3.org/1999/xhtml
+      # feed 级提取（可选）：可用对象映射或脚本字符串
+      feed:
+        # Feed 标题
+        title: string(//title)
+      # entry 级提取（可选）：可用对象映射或脚本字符串；对象映射时 id 必填
+      entry:
+        # 条目唯一 ID
+        id: string(@data-id)
+        # 条目标题
+        title: string(.//h2)
+        # 条目链接
+        link: string(.//a/@href)
+        # 条目摘要
+        description: string(.//p)
+
+  # Byparr 抓取示例（与 http 同级，二选一）
+  website_news_byparr:
+    byparr:
+      # Byparr API 端点（可选；默认: http://byparr:8191/v1）
+      endpoint: http://byparr:8191/v1
+      # Byparr 命令（可选；默认: request.get）
+      cmd: request.get
+      # 目标页面 URL（必填）
+      url: https://example.com/news
+      # Byparr 最大执行时长（可选；默认: 60s）
+      maxTimeout: 60s
+      # 代理 URL（可选；支持协议://用户:密码@主机:端口）
+      proxy: http://user:pass@127.0.0.1:8080
+    deliveries:
+      - local
+    xquery:
+      locate: //article
+      entry:
+        id: string(@data-id)
+        title: string(.//h2)
+        link: string(.//a/@href)
+
+  # XQuery 脚本字符串示例
+  website_news_script:
+    http:
+      url: https://example.com/news
+    deliveries:
+      - local
+    xquery:
+      locate: //article
+      feed: |
+        map {
+          "title": string(//title)
+        }
+      entry: |
+        map {
+          "id": string(@data-id),
+          "title": string(.//h2),
+          "link": string(.//a/@href)
+        }
+
+# 日志配置（可选；默认: 内置默认值）
+logging:
+  # 日志级别（可选；默认: info）
+  level: info
+  # 日志格式（可选；默认: json）
+  format: json
+  # 日志输出 sinks 配置（可选；默认: 内置默认值）
+  sinks:
+    # 控制台日志输出配置（可选；默认: 内置默认值）
+    console:
+      # 控制台日志 sink 类型（可选；默认: console）
+      type: console

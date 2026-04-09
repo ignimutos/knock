@@ -1,0 +1,443 @@
+import { assertEquals, assertRejects } from '@std/assert'
+import type { ResolvedSourceConfig } from '../config/types.ts'
+import { createHttpClient } from '../core/http_client.ts'
+import { fetchAndParseSource } from './source_runtime.ts'
+
+function getRequestClient(init: RequestInit | undefined): Deno.HttpClient | undefined {
+  return (init as (RequestInit & { client?: Deno.HttpClient }) | undefined)?.client
+}
+
+function getRequestHeaders(input: RequestInfo | URL, init?: RequestInit): Headers {
+  if (input instanceof Request) return input.headers
+  return new Headers(init?.headers)
+}
+
+function createSyndicationSource(http: ResolvedSourceConfig['http']): ResolvedSourceConfig {
+  return {
+    id: 's1',
+    enabled: true,
+    deliveries: [],
+    http,
+    syndication: {},
+  }
+}
+
+const MINIMAL_RSS_PAYLOAD = '<rss><channel><title>Feed</title></channel></rss>'
+
+Deno.test('source_runtime: syndication source 应完成抓取与解析', async () => {
+  const parsed = await fetchAndParseSource({
+    source: createSyndicationSource({
+      url: 'https://example.com/feed.xml',
+    }),
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response(`
+<rss>
+  <channel>
+    <title>Feed</title>
+    <item>
+      <guid>id-1</guid>
+      <title>Hello</title>
+      <description>desc</description>
+    </item>
+  </channel>
+</rss>`),
+        ),
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.payload.includes('<rss>'), true)
+  assertEquals(parsed.parser, 'rss')
+  assertEquals(parsed.feedMapped.title, 'Feed')
+  assertEquals(parsed.entries.length, 1)
+  assertEquals(parsed.entries[0].mapped.id, 'id-1')
+})
+
+Deno.test('source_runtime: xquery source 应完成抓取与解析', async () => {
+  const parsed = await fetchAndParseSource({
+    source: {
+      id: 's1',
+      enabled: true,
+      deliveries: [],
+      http: {
+        url: 'https://example.com/page.html',
+      },
+      xquery: {
+        locate: '//li',
+        feed: {
+          title: 'string(//a)',
+        },
+        entry: {
+          id: 'string(@data-id)',
+          title: 'string(a)',
+        },
+      },
+    },
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response('<html><body><ul><li data-id="1"><a>Hello</a></li></ul></body></html>'),
+        ),
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.parser, 'xquery')
+  assertEquals(parsed.feedMapped.title, 'Hello')
+  assertEquals(parsed.entries.length, 1)
+  assertEquals(parsed.entries[0].mapped.id, '1')
+})
+
+Deno.test('source_runtime: xquery 脚本模式应完成抓取与解析', async () => {
+  const parsed = await fetchAndParseSource({
+    source: {
+      id: 's1',
+      enabled: true,
+      deliveries: [],
+      http: {
+        url: 'https://example.com/page.html',
+      },
+      xquery: {
+        locate: '//li',
+        feed: `map {
+          "title": string(//h1)
+        }`,
+        entry: `map {
+          "id": string(@data-id),
+          "title": string(a)
+        }`,
+      },
+    },
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response(
+            '<html><body><h1>Feed</h1><ul><li data-id="1"><a>Hello</a></li></ul></body></html>',
+          ),
+        ),
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.parser, 'xquery')
+  assertEquals(parsed.feedMapped.title, 'Feed')
+  assertEquals(parsed.entries.length, 1)
+  assertEquals(parsed.entries[0].mapped.id, '1')
+  assertEquals(parsed.entries[0].mapped.title, 'Hello')
+})
+
+Deno.test('source_runtime: 未配置解析器时应返回 none 结果', async () => {
+  const payload = '<html><body>hello</body></html>'
+  const parsed = await fetchAndParseSource({
+    source: {
+      id: 's1',
+      enabled: true,
+      deliveries: [],
+      http: {
+        url: 'https://example.com/page.html',
+      },
+    },
+    httpClient: createHttpClient({
+      fetcher: () => Promise.resolve(new Response(payload)),
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.payload, payload)
+  assertEquals(parsed.parser, 'none')
+  assertEquals(parsed.feedMapped, {})
+  assertEquals(parsed.entries, [])
+})
+
+Deno.test('source_runtime: 无 proxy 时应保留 headers 并不注入 client', async () => {
+  const calls: Array<{ sourceToken: string; hasClient: boolean }> = []
+
+  const parsed = await fetchAndParseSource({
+    source: createSyndicationSource({
+      url: 'https://example.com/feed.xml',
+      headers: {
+        'X-Source-Token': 'source-token',
+      },
+    }),
+    httpClient: createHttpClient({
+      fetcher: (input, init) => {
+        const headers = getRequestHeaders(input, init)
+        calls.push({
+          sourceToken: String(headers.get('X-Source-Token') ?? ''),
+          hasClient: getRequestClient(init) !== undefined,
+        })
+        return Promise.resolve(new Response(MINIMAL_RSS_PAYLOAD))
+      },
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.payload, MINIMAL_RSS_PAYLOAD)
+  assertEquals(calls, [{ sourceToken: 'source-token', hasClient: false }])
+})
+
+Deno.test('source_runtime: 配置 http proxy 时应注入 client 并在成功后关闭', async () => {
+  const createHttpClientCalls: Array<Parameters<typeof Deno.createHttpClient>[0]> = []
+  const calls: Array<{ hasExpectedClient: boolean }> = []
+  let closeCalls = 0
+  const proxyClient = {
+    close: () => {
+      closeCalls += 1
+    },
+  } as Deno.HttpClient
+
+  const parsed = await fetchAndParseSource({
+    source: createSyndicationSource({
+      url: 'https://example.com/feed.xml',
+      proxy: 'http://127.0.0.1:8080',
+    }),
+    httpClient: createHttpClient({
+      fetcher: (_input, init) => {
+        calls.push({
+          hasExpectedClient: getRequestClient(init) === proxyClient,
+        })
+        return Promise.resolve(new Response(MINIMAL_RSS_PAYLOAD))
+      },
+      proxyClientFactory: (options) => {
+        createHttpClientCalls.push(options)
+        return proxyClient
+      },
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.payload, MINIMAL_RSS_PAYLOAD)
+  assertEquals(createHttpClientCalls, [
+    {
+      proxy: { url: 'http://127.0.0.1:8080' },
+    },
+  ])
+  assertEquals(calls, [{ hasExpectedClient: true }])
+  assertEquals(closeCalls, 1)
+})
+
+Deno.test('source_runtime: 配置 socks5 proxy 时应注入 client 并在成功后关闭', async () => {
+  const createHttpClientCalls: Array<Parameters<typeof Deno.createHttpClient>[0]> = []
+  const calls: Array<{ hasExpectedClient: boolean }> = []
+  let closeCalls = 0
+  const proxyClient = {
+    close: () => {
+      closeCalls += 1
+    },
+  } as Deno.HttpClient
+
+  await fetchAndParseSource({
+    source: createSyndicationSource({
+      url: 'https://example.com/feed.xml',
+      proxy: 'socks5://127.0.0.1:1080',
+    }),
+    httpClient: createHttpClient({
+      fetcher: (_input, init) => {
+        calls.push({
+          hasExpectedClient: getRequestClient(init) === proxyClient,
+        })
+        return Promise.resolve(new Response(MINIMAL_RSS_PAYLOAD))
+      },
+      proxyClientFactory: (options) => {
+        createHttpClientCalls.push(options)
+        return proxyClient
+      },
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(createHttpClientCalls, [
+    {
+      proxy: { url: 'socks5://127.0.0.1:1080' },
+    },
+  ])
+  assertEquals(calls, [{ hasExpectedClient: true }])
+  assertEquals(closeCalls, 1)
+})
+
+Deno.test('source_runtime: 遇到非 2xx 响应时应抛统一抓取错误并关闭 proxy client', async () => {
+  let closeCalls = 0
+  const proxyClient = {
+    close: () => {
+      closeCalls += 1
+    },
+  } as Deno.HttpClient
+
+  await assertRejects(
+    () =>
+      fetchAndParseSource({
+        source: createSyndicationSource({
+          url: 'https://example.com/feed.xml',
+          proxy: 'http://127.0.0.1:8080',
+        }),
+        httpClient: createHttpClient({
+          fetcher: () => Promise.resolve(new Response('nope', { status: 503 })),
+          proxyClientFactory: () => proxyClient,
+        }),
+        timeOptions: {
+          timezone: 'UTC',
+          timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+        },
+      }),
+    Error,
+    '[source] 抓取失败 source=s1 status=503',
+  )
+
+  assertEquals(closeCalls, 1)
+})
+
+Deno.test('source_runtime: 配置 http 认证 proxy 时应透传完整 proxy URL', async () => {
+  const createHttpClientCalls: Array<Parameters<typeof Deno.createHttpClient>[0]> = []
+
+  await fetchAndParseSource({
+    source: createSyndicationSource({
+      url: 'https://example.com/feed.xml',
+      proxy: 'http://user:pass@127.0.0.1:8080',
+    }),
+    httpClient: createHttpClient({
+      fetcher: () => Promise.resolve(new Response(MINIMAL_RSS_PAYLOAD)),
+      proxyClientFactory: (options) => {
+        createHttpClientCalls.push(options)
+        return { close: () => {} } as Deno.HttpClient
+      },
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(createHttpClientCalls, [
+    {
+      proxy: { url: 'http://user:pass@127.0.0.1:8080' },
+    },
+  ])
+})
+
+Deno.test('source_runtime: byparr source 应调用 /v1 并返回渲染后的 payload', async () => {
+  const calls: Array<{ requestUrl: string; method: string; headers: Headers; bodyText: string }> =
+    []
+
+  const parsed = await fetchAndParseSource({
+    source: {
+      id: 's-byparr',
+      enabled: true,
+      deliveries: [],
+      byparr: {
+        endpoint: 'http://byparr:8191/v1',
+        cmd: 'request.get',
+        url: 'https://example.com/news',
+        maxTimeout: '60s',
+        proxy: 'http://user:@127.0.0.1:8080',
+      },
+      xquery: {
+        entry: {
+          id: 'string(//article/@id)',
+          title: 'string(//article/h2)',
+        },
+      },
+    },
+    httpClient: createHttpClient({
+      fetcher: async (request, init) => {
+        if (request instanceof Request) {
+          calls.push({
+            requestUrl: request.url,
+            method: request.method,
+            headers: request.headers,
+            bodyText: await request.clone().text(),
+          })
+        } else {
+          calls.push({
+            requestUrl: String(request),
+            method: String(init?.method ?? 'GET'),
+            headers: new Headers(init?.headers),
+            bodyText: String(init?.body ?? ''),
+          })
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: 'ok',
+              message: 'ok',
+              solution: {
+                url: 'https://example.com/news',
+                status: 200,
+                response: '<html><body><article id="a1"><h2>Hello</h2></article></body></html>',
+              },
+              startTimestamp: 1,
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        )
+      },
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+  })
+
+  assertEquals(parsed.parser, 'xquery')
+  assertEquals(parsed.entries.length, 1)
+  assertEquals(parsed.entries[0].mapped.id, 'a1')
+  assertEquals(calls.length, 1)
+
+  const call = calls[0]
+  assertEquals(call.requestUrl, 'http://byparr:8191/v1')
+  assertEquals(call.method, 'POST')
+
+  assertEquals(call.headers.get('X-Proxy-Server'), 'http://127.0.0.1:8080')
+  assertEquals(call.headers.get('X-Proxy-Username'), 'user')
+  assertEquals(call.headers.get('X-Proxy-Password'), '')
+
+  const payload = JSON.parse(call.bodyText)
+  assertEquals(payload.cmd, 'request.get')
+  assertEquals(payload.url, 'https://example.com/news')
+  assertEquals(payload.max_timeout, 60)
+})
+
+Deno.test('source_runtime: byparr 返回 status 非 ok 时应抛统一抓取错误', async () => {
+  await assertRejects(
+    () =>
+      fetchAndParseSource({
+        source: {
+          id: 's-byparr',
+          enabled: true,
+          deliveries: [],
+          byparr: {
+            endpoint: 'http://byparr:8191/v1',
+            cmd: 'request.get',
+            url: 'https://example.com/news',
+            maxTimeout: '60s',
+          },
+          syndication: {},
+        },
+        httpClient: createHttpClient({
+          fetcher: () =>
+            Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  status: 'error',
+                  message: 'blocked',
+                  solution: {
+                    url: 'https://example.com/news',
+                    status: 403,
+                    response: '',
+                  },
+                  startTimestamp: 1,
+                }),
+                {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' },
+                },
+              ),
+            ),
+        }),
+        timeOptions: {
+          timezone: 'UTC',
+          timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+        },
+      }),
+    Error,
+    '[source] 抓取失败 source=s-byparr status=403',
+  )
+})

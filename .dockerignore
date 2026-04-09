@@ -1,0 +1,10 @@
+.agents
+.deno_dir
+.env.*
+.git
+.github
+.gsd
+.venv
+.vscode
+node_modules
+runtime

@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run",
+      "type": "node",
+      "request": "launch",
+      "noDebug": true,
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["run"],
+      "preLaunchTask": "cleanup",
+      "env": {},
+      "envFile": "${workspaceFolder}/runtime/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/src/main.ts",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": ["run", "--inspect-brk"],
+      "env": {},
+      "envFile": "${workspaceFolder}/runtime/.env",
+      "console": "integratedTerminal"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "tasks": {
+    "start": "deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run src/main.ts",
+    "web": "deno task start --mode web",
+    "daemon": "deno task start --mode daemon",
+    "dev": "deno task start",
+    "check": "deno check src/main.ts web/main.ts web/routes/**/*.tsx web/islands/**/*.tsx",
+    "fmt": "scripts/run-paths.sh npx prettier --write -- . --",
+    "fmt:check": "scripts/run-paths.sh npx prettier --check -- . --",
+    "lint": "deno lint",
+    "test": "scripts/run-paths.sh deno test --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run -- src web --"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.19",
+    "@std/path": "jsr:@std/path@^1.1.4",
+    "@std/fs": "jsr:@std/fs@^1.0.23",
+    "@std/yaml": "jsr:@std/yaml@^1.0.12",
+    "@logtape/logtape": "jsr:@logtape/logtape@^2.0.5",
+    "@logtape/redaction": "jsr:@logtape/redaction@^2.0.5",
+    "fresh": "jsr:@fresh/core@^2.2.2",
+    "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.0.8",
+    "preact": "npm:preact@^10.29.1",
+    "@preact/signals": "npm:@preact/signals@^2.9.0",
+    "preact-render-to-string": "npm:preact-render-to-string@^6.6.7",
+    "vite": "npm:vite@^5.4.21",
+    "feedsmith": "npm:feedsmith@^2.9.1",
+    "drizzle-orm": "npm:drizzle-orm@1.0.0-beta.20",
+    "fontoxpath": "npm:fontoxpath@^3.34.0",
+    "jsdom": "npm:jsdom@^29.0.2",
+    "liquidjs": "npm:liquidjs@^10.25.5",
+    "markdown-it": "npm:markdown-it@^14.1.1",
+    "sanitize-html": "npm:sanitize-html@^2.17.2",
+    "telegram-markdown-v2": "npm:telegram-markdown-v2@^0.0.4",
+    "luxon": "npm:luxon@^3.7.2",
+    "croner": "npm:croner@^10.0.1",
+    "slimdom": "npm:slimdom@^4.3.5",
+    "turndown": "npm:turndown@^7.2.4",
+    "zod": "npm:zod@^4.3.6",
+    "ky": "npm:ky@^1.14.3",
+    "nodemailer": "npm:nodemailer@^7.0.5"
+  },
+  "nodeModulesDir": "auto"
+}

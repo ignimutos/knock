@@ -1,0 +1,216 @@
+import { assertEquals, assertExists } from '@std/assert'
+import { exists } from '@std/fs'
+import { join } from '@std/path'
+import { createLogger } from '../core/logger.ts'
+import { withOwnedRuntime } from '../test_runtime.ts'
+import { createDbClient } from './client.ts'
+
+const TEST_RUNTIME = join(Deno.cwd(), '.tmp', 'runtime-db')
+
+const registerTest = Deno.test
+
+function test(name: string, fn: () => Promise<void> | void): void {
+  registerTest(name, async () => {
+    await withOwnedRuntime(TEST_RUNTIME, async () => {
+      await fn()
+    })
+  })
+}
+
+test('createDbClient: 使用 node:sqlite 初始化并可执行查询', () => {
+  const db = createDbClient({
+    sqlite: {
+      path: join(TEST_RUNTIME, 'knock.db'),
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'off',
+      },
+    },
+  })
+  const result = db.$client.prepare('SELECT 1 as ok').get()
+
+  assertExists(result)
+  db.$client.close()
+})
+
+test('createDbClient: 初始化时应记录结构化日志', () => {
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'db.sqlite',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+
+  const db = createDbClient({
+    sqlite: {
+      path: join(TEST_RUNTIME, 'knock.db'),
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'off',
+      },
+    },
+    logger,
+  })
+  db.$client.close()
+
+  const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+  assertEquals(
+    output.some(
+      (item) =>
+        item.module === 'db.sqlite' && item.operation === 'init_db' && item.outcome === 'start',
+    ),
+    true,
+  )
+  assertEquals(
+    output.some(
+      (item) =>
+        item.module === 'db.sqlite' && item.operation === 'init_db' && item.outcome === 'success',
+    ),
+    true,
+  )
+  assertEquals(
+    output.some((item) => item.path === join(TEST_RUNTIME, 'knock.db')),
+    true,
+  )
+})
+
+test('createDbClient: 应在 sqlite.path 指定位置创建数据库并应用 pragma', async () => {
+  const databasePath = join(TEST_RUNTIME, 'nested', 'custom.db')
+  const db = createDbClient({
+    sqlite: {
+      path: databasePath,
+      busyTimeout: '1234ms',
+      journalMode: 'DELETE',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'off',
+      },
+    },
+  })
+
+  assertEquals(await exists(databasePath), true)
+  assertEquals(db.$client.prepare('PRAGMA busy_timeout').get(), {
+    timeout: 1234,
+  })
+  assertEquals(db.$client.prepare('PRAGMA journal_mode').get(), {
+    journal_mode: 'delete',
+  })
+  db.$client.close()
+})
+
+test('createDbClient: 应初始化 feeds 与 entries 表', () => {
+  const databasePath = join(TEST_RUNTIME, 'schema.db')
+  const db = createDbClient({
+    sqlite: {
+      path: databasePath,
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'off',
+      },
+    },
+  })
+
+  assertEquals(
+    db.$client.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='feeds'").get(),
+    {
+      name: 'feeds',
+    },
+  )
+  assertEquals(
+    db.$client
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entries'")
+      .get(),
+    {
+      name: 'entries',
+    },
+  )
+  db.$client.close()
+})
+
+test('createDbClient: vacuum=afterPrune 时应保持数据库可初始化', () => {
+  const databasePath = join(TEST_RUNTIME, 'vacuum.db')
+  const db = createDbClient({
+    sqlite: {
+      path: databasePath,
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'afterPrune',
+      },
+    },
+  })
+
+  assertExists(db.$client.prepare('SELECT 1 as ok').get())
+  db.$client.close()
+})
+
+test('createDbClient: 应初始化 deliveries 唯一索引与 entries 检索索引', () => {
+  const databasePath = join(TEST_RUNTIME, 'indexes.db')
+  const db = createDbClient({
+    sqlite: {
+      path: databasePath,
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'off',
+      },
+    },
+  })
+
+  const indexes = db.$client
+    .prepare("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name")
+    .all() as Array<{
+    name: string
+  }>
+
+  assertEquals(
+    indexes.some((item) => item.name === 'idx_entries_source_last_seen_at'),
+    true,
+  )
+  assertEquals(
+    indexes.some((item) => item.name.includes('deliveries')),
+    true,
+  )
+  db.$client.close()
+})
+
+test('createDbClient: 应通过 Drizzle migration 初始化数据库结构', () => {
+  const db = createDbClient({
+    sqlite: {
+      path: join(TEST_RUNTIME, 'migrate.db'),
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '180d',
+        maxEntriesPerSource: 1000,
+        vacuum: 'off',
+      },
+    },
+  })
+
+  const migrationTable = db.$client
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
+    .get()
+
+  assertExists(migrationTable)
+  assertEquals(migrationTable, { name: '__drizzle_migrations' })
+  db.$client.close()
+})
