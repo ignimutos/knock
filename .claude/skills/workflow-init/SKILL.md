@@ -19,7 +19,8 @@ description: Use when starting implementation work that should create or enter t
 
 处理规则：
 
-- 脚本负责 worktree 名称标准化、重名后缀、当前上下文检测、必要时创建 worktree，并输出足够的 TUI 信息与结构化 JSON。
-- 若脚本返回 `mode=create_worktree`，调用 `EnterWorktree`，并使用返回的 `worktreeName`。
-- 若脚本返回 `mode=already_in_worktree`，直接报告成功，不重复切换。
-- 不在此 skill 中重写 worktree 命名、路径检测或创建逻辑；这些由脚本负责。
+- 脚本负责 worktree 名称标准化、当前上下文检测，并输出足够的 TUI 信息与结构化 JSON。
+- 若脚本返回 `mode=create_worktree`，调用 `EnterWorktree`，并使用返回的 `worktreeName` 进行创建与切换。
+- 若脚本返回 `mode=already_in_target_worktree`，直接报告成功，不重复切换。
+- 若脚本返回 `already_in_other_worktree`，直接失败，不复用错误上下文。
+- 不在此 skill 中重写 worktree 命名、路径检测或切换逻辑；这些由脚本负责判断、由工具负责最终创建与切换。

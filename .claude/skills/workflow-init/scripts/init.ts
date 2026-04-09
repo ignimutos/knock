@@ -1,7 +1,5 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-run --allow-env
 
-import { normalize, resolve } from '@std/path'
-
 type Success<T> = {
   ok: true
   action: string
@@ -87,46 +85,6 @@ function getWorktreeDirName(worktreePath: string) {
   return segments.at(-1)
 }
 
-async function createWorktree(rootPath: string, name: string) {
-  const targetPath = resolve(rootPath, '.claude', 'worktrees', name)
-  let candidateName = name
-  let candidatePath = targetPath
-  let suffix = 2
-
-  while (true) {
-    const result = await runGit(
-      ['worktree', 'add', '-b', `worktree-${candidateName}`, candidatePath],
-      rootPath,
-    )
-    if (result.code === 0) {
-      return {
-        worktreeName: candidateName,
-        worktreePath: normalize(candidatePath),
-      }
-    }
-
-    const combined = `${result.stdout}\n${result.stderr}`
-    const hasCollision =
-      /already exists|already registered|is a missing but already registered worktree|already checked out/i.test(
-        combined,
-      )
-
-    if (!hasCollision) {
-      fail('init', 'worktree_create_failed', result.stderr || '创建 worktree 失败', {
-        rootPath,
-        worktreeName: candidateName,
-        worktreePath: candidatePath,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      })
-    }
-
-    candidateName = `${name}-${suffix}`
-    candidatePath = resolve(rootPath, '.claude', 'worktrees', candidateName)
-    suffix++
-  }
-}
-
 async function main() {
   const action = 'init'
   const explicitName = parseFlag(Deno.args, '--name')?.trim()
@@ -155,12 +113,12 @@ async function main() {
       })
     }
 
-    console.log(`已在 worktree 中：${topLevel}`)
+    console.log(`已在目标 worktree 中：${topLevel}`)
     printJson({
       ok: true,
       action,
       data: {
-        mode: 'already_in_worktree',
+        mode: 'already_in_target_worktree',
         ...(currentName ? { worktreeName: currentName } : { worktreeName: normalizedName }),
         worktreePath: topLevel,
       },
@@ -168,9 +126,7 @@ async function main() {
     return
   }
 
-  console.log(`准备创建 worktree：${normalizedName}`)
-  const created = await createWorktree(topLevel, normalizedName)
-  console.log(`已创建 worktree：${created.worktreePath}`)
+  console.log(`准备进入/创建 worktree：${normalizedName}`)
 
   printJson({
     ok: true,
@@ -178,8 +134,7 @@ async function main() {
     data: {
       mode: 'create_worktree',
       currentRoot: topLevel,
-      worktreeName: created.worktreeName,
-      worktreePath: created.worktreePath,
+      worktreeName: normalizedName,
     },
   } satisfies Success<Record<string, unknown>>)
 }
