@@ -298,8 +298,10 @@ async function main() {
     ['branch', '--show-current'],
     'git_branch_failed',
   )
-  const baseBranch = 'main'
   const rootRepoPath = await detectRootRepoPath(action, worktreePath)
+  const baseBranch =
+    parseFlag(Deno.args, '--base-branch')?.trim() ||
+    (await requireGitValue(action, ['branch', '--show-current'], 'git_branch_failed', rootRepoPath))
 
   const commitInfo = await autoCommitAllChanges(message, worktreePath)
 
