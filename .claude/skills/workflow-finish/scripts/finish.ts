@@ -214,6 +214,10 @@ async function runTask(task: string, cwd: string, paths: string[] = []) {
   return await runCommand('deno', args, cwd)
 }
 
+function getLintablePaths(paths: string[]) {
+  return paths.filter((path) => /\.(ts|tsx|js|jsx|mjs|mts|cts)$/i.test(path))
+}
+
 async function runVerification(cwd: string, paths: string[]) {
   console.log('运行 fmt:check')
   const fmtCheck = await runTask('fmt:check', cwd, paths)
@@ -221,10 +225,13 @@ async function runVerification(cwd: string, paths: string[]) {
     return { ok: false as const, code: 'fmt_check_failed', step: 'fmt:check', ...fmtCheck }
   }
 
-  console.log('运行 lint')
-  const lint = await runTask('lint', cwd, paths)
-  if (lint.code !== 0) {
-    return { ok: false as const, code: 'lint_failed', step: 'lint', ...lint }
+  const lintablePaths = getLintablePaths(paths)
+  if (lintablePaths.length > 0) {
+    console.log('运行 lint')
+    const lint = await runTask('lint', cwd, lintablePaths)
+    if (lint.code !== 0) {
+      return { ok: false as const, code: 'lint_failed', step: 'lint', ...lint }
+    }
   }
 
   console.log('运行 check')
