@@ -218,6 +218,29 @@ function getLintablePaths(paths: string[]) {
   return paths.filter((path) => /\.(ts|tsx|js|jsx|mjs|mts|cts)$/i.test(path))
 }
 
+function getTestTargets(paths: string[]) {
+  const testablePaths = paths.filter((path) => !/\.(md|ya?ml|json)$/i.test(path))
+  return testablePaths.length > 0 ? testablePaths : paths
+}
+
+async function ensureRootWorkspaceClean(action: string, rootRepoPath: string) {
+  const status = await runGit(['status', '--short'], rootRepoPath)
+  if (status.code !== 0) {
+    fail(action, 'root_git_status_failed', status.stderr || '无法读取主工作区 git status', {
+      rootRepoPath,
+      stdout: status.stdout,
+      stderr: status.stderr,
+    })
+  }
+
+  if (status.stdout) {
+    fail(action, 'root_workspace_dirty', '主工作区存在未提交改动，拒绝执行 merge-back', {
+      rootRepoPath,
+      status: status.stdout,
+    })
+  }
+}
+
 async function runVerification(cwd: string, paths: string[]) {
   console.log('运行 fmt:check')
   const fmtCheck = await runTask('fmt:check', cwd, paths)
@@ -240,8 +263,9 @@ async function runVerification(cwd: string, paths: string[]) {
     return { ok: false as const, code: 'check_failed', step: 'check', ...check }
   }
 
+  const testTargets = getTestTargets(paths)
   console.log('运行 test')
-  const test = await runTask('test', cwd, paths)
+  const test = await runTask('test', cwd, testTargets)
   if (test.code !== 0) {
     return { ok: false as const, code: 'test_failed', step: 'test', ...test }
   }
@@ -310,6 +334,7 @@ async function main() {
     parseFlag(Deno.args, '--base-branch')?.trim() ||
     (await requireGitValue(action, ['branch', '--show-current'], 'git_branch_failed', rootRepoPath))
 
+  await ensureRootWorkspaceClean(action, rootRepoPath)
   const commitInfo = await autoCommitAllChanges(message, worktreePath)
 
   console.log(`合并 ${baseBranch} 到当前 worktree`)

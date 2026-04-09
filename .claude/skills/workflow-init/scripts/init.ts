@@ -147,6 +147,14 @@ async function main() {
 
   if (topLevel.includes('/.claude/worktrees/')) {
     const currentName = getWorktreeDirName(topLevel)
+    if (currentName && currentName !== normalizedName) {
+      fail(action, 'already_in_other_worktree', '当前已在其他 worktree 中，拒绝复用错误上下文', {
+        currentWorktreeName: currentName,
+        requestedWorktreeName: normalizedName,
+        worktreePath: topLevel,
+      })
+    }
+
     console.log(`已在 worktree 中：${topLevel}`)
     printJson({
       ok: true,
