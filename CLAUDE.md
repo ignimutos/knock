@@ -88,9 +88,8 @@ Runtime entrypoint: `src/main.ts`
 
 ## Worktree policy
 
-- 功能开发前 **SHOULD** 优先使用本地 `workflow-start` 入口开始 workflow。
-- 在 workflow 中执行计划步骤时 **SHOULD** 使用 `workflow-execute-plan` 入口。
-- 将 workflow 结果合回 `main` 的收尾操作（如 `merge` / fast-forward / `cherry-pick`）**MAY** 保留，并 **SHOULD** 使用 `workflow-finish` 入口完成收尾。
+- 功能开发前 **SHOULD** 优先使用本地 `/workflow-init` 入口开始 workflow，并进入目标 worktree。
+- 将 workflow 结果合回 `main` 的收尾操作（如 `merge` / fast-forward / `cherry-pick`）**MAY** 保留，并 **SHOULD** 使用 `/workflow-finish` 入口完成收尾。
 - 非 worktree 环境 **MAY** 进行只读检查、计划阶段工作与其他不依赖 worktree 隔离的操作。
 - `/exit` **MUST NOT** 被描述为自动删除 worktree 或自动合并改动。
 

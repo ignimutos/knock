@@ -7,7 +7,8 @@
     "check": "deno check src/main.ts web/main.ts web/routes/**/*.tsx web/islands/**/*.tsx",
     "fmt": "scripts/run-paths.sh npx prettier --write -- . --",
     "fmt:check": "scripts/run-paths.sh npx prettier --check -- . --",
-    "lint": "deno lint",
+    "lint:fix": "scripts/run-paths.sh deno lint --fix --",
+    "lint": "scripts/run-paths.sh deno lint --",
     "test": "scripts/run-paths.sh deno test --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run -- src web --"
   },
   "compilerOptions": {

@@ -1,26 +1,26 @@
 ---
 name: workflow-finish
-description: Use when finalizing work in a git worktree and handing merge-back plus cleanup to the shared workflow script.
+description: Use when finalizing work in a git worktree and merging validated changes back into the main workspace.
 ---
 
 # workflow-finish
 
-这是一个协议层 skill。
+这是一个脚本优先的协议层 skill。
 
-协议职责：
+输入优先级：
 
-- 调用方负责先为当前工作生成完整 commit message。
-- 之后调用共享脚本入口：
+- 若用户显式提供 commit message，优先使用用户输入。
+- 否则由模型生成完整 commit message。
+- 若用户显式提供路径列表，优先使用用户输入。
+- 否则由模型提取受影响文件与相关测试范围。
 
-  `deno run --allow-read --allow-write --allow-run --allow-env .claude/skills/workflow/worktree.ts finish --message <full-message> --json`
+调用脚本：
 
-- `finish` 成功后，调用方应尝试 `ExitWorktree(action: "remove", discard_changes: true)`。
-- 无论 `ExitWorktree` 是否成功，调用方都继续调用 shared script `cleanup`。
-- 随后由调用方继续调用共享脚本入口：
+`deno run --allow-read --allow-write --allow-run --allow-env .claude/skills/workflow-finish/scripts/finish.ts --message <full-message> --path <path>`
 
-  `deno run --allow-read --allow-write --allow-run --allow-env .claude/skills/workflow/worktree.ts cleanup --json`
+处理规则：
 
-边界约束：
-
-- 不在此 skill 中重写 merge-back、验证、主工作区检测或 cleanup 判定逻辑。
-- 上述流程语义与 git 细节由 shared script `workflow/worktree.ts` 负责；此 skill 只声明调用接口与责任分界。
+- 脚本负责自动 `git add -A`、commit、merge `main`、验证、merge-back、删除 worktree/分支，并输出足够的 TUI 信息与结构化 JSON。
+- 若脚本返回 `nextAction=ralph_loop`，进入 `ralph-loop` 处理冲突或验证失败；loop 成功后重新生成 commit message，再次调用同一个脚本。
+- 若脚本返回成功结果，skill 只根据返回的 `rootRepoPath` 切回主工作区会话；不再重复删除，也不做额外检查。
+- 若脚本返回错误，直接停止并交由用户手动处理。
