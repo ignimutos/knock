@@ -406,6 +406,7 @@ async function main() {
   }
 
   console.log('删除 worktree')
+  Deno.chdir(rootRepoPath)
   const removeWorktree = await runGit(['worktree', 'remove', '-f', worktreePath], rootRepoPath)
   if (removeWorktree.code !== 0) {
     fail(action, 'worktree_remove_failed', removeWorktree.stderr || '删除 worktree 失败', {
