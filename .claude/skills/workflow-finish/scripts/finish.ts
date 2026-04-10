@@ -287,15 +287,18 @@ function isFullTestTrigger(path: string) {
   return FULL_TEST_TRIGGER_PATTERNS.some((pattern) => pattern.test(path))
 }
 
-function getTestSelection(paths: string[]): TaskSelection {
+async function getTestSelection(cwd: string, paths: string[]): Promise<TaskSelection> {
   if (paths.some(isFullTestTrigger)) {
     return { mode: 'default', reason: 'full_test_trigger' }
   }
 
-  const testTargets = dedupePaths(paths.filter((path) => !isNonCodeFile(path)))
+  const testTargets = await getCodeTargets(cwd, paths)
 
   if (testTargets.length === 0) {
-    return { mode: 'skip', reason: 'docs_only' }
+    return {
+      mode: 'skip',
+      reason: paths.every(isNonCodeFile) ? 'docs_only' : 'no_test_targets',
+    }
   }
 
   return {
@@ -303,6 +306,34 @@ function getTestSelection(paths: string[]): TaskSelection {
     reason: 'scoped_paths',
     paths: testTargets,
   }
+}
+
+function buildCompletionChoices(context: {
+  worktreePath: string
+  rootRepoPath: string
+  featureBranch: string
+  baseBranch: string
+}) {
+  return [
+    {
+      id: '1',
+      label: '删除 worktree 和分支并退回主工作区',
+      worktreePath: context.worktreePath,
+      featureBranch: context.featureBranch,
+      rootRepoPath: context.rootRepoPath,
+      baseBranch: context.baseBranch,
+    },
+    {
+      id: '2',
+      label: '不删除，保留当前工作区',
+      worktreePath: context.worktreePath,
+      featureBranch: context.featureBranch,
+    },
+    {
+      id: '3',
+      label: '用户输入',
+    },
+  ] as const
 }
 
 export async function buildVerificationPlan(
@@ -327,7 +358,7 @@ export async function buildVerificationPlan(
       checkTargets.length > 0
         ? { mode: 'paths', reason: 'scoped_paths', paths: checkTargets }
         : { mode: 'skip', reason: 'no_check_targets' },
-    test: getTestSelection(paths),
+    test: await getTestSelection(cwd, paths),
   }
 }
 
@@ -424,7 +455,7 @@ async function autoCommitAllChanges(message: string, cwd: string) {
   }
 
   if (!status.stdout) {
-    return { committed: false, status: status.stdout }
+    return { autoCommitted: false, status: status.stdout }
   }
 
   console.log('暂存并提交当前改动')
@@ -442,7 +473,7 @@ async function autoCommitAllChanges(message: string, cwd: string) {
     })
   }
 
-  return { committed: true, status: status.stdout, stdout: commitResult.stdout }
+  return { autoCommitted: true, status: status.stdout, stdout: commitResult.stdout }
 }
 
 async function main() {
@@ -577,44 +608,24 @@ async function main() {
     )
   }
 
-  console.log('删除 worktree')
-  console.log(
-    `切换脚本进程 cwd 到主工作区：${rootRepoPath}（仅影响当前脚本进程，不会切换 Claude 会话）`,
-  )
-  Deno.chdir(rootRepoPath)
-  const removeWorktree = await runGit(['worktree', 'remove', '-f', worktreePath], rootRepoPath)
-  if (removeWorktree.code !== 0) {
-    fail(action, 'worktree_remove_failed', removeWorktree.stderr || '删除 worktree 失败', {
-      rootRepoPath,
-      worktreePath,
-      stdout: removeWorktree.stdout,
-      stderr: removeWorktree.stderr,
-    })
-  }
-
-  console.log('删除分支')
-  const deleteBranch = await runGit(['branch', '-D', featureBranch], rootRepoPath)
-  if (deleteBranch.code !== 0) {
-    fail(action, 'branch_delete_failed', deleteBranch.stderr || '删除分支失败', {
-      rootRepoPath,
-      featureBranch,
-      stdout: deleteBranch.stdout,
-      stderr: deleteBranch.stderr,
-    })
-  }
-
-  console.log(`workflow-finish 脚本阶段完成，待 skill 恢复主工作区会话：${rootRepoPath}`)
+  console.log('merge-back 已完成，等待用户选择后续动作')
   printJson({
     ok: true,
     action,
     data: {
-      status: 'completed',
+      status: 'completed_pending_choice',
       worktreePath,
       rootRepoPath,
       featureBranch,
       baseBranch,
-      committed: commitInfo.committed,
+      autoCommitted: commitInfo.autoCommitted,
       paths: uniquePaths,
+      choices: buildCompletionChoices({
+        worktreePath,
+        rootRepoPath,
+        featureBranch,
+        baseBranch,
+      }),
     },
   } satisfies Success<Record<string, unknown>>)
 }
