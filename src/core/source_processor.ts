@@ -154,7 +154,7 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
               source.filter,
               templateContext,
             )
-            options.logger.info('filter 结果', {
+            options.logger.debug('filter 结果', {
               module: 'pipeline.filter',
               operation: 'filter',
               outcome: passed ? 'passed' : 'filtered',
@@ -180,7 +180,7 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
 
               if (deliveryResult === 'deduped') {
                 dedupedCount += 1
-                options.logger.info('命中去重', {
+                options.logger.debug('命中去重', {
                   module: 'delivery.store',
                   operation: 'is_delivered',
                   outcome: 'deduped',
@@ -192,7 +192,7 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
                 continue
               }
 
-              options.logger.info('记录 delivered', {
+              options.logger.debug('记录 delivered', {
                 module: 'delivery.store',
                 operation: 'mark_delivered',
                 outcome: 'success',

@@ -181,56 +181,77 @@ sources:
 
   const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
   assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'config.load' &&
+        attributes.operation === 'load_config' &&
+        attributes.outcome === 'start'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'config.load' &&
+        attributes.operation === 'load_config' &&
+        attributes.outcome === 'success'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'config.validate' &&
+        attributes.operation === 'validate_config' &&
+        attributes.outcome === 'success'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'config.resolve' &&
+        attributes.operation === 'resolve_config' &&
+        attributes.outcome === 'success'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'config.load' &&
+        attributes.operation === 'load_config' &&
+        attributes.outcome === 'failure'
+      )
+    }),
+    true,
+  )
+  assertEquals(
     output.some(
       (item) =>
-        item.module === 'config.load' &&
-        item.operation === 'load_config' &&
-        item.outcome === 'start',
+        typeof ((item.attributes ?? {}) as Record<string, unknown>).config_path === 'string',
     ),
     true,
   )
   assertEquals(
     output.some(
       (item) =>
-        item.module === 'config.load' &&
-        item.operation === 'load_config' &&
-        item.outcome === 'success',
+        typeof ((item.attributes ?? {}) as Record<string, unknown>).runtime_dir === 'string',
     ),
-    true,
-  )
-  assertEquals(
-    output.some(
-      (item) =>
-        item.module === 'config.validate' &&
-        item.operation === 'validate_config' &&
-        item.outcome === 'success',
-    ),
-    true,
-  )
-  assertEquals(
-    output.some(
-      (item) =>
-        item.module === 'config.resolve' &&
-        item.operation === 'resolve_config' &&
-        item.outcome === 'success',
-    ),
-    true,
-  )
-  assertEquals(
-    output.some(
-      (item) =>
-        item.module === 'config.load' &&
-        item.operation === 'load_config' &&
-        item.outcome === 'failure',
-    ),
-    true,
-  )
-  assertEquals(
-    output.some((item) => typeof item.config_path === 'string'),
-    true,
-  )
-  assertEquals(
-    output.some((item) => typeof item.runtime_dir === 'string'),
     true,
   )
 })

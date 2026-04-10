@@ -106,6 +106,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
   const logger = createLogger({
     enabled: config.logging.sinks.console?.type === 'console',
     level: config.logging.level,
+    format: config.logging.format,
     module: 'app.startup',
     component: 'daemon',
     timezone: config.timezone,

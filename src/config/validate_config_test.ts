@@ -31,6 +31,18 @@ Deno.test('validateConfig: schema 静态默认值应在校验阶段生效', () =
   })
 })
 
+Deno.test('validateConfig: logging.format 支持 pretty', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    logging: {
+      format: 'pretty',
+    },
+  }
+
+  const validated = validateConfig(input)
+  assertEquals(validated.logging.format, 'pretty')
+})
+
 Deno.test('validateConfig: 新 push.http + push.request + source.http.url shape 应通过', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',

@@ -145,7 +145,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
       const rotation = req.rotation
       if (rotation?.enabled) {
         const decision = await resolveRotationDecision(targetPath, rotation)
-        options.logger?.info('检查文件轮转', {
+        options.logger?.debug('检查文件轮转', {
           operation: 'rotation_check',
           outcome: decision.shouldRotate ? 'triggered' : 'skipped',
           path: targetPath,
@@ -156,7 +156,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
         if (decision.shouldRotate) {
           const rotatedPath = buildRotatedPath(targetPath, new Date())
           await Deno.rename(targetPath, rotatedPath)
-          options.logger?.info('执行文件轮转', {
+          options.logger?.debug('执行文件轮转', {
             operation: 'rotate_file',
             outcome: 'success',
             path: targetPath,
@@ -166,7 +166,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
           })
           if (typeof rotation.backups === 'number') {
             await pruneBackups(targetPath, rotation.backups)
-            options.logger?.info('清理轮转备份', {
+            options.logger?.debug('清理轮转备份', {
               operation: 'prune_backups',
               outcome: 'success',
               path: targetPath,
@@ -180,7 +180,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
       await Deno.writeTextFile(targetPath, `${req.content}\n`, {
         append: true,
       })
-      options.logger?.info('写入文件成功', {
+      options.logger?.debug('写入文件成功', {
         operation: 'push',
         outcome: 'success',
         path: targetPath,

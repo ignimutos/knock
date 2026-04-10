@@ -610,9 +610,10 @@ Knock 输出的是**结构化 JSON 日志**。
 
 ### `logging.format`
 
-当前只支持：
+当前支持：
 
 - `json`
+- `pretty`
 
 ### `logging.sinks.console.type`
 
@@ -631,19 +632,25 @@ logging:
       type: console
 ```
 
-日志里会包含类似字段：
+默认 `json` 会输出 OTel / OTLP 风格字段，例如：
 
-- `timestamp`
-- `level`
-- `component`
-- `module`
-- `operation`
-- `outcome`
-- `source_id`
-- `run_id`
-- `duration_ms`
+- `timeUnixNano`
+- `observedTimeUnixNano`
+- `severityText`
+- `severityNumber`
+- `body`
+- `traceId`
+- `spanId`
+- `attributes`
+- `resource.attributes`
+- `scope.name`
 
-其中 `component` 用于区分日志来源角色，当前会输出 `daemon` 或 `web`。
+其中：
+
+- `resource.attributes` 用于资源级上下文
+- `scope.name` 用于标识日志生产者
+- 业务上下文字段会进入 `attributes`
+- `traceId` / `spanId` 仅用于真实 trace 关联
 
 另外，日志会对 token、chat id、URL 中的敏感片段做脱敏。
 
@@ -1873,7 +1880,6 @@ response:
 
 这些不是使用错误，而是项目当前实现本身的边界：
 
-- `logging.format` 当前只支持 `json`
 - `logging.sinks.console.type` 当前只支持 `console`
 - HTTP payload 里的模板值最终都会按字符串渲染结果写入请求；如果你需要更细粒度的类型控制，请在 webhook 接收端按约定解析
 - file delivery 是追加写入，不支持覆盖模式

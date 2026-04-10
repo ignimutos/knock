@@ -34,7 +34,7 @@ export function withApiRequestLogging(
     const startedAt = Date.now()
     let logMeta: EvaluateLogMeta = {}
 
-    routeLogger.info('API 请求开始', {
+    routeLogger.debug('API 请求开始', {
       operation: 'request',
       outcome: 'start',
       method: ctx.req.method,

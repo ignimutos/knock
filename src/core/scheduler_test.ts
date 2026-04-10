@@ -63,9 +63,11 @@ Deno.test('scheduler: 重入跳过时应记录结构化日志', async () => {
 
   assertEquals(logs.length, 1)
   const record = JSON.parse(logs[0]) as Record<string, unknown>
-  assertEquals(record.module, 'scheduler.source')
-  assertEquals(record.operation, 'run_source')
-  assertEquals(record.outcome, 'skipped')
-  assertEquals(record.reason, 'reentry_inflight')
-  assertEquals(record.source_id, 's1')
+  const scope = (record.scope ?? {}) as Record<string, unknown>
+  const attributes = (record.attributes ?? {}) as Record<string, unknown>
+  assertEquals(scope.name, 'scheduler.source')
+  assertEquals(attributes.operation, 'run_source')
+  assertEquals(attributes.outcome, 'skipped')
+  assertEquals(attributes.reason, 'reentry_inflight')
+  assertEquals(attributes.source_id, 's1')
 })

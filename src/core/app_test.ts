@@ -53,6 +53,14 @@ function getRequestUrl(input: RequestInfo | URL): string {
   return input.url
 }
 
+function getAttributes(record: Record<string, unknown>): Record<string, unknown> {
+  return (record.attributes ?? {}) as Record<string, unknown>
+}
+
+function getScopeName(record: Record<string, unknown>): string | undefined {
+  return ((record.scope ?? {}) as Record<string, unknown>).name as string | undefined
+}
+
 function captureLogs(): {
   logs: Array<Record<string, unknown>>
   restore: () => void
@@ -189,7 +197,10 @@ sources:
     const result = await resultPromise
     assertEquals(result.mode, 'daemon')
     assertEquals(
-      logs.some((line) => line.operation === 'enter_daemon' && line.has_schedule === true),
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return attributes.operation === 'enter_daemon' && attributes.has_schedule === true
+      }),
       true,
     )
     assertEquals(
@@ -273,14 +284,21 @@ sources:
   }
 
   assertEquals(
-    logs.some((line) => line.module === 'delivery.store' && line.operation === 'mark_delivered'),
+    logs.some((line) => {
+      const attributes = getAttributes(line)
+      return getScopeName(line) === 'delivery.store' && attributes.operation === 'mark_delivered'
+    }),
     false,
   )
   assertEquals(
-    logs.some(
-      (line) =>
-        line.module === 'delivery.http' && line.operation === 'push' && line.outcome === 'failure',
-    ),
+    logs.some((line) => {
+      const attributes = getAttributes(line)
+      return (
+        getScopeName(line) === 'delivery.http' &&
+        attributes.operation === 'push' &&
+        attributes.outcome === 'failure'
+      )
+    }),
     true,
   )
 
@@ -504,18 +522,22 @@ sources:
     assertStringIncludes(output, 'Hello Rust')
 
     assertEquals(
-      logs.some((line) => line.operation === 'startup'),
+      logs.some((line) => getAttributes(line).operation === 'startup'),
       true,
     )
     assertEquals(
-      logs.some((line) => line.operation === 'enter_daemon'),
+      logs.some((line) => getAttributes(line).operation === 'enter_daemon'),
       false,
     )
     assertEquals(
-      logs.some(
-        (line) =>
-          line.module === 'db.sqlite' && line.operation === 'init_db' && line.outcome === 'success',
-      ),
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'db.sqlite' &&
+          attributes.operation === 'init_db' &&
+          attributes.outcome === 'success'
+        )
+      }),
       true,
     )
   } finally {
@@ -575,7 +597,10 @@ sources:
 
     assertEquals(result.mode, 'daemon')
     assertEquals(
-      logs.some((line) => line.operation === 'enter_daemon' && line.has_schedule === true),
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return attributes.operation === 'enter_daemon' && attributes.has_schedule === true
+      }),
       true,
     )
   } finally {
@@ -630,15 +655,15 @@ sources:
     assertEquals(fetchCalls, 0)
     assertEquals(await exists(join(testRuntime, 'outputs', 'source.md')), false)
     assertEquals(
-      logs.some((line) => line.reason === 'source_disabled'),
+      logs.some((line) => getAttributes(line).reason === 'source_disabled'),
       false,
     )
     assertEquals(
-      logs.some((line) => line.operation === 'register_schedule'),
+      logs.some((line) => getAttributes(line).operation === 'register_schedule'),
       false,
     )
     assertEquals(
-      logs.some((line) => line.operation === 'enter_daemon'),
+      logs.some((line) => getAttributes(line).operation === 'enter_daemon'),
       false,
     )
   } finally {
@@ -719,14 +744,21 @@ sources:
   }
 
   assertEquals(
-    logs.some((line) => line.module === 'delivery.store' && line.operation === 'mark_delivered'),
+    logs.some((line) => {
+      const attributes = getAttributes(line)
+      return getScopeName(line) === 'delivery.store' && attributes.operation === 'mark_delivered'
+    }),
     false,
   )
   assertEquals(
-    logs.some(
-      (line) =>
-        line.module === 'delivery.email' && line.operation === 'push' && line.outcome === 'failure',
-    ),
+    logs.some((line) => {
+      const attributes = getAttributes(line)
+      return (
+        getScopeName(line) === 'delivery.email' &&
+        attributes.operation === 'push' &&
+        attributes.outcome === 'failure'
+      )
+    }),
     true,
   )
 
@@ -818,13 +850,15 @@ sources:
   assertEquals(output.includes('123456:ABCDEF-SECRET'), false)
   assertEquals(output.includes('api.telegram.org/bot123456:ABCDEF-SECRET'), false)
   assertEquals(
-    logs.some(
-      (line) =>
-        line.module === 'delivery.http' &&
-        line.operation === 'push' &&
-        line.outcome === 'success' &&
-        line.delivery_id === 'rust__webhook__0',
-    ),
+    logs.some((line) => {
+      const attributes = getAttributes(line)
+      return (
+        getScopeName(line) === 'delivery.http' &&
+        attributes.operation === 'push' &&
+        attributes.outcome === 'success' &&
+        attributes.delivery_id === 'rust__webhook__0'
+      )
+    }),
     true,
   )
 })

@@ -10,6 +10,8 @@
     "jsr:@fresh/core@^2.2.2": "2.2.2",
     "jsr:@fresh/plugin-vite@^1.0.8": "1.0.8",
     "jsr:@logtape/logtape@^2.0.5": "2.0.5",
+    "jsr:@logtape/pretty@*": "2.0.5",
+    "jsr:@logtape/pretty@^2.0.5": "2.0.5",
     "jsr:@logtape/redaction@^2.0.5": "2.0.5",
     "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/bytes@^1.0.6": "1.0.6",
@@ -37,7 +39,8 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.1",
     "npm:@preact/signals@^2.5.1": "2.9.0_preact@10.29.1",
     "npm:@preact/signals@^2.9.0": "2.9.0_preact@10.29.1",
-    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.1_vite@5.4.21",
+    "npm:@prefresh/vite@^2.4.8": "2.4.12_preact@10.29.1_vite@5.4.21__@types+node@24.0.7_@types+node@24.0.7",
+    "npm:@types/node@24.0.7": "24.0.7",
     "npm:croner@^10.0.1": "10.0.1",
     "npm:drizzle-orm@1.0.0-beta.20": "1.0.0-beta.20_@opentelemetry+api@1.9.1_zod@4.3.6",
     "npm:esbuild-wasm@~0.25.11": "0.25.12",
@@ -59,7 +62,7 @@
     "npm:slimdom@^4.3.5": "4.3.5",
     "npm:telegram-markdown-v2@^0.0.4": "0.0.4",
     "npm:turndown@^7.2.4": "7.2.4",
-    "npm:vite@^5.4.21": "5.4.21",
+    "npm:vite@^5.4.21": "5.4.21_@types+node@24.0.7",
     "npm:zod@^4.3.6": "4.3.6"
   },
   "jsr": {
@@ -120,6 +123,13 @@
     },
     "@logtape/logtape@2.0.5": {
       "integrity": "604d2121ed4ffb7aad35b47e729e2298d0cd7a7ddf1cb4171d27a61fa7d840a5"
+    },
+    "@logtape/pretty@2.0.5": {
+      "integrity": "a0889f7c8f45e6fc50ab58115824549d0434850298fe94e1649d604b2548eeec",
+      "dependencies": [
+        "jsr:@logtape/logtape",
+        "npm:@types/node"
+      ]
     },
     "@logtape/redaction@2.0.5": {
       "integrity": "b79610d8b2f8253378fca3cdb2c106a78f8b9e14e68644b24cf51b8118fa0818",
@@ -901,7 +911,7 @@
     "@prefresh/utils@1.2.1": {
       "integrity": "sha512-vq/sIuN5nYfYzvyayXI4C2QkprfNaHUQ9ZX+3xLD8nL3rWyzpxOm1+K7RtMbhd+66QcaISViK7amjnheQ/4WZw=="
     },
-    "@prefresh/vite@2.4.12_preact@10.29.1_vite@5.4.21": {
+    "@prefresh/vite@2.4.12_preact@10.29.1_vite@5.4.21__@types+node@24.0.7_@types+node@24.0.7": {
       "integrity": "sha512-FY1fzXpUjiuosznMV0YM7XAOPZjB5FIdWS0W24+XnlxYkt9hNAwwsiKYn+cuTEoMtD/ZVazS5QVssBr9YhpCQA==",
       "dependencies": [
         "@babel/core",
@@ -1069,21 +1079,17 @@
     "@types/mssql@9.1.11_@azure+core-client@1.10.1": {
       "integrity": "sha512-vcujgrDbDezCxNDO4KY6gjwduLYOKfrexpRUwhoysRvcXZ3+IgZ/PMYFDgh8c3cQIxZ6skAwYo+H6ibMrBWPjQ==",
       "dependencies": [
-        "@types/node",
         "tarn"
       ]
     },
-    "@types/node@25.5.2": {
-      "integrity": "sha512-tO4ZIRKNC+MDWV4qKVZe3Ql/woTnmHDr5JD8UI5hn2pwBrHEwOEMZK7WlNb5RKB6EoJ02gwmQS9OrjuFnZYdpg==",
+    "@types/node@24.0.7": {
+      "integrity": "sha512-YIEUUr4yf8q8oQoXPpSlnvKNVKDQlPMWrmOcgzoduo7kvA2UF0/BwJ/eMKFTiTtkNL17I0M6Xe2tvwFU7be6iw==",
       "dependencies": [
         "undici-types"
       ]
     },
     "@types/readable-stream@4.0.23": {
-      "integrity": "sha512-wwXrtQvbMHxCbBgjHaMGEmImFTQxxpfMOR/ZoQnXxB1woqkUbdLGFDgauo00Py9IudiaqSeiBiulSV9i6XIPig==",
-      "dependencies": [
-        "@types/node"
-      ]
+      "integrity": "sha512-wwXrtQvbMHxCbBgjHaMGEmImFTQxxpfMOR/ZoQnXxB1woqkUbdLGFDgauo00Py9IudiaqSeiBiulSV9i6XIPig=="
     },
     "@types/unist@3.0.3": {
       "integrity": "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="
@@ -2226,7 +2232,6 @@
         "@azure/identity",
         "@azure/keyvault-keys",
         "@js-joda/core",
-        "@types/node",
         "bl",
         "iconv-lite",
         "js-md4",
@@ -2289,8 +2294,8 @@
     "uc.micro@2.1.0": {
       "integrity": "sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A=="
     },
-    "undici-types@7.18.2": {
-      "integrity": "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="
+    "undici-types@7.8.0": {
+      "integrity": "sha512-9UJ2xGDvQ43tYyVMpuHlsgApydB8ZKfVYTsLDhXkFL/6gfkp+U8xTGdh8pMJv1SpZna0zxG1DwsKZsreLbXBxw=="
     },
     "undici@7.24.7": {
       "integrity": "sha512-H/nlJ/h0ggGC+uRL3ovD+G0i4bqhvsDOpbDv7At5eFLlj2b41L8QliGbnl2H7SnDiYhENphh1tQFJZf+MyfLsQ=="
@@ -2369,15 +2374,19 @@
         "vfile-message"
       ]
     },
-    "vite@5.4.21": {
+    "vite@5.4.21_@types+node@24.0.7": {
       "integrity": "sha512-o5a9xKjbtuhY6Bi5S3+HvbRERmouabWbyUcpXXUA1u+GNUKoROi9byOJ8M0nHbHYHkYICiMlqxkg1KkYmm25Sw==",
       "dependencies": [
+        "@types/node",
         "esbuild@0.21.5",
         "postcss",
         "rollup"
       ],
       "optionalDependencies": [
         "fsevents"
+      ],
+      "optionalPeers": [
+        "@types/node"
       ],
       "bin": true
     },
@@ -2437,6 +2446,7 @@
       "jsr:@fresh/core@^2.2.2",
       "jsr:@fresh/plugin-vite@^1.0.8",
       "jsr:@logtape/logtape@^2.0.5",
+      "jsr:@logtape/pretty@^2.0.5",
       "jsr:@logtape/redaction@^2.0.5",
       "jsr:@std/assert@^1.0.19",
       "jsr:@std/fs@^1.0.23",
