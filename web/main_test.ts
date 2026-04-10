@@ -10,7 +10,7 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   const stdout: string[] = []
   const logger = createLogger({
     enabled: true,
-    level: 'info',
+    level: 'debug',
     module: 'web.api',
     component: 'web',
     now: () => new Date('2026-03-24T21:45:12.345Z'),
@@ -43,24 +43,35 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   assertEquals(stdout.length, 2)
 
   const startRecord = JSON.parse(stdout[0]) as Record<string, unknown>
-  assertEquals(startRecord.component, 'web')
-  assertEquals(startRecord.module, 'web.api.xquery.evaluate')
-  assertEquals(startRecord.route, '/api/xquery/evaluate')
-  assertEquals(startRecord.method, 'POST')
-  assertEquals(startRecord.outcome, 'start')
+  const startScope = (startRecord.scope ?? {}) as Record<string, unknown>
+  const startAttributes = (startRecord.attributes ?? {}) as Record<string, unknown>
+  const startResource = ((startRecord.resource ?? {}) as Record<string, unknown>).attributes as
+    | Record<string, unknown>
+    | undefined
+  assertEquals(startResource?.['knock.component'], 'web')
+  assertEquals(startScope.name, 'web.api.xquery.evaluate')
+  assertEquals(startAttributes['http.route'], '/api/xquery/evaluate')
+  assertEquals(startAttributes['http.request.method'], 'POST')
+  assertEquals(startRecord.severityText, 'DEBUG')
+  assertEquals(startAttributes.outcome, 'start')
 
   const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
-  assertEquals(successRecord.component, 'web')
-  assertEquals(successRecord.module, 'web.api.xquery.evaluate')
-  assertEquals(successRecord.route, '/api/xquery/evaluate')
-  assertEquals(successRecord.method, 'POST')
-  assertEquals(successRecord.outcome, 'success')
-  assertEquals(successRecord.target_host, 'example.com')
-  assertEquals(successRecord.parser, 'xquery')
-  assertEquals(successRecord.warning_count, 1)
-  assertEquals(successRecord.entry_count, 2)
-  assertEquals(successRecord.fetch_duration_ms, 12)
-  assertEquals(successRecord.parse_duration_ms, 5)
+  const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
+  const successAttributes = (successRecord.attributes ?? {}) as Record<string, unknown>
+  const successResource = ((successRecord.resource ?? {}) as Record<string, unknown>).attributes as
+    | Record<string, unknown>
+    | undefined
+  assertEquals(successResource?.['knock.component'], 'web')
+  assertEquals(successScope.name, 'web.api.xquery.evaluate')
+  assertEquals(successAttributes['http.route'], '/api/xquery/evaluate')
+  assertEquals(successAttributes['http.request.method'], 'POST')
+  assertEquals(successAttributes.outcome, 'success')
+  assertEquals(successAttributes.target_host, 'example.com')
+  assertEquals(successAttributes.parser, 'xquery')
+  assertEquals(successAttributes.warning_count, 1)
+  assertEquals(successAttributes.entry_count, 2)
+  assertEquals(successAttributes.fetch_duration_ms, 12)
+  assertEquals(successAttributes.parse_duration_ms, 5)
 })
 
 Deno.test('web main: withApiRequestLogging 应记录失败请求关键字段', async () => {
@@ -107,14 +118,22 @@ Deno.test('web main: withApiRequestLogging 应记录失败请求关键字段', a
   assertEquals(stderr.length, 1)
 
   const failureRecord = JSON.parse(stderr[0]) as Record<string, unknown>
-  assertEquals(failureRecord.component, 'web')
-  assertEquals(failureRecord.module, 'web.api.xquery.evaluate')
-  assertEquals(failureRecord.route, '/api/xquery/evaluate')
-  assertEquals(failureRecord.method, 'POST')
-  assertEquals(failureRecord.outcome, 'failure')
-  assertEquals(failureRecord.http_status, 502)
-  assertEquals(failureRecord.target_host, 'example.com')
-  assertEquals(failureRecord.error_code, 'playground_fetch_failed')
-  assertEquals(failureRecord.error_category, 'fetch')
-  assertEquals(failureRecord.error_message, '[source] 抓取失败 source=playground status=404')
+  const failureScope = (failureRecord.scope ?? {}) as Record<string, unknown>
+  const failureAttributes = (failureRecord.attributes ?? {}) as Record<string, unknown>
+  const failureResource = ((failureRecord.resource ?? {}) as Record<string, unknown>).attributes as
+    | Record<string, unknown>
+    | undefined
+  assertEquals(failureResource?.['knock.component'], 'web')
+  assertEquals(failureScope.name, 'web.api.xquery.evaluate')
+  assertEquals(failureAttributes['http.route'], '/api/xquery/evaluate')
+  assertEquals(failureAttributes['http.request.method'], 'POST')
+  assertEquals(failureAttributes.outcome, 'failure')
+  assertEquals(failureAttributes['http.response.status_code'], 502)
+  assertEquals(failureAttributes.target_host, 'example.com')
+  assertEquals(failureAttributes.error_code, 'playground_fetch_failed')
+  assertEquals(failureAttributes.error_category, 'fetch')
+  assertEquals(
+    failureAttributes['exception.message'],
+    '[source] 抓取失败 source=playground status=404',
+  )
 })

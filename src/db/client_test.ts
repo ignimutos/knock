@@ -65,21 +65,35 @@ test('createDbClient: 初始化时应记录结构化日志', () => {
 
   const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
   assertEquals(
-    output.some(
-      (item) =>
-        item.module === 'db.sqlite' && item.operation === 'init_db' && item.outcome === 'start',
-    ),
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'db.sqlite' &&
+        attributes.operation === 'init_db' &&
+        attributes.outcome === 'start'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'db.sqlite' &&
+        attributes.operation === 'init_db' &&
+        attributes.outcome === 'success'
+      )
+    }),
     true,
   )
   assertEquals(
     output.some(
       (item) =>
-        item.module === 'db.sqlite' && item.operation === 'init_db' && item.outcome === 'success',
+        ((item.attributes ?? {}) as Record<string, unknown>).path ===
+        join(TEST_RUNTIME, 'knock.db'),
     ),
-    true,
-  )
-  assertEquals(
-    output.some((item) => item.path === join(TEST_RUNTIME, 'knock.db')),
     true,
   )
 })

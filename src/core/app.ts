@@ -107,6 +107,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
   const logger = createLogger({
     enabled: config.logging.sinks.console?.type === 'console',
     level: config.logging.level,
+    format: config.logging.format,
     module: 'app.startup',
     component: 'daemon',
     timezone: config.timezone,
@@ -119,7 +120,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
   const aiRuntime = createAiRuntime({
     ai: config.ai,
     defaultLanguage: config.language,
-    logger: logger.child({ module: 'ai.runtime' }),
+    logger: logger.child({ module: 'core.ai.runtime' }),
   })
   const contentRuntime = createContentRuntime({ aiRuntime })
   const db = createDbClient({

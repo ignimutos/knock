@@ -1,30 +1,23 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { attachAiEntryRuntime, getAiEntryRuntime } from './ai_runtime.ts'
-import type { Logger } from './logger.ts'
+import { createLogger, type Logger } from './logger.ts'
 import { createSourceProcessor } from './source_processor.ts'
 
-function createTestLogger(
-  records: Array<Record<string, unknown>>,
-  baseFields: Record<string, unknown> = {},
-): Logger {
-  const write = (level: string, message: string, fields?: Record<string, unknown>) => {
-    records.push({
-      level,
-      message,
-      ...baseFields,
-      ...(fields ?? {}),
-    })
+function createTestLogger(records: Array<Record<string, unknown>>): Logger {
+  const write = (line: string) => {
+    records.push(JSON.parse(line) as Record<string, unknown>)
   }
 
-  return {
-    trace: (message, fields) => write('trace', message, fields),
-    debug: (message, fields) => write('debug', message, fields),
-    info: (message, fields) => write('info', message, fields),
-    warn: (message, fields) => write('warn', message, fields),
-    error: (message, fields) => write('error', message, fields),
-    child: (fields) => createTestLogger(records, { ...baseFields, ...fields }),
-  }
+  return createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'test',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: write,
+    writeWarn: write,
+    writeStderr: write,
+  })
 }
 
 function createSource(overrides: Partial<ResolvedSourceConfig> = {}): ResolvedSourceConfig {
@@ -152,46 +145,73 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
   assertEquals(persisted[0].sourceId, 'rust')
   assertEquals(pruned, [{ sourceId: 'rust', activeTargetCount: 1 }])
   assertEquals(
-    logs.some((line) => line.message === '跳过无效 entry' && line.reason === 'entry.id_empty'),
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.body === '跳过无效 entry' &&
+        scope.name === 'source.parse.rss' &&
+        attributes.reason === 'entry.id_empty'
+      )
+    }),
     true,
   )
   assertEquals(
-    logs.some(
-      (line) =>
-        line.message === 'filter 结果' &&
-        line.outcome === 'filtered' &&
-        line.item_id === 'filtered',
-    ),
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'DEBUG' &&
+        line.body === 'filter 结果' &&
+        scope.name === 'pipeline.filter' &&
+        attributes.outcome === 'filtered' &&
+        attributes.item_id === 'filtered'
+      )
+    }),
     true,
   )
   assertEquals(
-    logs.some(
-      (line) =>
-        line.message === '命中去重' &&
-        line.module === 'delivery.store' &&
-        line.item_id === 'deduped',
-    ),
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'DEBUG' &&
+        line.body === '命中去重' &&
+        scope.name === 'delivery.store' &&
+        attributes.operation === 'is_delivered' &&
+        attributes.item_id === 'deduped'
+      )
+    }),
     true,
   )
   assertEquals(
-    logs.some(
-      (line) =>
-        line.message === '记录 delivered' &&
-        line.module === 'delivery.store' &&
-        line.item_id === 'delivered',
-    ),
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'DEBUG' &&
+        line.body === '记录 delivered' &&
+        scope.name === 'delivery.store' &&
+        attributes.operation === 'mark_delivered' &&
+        attributes.item_id === 'delivered'
+      )
+    }),
     true,
   )
   assertEquals(
-    logs.some(
-      (line) =>
-        line.message === 'source 执行完成' &&
-        line.module === 'scheduler.source' &&
-        line.item_count === 4 &&
-        line.passed_count === 2 &&
-        line.deduped_count === 1 &&
-        line.pushed_count === 1,
-    ),
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'INFO' &&
+        line.body === 'source 执行完成' &&
+        scope.name === 'scheduler.source' &&
+        attributes.item_count === 4 &&
+        attributes.passed_count === 2 &&
+        attributes.deduped_count === 1 &&
+        attributes.pushed_count === 1
+      )
+    }),
     true,
   )
 })
@@ -323,7 +343,7 @@ Deno.test('sourceProcessor: runOnce 遇到 push 失败时不记录 delivered 且
   assertEquals(deliverIfNeededCalls, ['delivery:archive'])
   assertEquals(pushCalls, ['failed'])
   assertEquals(
-    logs.some((line) => line.message === '记录 delivered'),
+    logs.some((line) => line.body === '记录 delivered'),
     false,
   )
 })
@@ -358,7 +378,16 @@ Deno.test('sourceProcessor: runOnce 遇到异常时应记录失败并继续向�
   await assertRejects(() => processor.runOnce(createSource()), Error, 'boom')
 
   assertEquals(
-    logs.some((line) => line.message === 'source 执行失败' && line.error_message === 'boom'),
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'ERROR' &&
+        line.body === 'source 执行失败' &&
+        scope.name === 'scheduler.source' &&
+        attributes['exception.message'] === 'boom'
+      )
+    }),
     true,
   )
 })

@@ -92,6 +92,8 @@ interface GenerateTextResult {
 
 type GenerateTextFn = (input: GenerateTextInput) => Promise<GenerateTextResult>
 
+const AI_FAILURE_MESSAGE = 'AI 调用失败，错误详情已省略'
+
 interface ResolvedAiInvocation {
   provider: AiProviderResolved
   model: AiModelResolved
@@ -585,23 +587,31 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
       callOptions.promptFingerprint,
     ].join('|')
     const cached = callOptions.entryRuntime.cache.get(cacheKey)
+    const baseLogFields = {
+      operation: 'generate',
+      source_id: callOptions.entryRuntime.sourceId,
+      item_id: callOptions.entryRuntime.entryId,
+      input_length: callOptions.inputText.length,
+      truncated: callOptions.truncated ?? false,
+      'ai.provider': callOptions.invocation.provider.type,
+      'ai.provider_id': callOptions.invocation.provider.id,
+      'ai.model': callOptions.invocation.model.model,
+      'ai.model_ref': callOptions.invocation.model.ref,
+      'ai.prompt_id': callOptions.promptId,
+      'ai.stage': callOptions.stage,
+      'ai.cache': false,
+      'ai.chunk': callOptions.chunkIndex !== undefined,
+      'ai.variant': callOptions.invocation.variantId,
+      'ai.language': callOptions.language,
+      'ai.chunk_index': callOptions.chunkIndex,
+      'ai.chunk_count': callOptions.chunkCount,
+    }
 
     if (cached) {
       logger?.info('AI 缓存命中', {
-        module: 'ai.runtime',
-        operation: 'generate',
+        ...baseLogFields,
         outcome: 'cache_hit',
-        source_id: callOptions.entryRuntime.sourceId,
-        item_id: callOptions.entryRuntime.entryId,
-        provider: callOptions.invocation.provider.type,
-        provider_id: callOptions.invocation.provider.id,
-        model: callOptions.invocation.model.model,
-        model_ref: callOptions.invocation.model.ref,
-        variant: callOptions.invocation.variantId,
-        prompt_id: callOptions.promptId,
-        stage: callOptions.stage,
-        input_length: callOptions.inputText.length,
-        truncated: callOptions.truncated ?? false,
+        'ai.cache': true,
       })
       return await cached
     }
@@ -619,48 +629,20 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
       .then(
         (text) => {
           logger?.info('AI 调用完成', {
-            module: 'ai.runtime',
-            operation: 'generate',
+            ...baseLogFields,
             outcome: 'success',
-            source_id: callOptions.entryRuntime.sourceId,
-            item_id: callOptions.entryRuntime.entryId,
-            provider: callOptions.invocation.provider.type,
-            provider_id: callOptions.invocation.provider.id,
-            model: callOptions.invocation.model.model,
-            model_ref: callOptions.invocation.model.ref,
-            variant: callOptions.invocation.variantId,
-            prompt_id: callOptions.promptId,
-            stage: callOptions.stage,
-            chunk_index: callOptions.chunkIndex,
-            chunk_count: callOptions.chunkCount,
-            input_length: callOptions.inputText.length,
             output_length: text.length,
-            truncated: callOptions.truncated ?? false,
             duration_ms: now() - startedAt,
           })
           return text
         },
         (error) => {
           logger?.error('AI 调用失败', {
-            module: 'ai.runtime',
-            operation: 'generate',
+            ...baseLogFields,
             outcome: 'failure',
-            source_id: callOptions.entryRuntime.sourceId,
-            item_id: callOptions.entryRuntime.entryId,
-            provider: callOptions.invocation.provider.type,
-            provider_id: callOptions.invocation.provider.id,
-            model: callOptions.invocation.model.model,
-            model_ref: callOptions.invocation.model.ref,
-            variant: callOptions.invocation.variantId,
-            prompt_id: callOptions.promptId,
-            stage: callOptions.stage,
-            chunk_index: callOptions.chunkIndex,
-            chunk_count: callOptions.chunkCount,
-            input_length: callOptions.inputText.length,
-            truncated: callOptions.truncated ?? false,
             duration_ms: now() - startedAt,
             error_name: error instanceof Error ? error.name : 'Error',
-            error_message: error instanceof Error ? error.message : String(error),
+            error_message: AI_FAILURE_MESSAGE,
           })
           throw error
         },

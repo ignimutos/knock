@@ -106,14 +106,22 @@ Deno.test('emailDelivery: transporter 失败时应记录失败日志并抛错', 
   )
 
   assertEquals(
-    logs.some(
-      (item) =>
-        item.module === 'delivery.email' && item.operation === 'push' && item.outcome === 'failure',
-    ),
+    logs.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'delivery.email' &&
+        attributes.operation === 'push' &&
+        attributes.outcome === 'failure'
+      )
+    }),
     true,
   )
   assertEquals(
-    logs.some((item) => String(item.error_message ?? '').includes('smtp failed')),
+    logs.some((item) => {
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return String(attributes['exception.message'] ?? '').includes('smtp failed')
+    }),
     true,
   )
 })

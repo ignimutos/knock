@@ -325,7 +325,7 @@ sources:
 logging:
   # 日志级别（可选；默认: info）
   level: info
-  # 日志格式（可选；默认: json）
+  # 日志格式（可选；默认: json；支持: json | pretty）
   format: json
   # 日志输出 sinks 配置（可选；默认: 内置默认值）
   sinks:

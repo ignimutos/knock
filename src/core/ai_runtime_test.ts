@@ -3,7 +3,7 @@ import { resolveConfig } from '../config/resolve_config.ts'
 import { validateConfig } from '../config/validate_config.ts'
 import type { AppConfigInput } from '../config/schema.ts'
 import { createAiRuntime } from './ai_runtime.ts'
-import type { Logger } from './logger.ts'
+import { createLogger } from './logger.ts'
 
 function createResolvedAiConfig(context = 8192) {
   return resolveConfig(
@@ -44,19 +44,35 @@ function createResolvedAiConfig(context = 8192) {
   ).ai!
 }
 
-function createTestLogger(records: Array<Record<string, unknown>>): Logger {
-  const write = (level: string, message: string, fields?: Record<string, unknown>) => {
-    records.push({ level, message, ...(fields ?? {}) })
-  }
+function parseRecord(line: string): Record<string, unknown> {
+  return JSON.parse(line) as Record<string, unknown>
+}
 
-  return {
-    trace: (message, fields) => write('trace', message, fields),
-    debug: (message, fields) => write('debug', message, fields),
-    info: (message, fields) => write('info', message, fields),
-    warn: (message, fields) => write('warn', message, fields),
-    error: (message, fields) => write('error', message, fields),
-    child: () => createTestLogger(records),
+function getScopeName(record: Record<string, unknown>): string {
+  const scope = record.scope
+  if (!scope || typeof scope !== 'object') {
+    throw new Error('缺少 scope')
   }
+  return String((scope as { name?: unknown }).name ?? '')
+}
+
+function getAttributes(record: Record<string, unknown>): Record<string, unknown> {
+  const attributes = record.attributes
+  if (!attributes || typeof attributes !== 'object') {
+    throw new Error('缺少 attributes')
+  }
+  return attributes as Record<string, unknown>
+}
+
+function createJsonLogger(lines: string[], module = 'core.ai.runtime') {
+  return createLogger({
+    enabled: true,
+    level: 'info',
+    module,
+    writeStdout: (line) => lines.push(line),
+    writeStderr: (line) => lines.push(line),
+    writeWarn: (line) => lines.push(line),
+  })
 }
 
 Deno.test('aiRuntime: translate 0 参数走默认模型与默认 language', async () => {
@@ -311,44 +327,110 @@ Deno.test('aiRuntime: 缺少默认 language 时 translate 应直接报错', asyn
   )
 })
 
-Deno.test('aiRuntime: AI 失败应记录元信息但不泄露正文', async () => {
-  const logs: Array<Record<string, unknown>> = []
+Deno.test('aiRuntime: AI 调用完成与缓存命中应继承注入 logger module 并不泄露正文', async () => {
+  const lines: string[] = []
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(),
     defaultLanguage: 'zh-CN',
-    logger: createTestLogger(logs),
+    logger: createJsonLogger(lines, 'test.ai.runtime'),
     now: (() => {
       const values = [1000, 1020]
       let index = 0
       return () => values[index++] ?? values[values.length - 1]
     })(),
-    generateText: () => Promise.reject(new Error('upstream broken')),
+    generateText: () => Promise.resolve({ text: '译文结果' }),
+  })
+
+  const entryRuntime = runtime.createEntryRuntime('source-a', 'entry-a')
+  const first = await runtime.translate(entryRuntime, 'very secret body')
+  const second = await runtime.translate(entryRuntime, 'very secret body')
+
+  assertEquals(first, '译文结果')
+  assertEquals(second, '译文结果')
+  assertEquals(lines.length, 2)
+
+  const successRecord = parseRecord(lines[0])
+  const successAttributes = getAttributes(successRecord)
+  assertEquals(successRecord.body, 'AI 调用完成')
+  assertEquals(getScopeName(successRecord), 'test.ai.runtime')
+  assertEquals(successAttributes.operation, 'generate')
+  assertEquals(successAttributes.outcome, 'success')
+  assertEquals(successAttributes.source_id, 'source-a')
+  assertEquals(successAttributes.item_id, 'entry-a')
+  assertEquals(successAttributes.duration_ms, 20)
+  assertEquals(successAttributes.input_length, 16)
+  assertEquals(successAttributes.output_length, 4)
+  assertEquals(successAttributes.truncated, false)
+  assertEquals(successAttributes['ai.provider'], 'openai')
+  assertEquals(successAttributes['ai.model'], 'gpt-4o-mini')
+  assertEquals(successAttributes['ai.model_ref'], 'openai_main/default')
+  assertEquals(successAttributes['ai.prompt_id'], 'ai_translate')
+  assertEquals(successAttributes['ai.stage'], 'translate.single')
+  assertEquals(successAttributes['ai.cache'], false)
+  assertEquals(successAttributes['ai.chunk'], false)
+  assertEquals(String(JSON.stringify(successRecord)).includes('secret'), false)
+
+  const cacheHitRecord = parseRecord(lines[1])
+  const cacheHitAttributes = getAttributes(cacheHitRecord)
+  assertEquals(cacheHitRecord.body, 'AI 缓存命中')
+  assertEquals(getScopeName(cacheHitRecord), 'test.ai.runtime')
+  assertEquals(cacheHitAttributes.operation, 'generate')
+  assertEquals(cacheHitAttributes.outcome, 'cache_hit')
+  assertEquals(cacheHitAttributes.source_id, 'source-a')
+  assertEquals(cacheHitAttributes.item_id, 'entry-a')
+  assertEquals(cacheHitAttributes.input_length, 16)
+  assertEquals(cacheHitAttributes.truncated, false)
+  assertEquals(cacheHitAttributes['ai.provider'], 'openai')
+  assertEquals(cacheHitAttributes['ai.model'], 'gpt-4o-mini')
+  assertEquals(cacheHitAttributes['ai.model_ref'], 'openai_main/default')
+  assertEquals(cacheHitAttributes['ai.prompt_id'], 'ai_translate')
+  assertEquals(cacheHitAttributes['ai.stage'], 'translate.single')
+  assertEquals(cacheHitAttributes['ai.cache'], true)
+  assertEquals(cacheHitAttributes['ai.chunk'], false)
+  assertEquals(String(JSON.stringify(cacheHitRecord)).includes('secret'), false)
+})
+
+Deno.test('aiRuntime: AI 失败应写入固定摘要且继承注入 logger module', async () => {
+  const lines: string[] = []
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    logger: createJsonLogger(lines, 'test.ai.runtime'),
+    now: (() => {
+      const values = [1000, 1020]
+      let index = 0
+      return () => values[index++] ?? values[values.length - 1]
+    })(),
+    generateText: () => Promise.reject(new Error('provider returned very secret body')),
   })
 
   await assertRejects(
     () => runtime.translate(runtime.createEntryRuntime('source-a', 'entry-a'), 'very secret body'),
     Error,
-    'upstream broken',
+    'provider returned very secret body',
   )
 
-  assertEquals(
-    logs.some(
-      (item) =>
-        item.message === 'AI 调用失败' &&
-        item.provider === 'openai' &&
-        item.model_ref === 'openai_main/default' &&
-        item.stage === 'translate.single' &&
-        item.input_length === 16 &&
-        item.error_message === 'upstream broken',
-    ),
-    true,
-  )
-  assertEquals(
-    logs.some((item) => String(item.prompt ?? '').includes('secret')),
-    false,
-  )
-  assertEquals(
-    logs.some((item) => String(item.input_text ?? '').includes('secret')),
-    false,
-  )
+  assertEquals(lines.length, 1)
+  const record = parseRecord(lines[0])
+  const attributes = getAttributes(record)
+  assertEquals(record.body, 'AI 调用失败')
+  assertEquals(getScopeName(record), 'test.ai.runtime')
+  assertEquals(attributes.operation, 'generate')
+  assertEquals(attributes.outcome, 'failure')
+  assertEquals(attributes.source_id, 'source-a')
+  assertEquals(attributes.item_id, 'entry-a')
+  assertEquals(attributes.duration_ms, 20)
+  assertEquals(attributes.input_length, 16)
+  assertEquals(attributes.truncated, false)
+  assertEquals(attributes['exception.type'], 'Error')
+  assertEquals(attributes['exception.message'], 'AI 调用失败，错误详情已省略')
+  assertEquals(attributes['ai.provider'], 'openai')
+  assertEquals(attributes['ai.model'], 'gpt-4o-mini')
+  assertEquals(attributes['ai.model_ref'], 'openai_main/default')
+  assertEquals(attributes['ai.prompt_id'], 'ai_translate')
+  assertEquals(attributes['ai.stage'], 'translate.single')
+  assertEquals(attributes['ai.cache'], false)
+  assertEquals(attributes['ai.chunk'], false)
+  assertEquals(String(JSON.stringify(record)).includes('secret'), false)
+  assertEquals(String(JSON.stringify(record)).includes('provider returned'), false)
 })

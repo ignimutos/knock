@@ -462,14 +462,20 @@ Deno.test('httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', as
   )
 
   const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
-  const failureLog = output.find(
-    (item) =>
-      item.module === 'delivery.http' && item.operation === 'push' && item.outcome === 'failure',
-  )
+  const failureLog = output.find((item) => {
+    const scope = (item.scope ?? {}) as Record<string, unknown>
+    const attributes = (item.attributes ?? {}) as Record<string, unknown>
+    return (
+      scope.name === 'delivery.http' &&
+      attributes.operation === 'push' &&
+      attributes.outcome === 'failure'
+    )
+  })
+  const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
   assertEquals(Boolean(failureLog), true)
-  assertEquals(failureLog?.http_status, 500)
+  assertEquals(failureAttributes['http.response.status_code'], 500)
   assertEquals(
-    failureLog?.response_body,
+    failureAttributes.response_body,
     JSON.stringify({ ok: false, description: "Bad Request: can't parse entities" }),
   )
   assertEquals(closeCalls, 1)

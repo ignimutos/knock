@@ -171,14 +171,14 @@ test('fileDelivery: backups 超限时应清理最老轮转文件', async () => {
   assertEquals(rotated.length, 1)
 })
 
-test('fileDelivery: 触发 rotation 时应记录检查、触发和清理日志', async () => {
+test('fileDelivery: 触发 rotation 时应以 debug 记录检查、触发、清理与写入日志', async () => {
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 
   const logs: string[] = []
   const logger = createLogger({
     enabled: true,
-    level: 'info',
+    level: 'debug',
     module: 'delivery.file',
     now: () => new Date('2026-03-24T21:45:12.345Z'),
     writeStdout: (line: string) => logs.push(line),
@@ -205,37 +205,74 @@ test('fileDelivery: 触发 rotation 时应记录检查、触发和清理日志',
 
   const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
   assertEquals(
-    output.some((item) => item.module === 'delivery.file' && item.operation === 'rotation_check'),
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        item.severityText === 'DEBUG' &&
+        scope.name === 'delivery.file' &&
+        attributes.operation === 'rotation_check'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        item.severityText === 'DEBUG' &&
+        scope.name === 'delivery.file' &&
+        attributes.operation === 'rotate_file' &&
+        attributes.outcome === 'success'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        item.severityText === 'DEBUG' &&
+        scope.name === 'delivery.file' &&
+        attributes.operation === 'prune_backups' &&
+        attributes.outcome === 'success'
+      )
+    }),
     true,
   )
   assertEquals(
     output.some(
-      (item) =>
-        item.module === 'delivery.file' &&
-        item.operation === 'rotate_file' &&
-        item.outcome === 'success',
+      (item) => ((item.attributes ?? {}) as Record<string, unknown>).rotation_enabled === true,
+    ),
+    true,
+  )
+  assertEquals(
+    output.some(
+      (item) => ((item.attributes ?? {}) as Record<string, unknown>).rotation_reason === 'size',
     ),
     true,
   )
   assertEquals(
     output.some(
       (item) =>
-        item.module === 'delivery.file' &&
-        item.operation === 'prune_backups' &&
-        item.outcome === 'success',
+        item.severityText === 'DEBUG' &&
+        typeof ((item.attributes ?? {}) as Record<string, unknown>).rotated_path === 'string',
     ),
     true,
   )
   assertEquals(
-    output.some((item) => item.rotation_enabled === true),
-    true,
-  )
-  assertEquals(
-    output.some((item) => item.rotation_reason === 'size'),
-    true,
-  )
-  assertEquals(
-    output.some((item) => typeof item.rotated_path === 'string'),
+    output.some((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        item.severityText === 'DEBUG' &&
+        scope.name === 'delivery.file' &&
+        attributes.operation === 'push' &&
+        attributes.outcome === 'success'
+      )
+    }),
     true,
   )
 })

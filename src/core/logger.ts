@@ -1,7 +1,9 @@
+import { getPrettyFormatter } from '@logtape/pretty'
 import { redactByPattern } from '@logtape/redaction'
 import type { LogRecord } from '@logtape/logtape'
+import { fromFileUrl } from '@std/path'
 import { DateTime } from 'luxon'
-import type { LogLevel } from '../config/types.ts'
+import type { LogFormat, LogLevel } from '../config/types.ts'
 
 export type LogFields = Record<string, unknown>
 
@@ -17,6 +19,7 @@ export interface Logger {
 export interface CreateLoggerOptions {
   enabled: boolean
   level: LogLevel
+  format?: LogFormat
   module: string
   component?: string
   service?: string
@@ -30,6 +33,23 @@ export interface CreateLoggerOptions {
   baseFields?: LogFields
 }
 
+interface OTelLogRecord {
+  timeUnixNano: string
+  observedTimeUnixNano: string
+  severityText: string
+  severityNumber: number
+  body: string
+  traceId: string
+  spanId: string
+  resource: {
+    attributes: Record<string, unknown>
+  }
+  scope: {
+    name: string
+  }
+  attributes: Record<string, unknown>
+}
+
 const LEVEL_WEIGHT: Record<LogLevel, number> = {
   trace: 10,
   debug: 20,
@@ -37,6 +57,18 @@ const LEVEL_WEIGHT: Record<LogLevel, number> = {
   warn: 40,
   error: 50,
 }
+
+const SEVERITY_NUMBER: Record<LogLevel, number> = {
+  trace: 1,
+  debug: 5,
+  info: 9,
+  warn: 13,
+  error: 17,
+}
+
+const LOGGER_FILE_MARKER = '/src/core/logger.ts'
+const DEFAULT_CODE_ATTRIBUTES_CACHE_LIMIT = 1024
+const codeAttributesCache = new Map<string, Record<string, unknown> | null>()
 
 function formatTime(input: Date, timezone: string, timestampFormat: string): string {
   return DateTime.fromJSDate(input, { zone: timezone }).toFormat(timestampFormat)
@@ -65,36 +97,6 @@ function normalizeValue(value: unknown): unknown {
   if (value === null) return ''
   if (typeof value === 'string') return value.replace(/\s+/g, ' ').trim()
   return value
-}
-
-function serializeFields(fields: Record<string, unknown>): string {
-  const normalized = Object.entries(fields).filter(([, value]) => value !== undefined)
-
-  const priorityKeys = [
-    'timestamp',
-    'level',
-    'service',
-    'env',
-    'component',
-    'module',
-    'operation',
-    'message',
-    'outcome',
-  ]
-  normalized.sort(([left], [right]) => {
-    const leftPriority = priorityKeys.indexOf(left)
-    const rightPriority = priorityKeys.indexOf(right)
-    const leftRank = leftPriority === -1 ? Number.MAX_SAFE_INTEGER : leftPriority
-    const rightRank = rightPriority === -1 ? Number.MAX_SAFE_INTEGER : rightPriority
-    if (leftRank !== rightRank) return leftRank - rightRank
-    return left.localeCompare(right)
-  })
-
-  const payload: Record<string, unknown> = {}
-  for (const [key, value] of normalized) {
-    payload[key] = value
-  }
-  return JSON.stringify(payload)
 }
 
 const SENSITIVE_FIELD_KEYS = new Set([
@@ -223,6 +225,225 @@ function sanitizeFields(fields: Record<string, unknown>): Record<string, unknown
   return sanitized
 }
 
+function toUnixNano(date: Date): string {
+  return (BigInt(date.getTime()) * 1_000_000n).toString()
+}
+
+function extractStringField(
+  fields: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = fields[key]
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+function remapAttributeKey(key: string): string {
+  switch (key) {
+    case 'method':
+    case 'http_method':
+      return 'http.request.method'
+    case 'route':
+      return 'http.route'
+    case 'http_status':
+      return 'http.response.status_code'
+    case 'error_name':
+      return 'exception.type'
+    case 'error_message':
+      return 'exception.message'
+    case 'stack':
+      return 'exception.stacktrace'
+    default:
+      return key
+  }
+}
+
+function normalizeAttributeFields(fields: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue
+
+    const normalizedKey = toSnakeCase(key)
+    if (
+      normalizedKey === 'module' ||
+      normalizedKey === 'trace_id' ||
+      normalizedKey === 'span_id' ||
+      normalizedKey === 'service' ||
+      normalizedKey === 'env' ||
+      normalizedKey === 'component'
+    ) {
+      continue
+    }
+
+    normalized[remapAttributeKey(normalizedKey)] = value
+  }
+
+  return sanitizeFields(normalized)
+}
+
+function formatPretty(
+  record: OTelLogRecord,
+  options: {
+    timestamp: Date
+    timezone: string
+    timestampFormat: string
+    prettyFormatter: ReturnType<typeof getPrettyFormatter>
+  },
+): string {
+  const level = record.severityText.toLowerCase()
+  const prettyLevel = level === 'warn' ? 'warning' : level
+  const line = options.prettyFormatter({
+    category: ['knock', record.scope.name],
+    level: prettyLevel as LogRecord['level'],
+    message: [record.body],
+    rawMessage: record.body,
+    properties: {
+      traceId: record.traceId,
+      spanId: record.spanId,
+      resource: record.resource.attributes,
+      attributes: record.attributes,
+    },
+    timestamp: options.timestamp.getTime(),
+  } as LogRecord)
+
+  return `${formatTime(options.timestamp, options.timezone, options.timestampFormat)} ${line}`.trimEnd()
+}
+
+function toPathname(location: string): string {
+  if (location.startsWith('file://')) {
+    try {
+      return fromFileUrl(location)
+    } catch {
+      return location
+    }
+  }
+  return location
+}
+
+function isAbsoluteFilePath(location: string): boolean {
+  return location.startsWith('/') || /^[A-Za-z]:[\\/]/.test(location)
+}
+
+function normalizeStackLocation(rawLocation: string): string {
+  return rawLocation.replace(/^async\s+/, '').trim()
+}
+
+function normalizePathSeparators(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
+function isLoggerSelfFrame(location: string): boolean {
+  return normalizePathSeparators(location).includes(LOGGER_FILE_MARKER)
+}
+
+export function setBoundedMapEntry<K, V>(map: Map<K, V>, key: K, value: V, limit: number): V {
+  if (map.has(key)) {
+    map.delete(key)
+  }
+  map.set(key, value)
+
+  while (map.size > limit) {
+    const oldestKey = map.keys().next().value
+    if (oldestKey === undefined) break
+    map.delete(oldestKey)
+  }
+
+  return value
+}
+
+function setCodeAttributesCacheEntry(
+  line: string,
+  value: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  return setBoundedMapEntry(codeAttributesCache, line, value, DEFAULT_CODE_ATTRIBUTES_CACHE_LIMIT)
+}
+
+function resolveBusinessLocation(rawLocation: string): string | null {
+  const normalizedLocation = normalizeStackLocation(rawLocation)
+  if (normalizedLocation.startsWith('file://')) {
+    const pathname = toPathname(normalizedLocation)
+    return isAbsoluteFilePath(pathname) ? pathname : null
+  }
+
+  return isAbsoluteFilePath(normalizedLocation) ? normalizedLocation : null
+}
+
+function parseCodeAttributesFromStackLine(line: string): Record<string, unknown> | null {
+  const cached = codeAttributesCache.get(line)
+  if (cached !== undefined) return cached
+
+  const match = line.match(/^\s*at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?$/)
+  if (!match) {
+    return setCodeAttributesCacheEntry(line, null)
+  }
+
+  const [, functionName, rawLocation, lineNumber] = match
+  const location = resolveBusinessLocation(rawLocation)
+  if (!location || isLoggerSelfFrame(location)) {
+    return setCodeAttributesCacheEntry(line, null)
+  }
+
+  const attributes: Record<string, unknown> = {
+    'code.filepath': location,
+    'code.line.number': Number(lineNumber),
+  }
+  if (functionName && functionName.trim() !== '') {
+    attributes['code.function.name'] = functionName.trim()
+  }
+
+  return setCodeAttributesCacheEntry(line, attributes)
+}
+
+function getCodeAttributes(): Record<string, unknown> {
+  try {
+    const stack = new Error().stack
+    if (!stack) return {}
+
+    const lines = stack.split('\n').slice(1)
+    for (const line of lines) {
+      const attributes = parseCodeAttributesFromStackLine(line)
+      if (attributes) return attributes
+    }
+  } catch {
+    return {}
+  }
+
+  return {}
+}
+
+function buildLogRecord(input: {
+  level: LogLevel
+  message: string
+  module: string
+  timestamp: Date
+  resourceAttributes: Record<string, unknown>
+  attributes: Record<string, unknown>
+  traceId: string
+  spanId: string
+}): OTelLogRecord {
+  return {
+    timeUnixNano: toUnixNano(input.timestamp),
+    observedTimeUnixNano: toUnixNano(input.timestamp),
+    severityText: input.level.toUpperCase(),
+    severityNumber: SEVERITY_NUMBER[input.level],
+    body: redactText(input.message),
+    traceId: input.traceId,
+    spanId: input.spanId,
+    resource: {
+      attributes: sanitizeFields(input.resourceAttributes),
+    },
+    scope: {
+      name: input.module,
+    },
+    attributes: input.attributes,
+  }
+}
+
 /**
  * 生成一次 source 执行的关联 ID，保证跨模块日志可按 run_id 聚合。
  */
@@ -234,41 +455,69 @@ export function createRunId(sourceId: string, now: Date = new Date()): string {
  * 创建结构化 logger。
  *
  * 契约：
- * - 所有字段都会统一序列化为 `snake_case`
- * - 脱敏通过 LogTape 官方 redaction 执行
+ * - 默认 JSON 输出遵循 OTel/OTLP 风格字段
+ * - pretty 与 json 共用同一份脱敏后的记录数据源
  * - child logger 只叠加上下文字段，不改变 level 与 enabled 行为
  */
 export function createLogger(options: CreateLoggerOptions): Logger {
   const now = options.now ?? (() => new Date())
   const timezone = options.timezone ?? 'UTC'
   const timestampFormat = options.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss'
+  const format = options.format ?? 'json'
   const writeStdout = options.writeStdout ?? ((line: string) => console.log(line))
   const writeWarn = options.writeWarn ?? ((line: string) => console.warn(line))
   const writeStderr = options.writeStderr ?? ((line: string) => console.error(line))
-  const baseFields = {
-    service: options.service ?? 'knock',
-    env: options.env ?? 'dev',
-    component: options.component,
-    ...options.baseFields,
+  const baseFields = { ...(options.baseFields ?? {}) }
+  const resourceAttributes = {
+    'service.name': options.service ?? 'knock',
+    'deployment.environment.name': options.env ?? 'dev',
+    ...(options.component ? { 'knock.component': options.component } : {}),
   }
+  const prettyFormatter =
+    format === 'pretty'
+      ? getPrettyFormatter({
+          colors: false,
+          timestamp: 'none',
+          properties: true,
+          categorySeparator: '·',
+          categoryTruncate: false,
+          categoryWidth: 0,
+          icons: true,
+          align: true,
+          wordWrap: false,
+        })
+      : undefined
 
   const emitLog = (level: LogLevel, message: string, fields: LogFields = {}) => {
     if (!options.enabled) return
     if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[options.level]) return
 
-    const merged = {
-      ...baseFields,
-      ...fields,
-      timestamp: formatTime(now(), timezone, timestampFormat),
-      level,
-      service: baseFields.service,
-      env: baseFields.env,
-      module: typeof fields.module === 'string' ? fields.module : options.module,
-      operation: fields.operation,
-      message,
-      outcome: fields.outcome,
+    const timestamp = now()
+    const mergedFields = { ...baseFields, ...fields }
+    const module = typeof mergedFields.module === 'string' ? mergedFields.module : options.module
+    const traceId = extractStringField(mergedFields, 'traceId', 'trace_id') ?? ''
+    const spanId = extractStringField(mergedFields, 'spanId', 'span_id') ?? ''
+
+    const attributes = {
+      ...getCodeAttributes(),
+      ...normalizeAttributeFields(mergedFields),
     }
-    const line = serializeFields(sanitizeFields(merged))
+
+    const record = buildLogRecord({
+      level,
+      message,
+      module,
+      timestamp,
+      resourceAttributes,
+      attributes,
+      traceId,
+      spanId,
+    })
+
+    const line =
+      format === 'pretty' && prettyFormatter
+        ? formatPretty(record, { timestamp, timezone, timestampFormat, prettyFormatter })
+        : JSON.stringify(record)
 
     if (level === 'error') {
       writeStderr(line)
@@ -292,10 +541,16 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     child: (fields: LogFields) => {
       const nextFields = { ...fields }
       const moduleOverride = typeof nextFields.module === 'string' ? nextFields.module : undefined
+      const componentOverride =
+        typeof nextFields.component === 'string' ? nextFields.component : options.component
       if (moduleOverride) delete nextFields.module
+      if (typeof nextFields.component === 'string') delete nextFields.component
+
       return createLogger({
         ...options,
+        format,
         module: moduleOverride ?? options.module,
+        component: componentOverride,
         baseFields: { ...baseFields, ...nextFields },
       })
     },
