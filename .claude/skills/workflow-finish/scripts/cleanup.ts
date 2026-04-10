@@ -98,9 +98,14 @@ async function main() {
   const normalizedRootRepoPath = normalize(resolve(rootRepoPath))
 
   if (!normalizedWorktreePath.includes('/.claude/worktrees/')) {
-    fail(action, 'cleanup_requires_worktree_path', 'cleanup 只允许处理 .claude/worktrees 下的 worktree', {
-      worktreePath: normalizedWorktreePath,
-    })
+    fail(
+      action,
+      'cleanup_requires_worktree_path',
+      'cleanup 只允许处理 .claude/worktrees 下的 worktree',
+      {
+        worktreePath: normalizedWorktreePath,
+      },
+    )
   }
 
   const expectedRootRepoPath = getRootRepoPathByConvention(normalizedWorktreePath)
@@ -173,13 +178,18 @@ async function main() {
     normalizedRootRepoPath,
   )
   if (mergedIntoRoot.code !== 0) {
-    fail(action, 'branch_not_fully_merged', 'featureBranch 尚未完全并入主工作区当前分支，拒绝 cleanup', {
-      rootRepoPath: normalizedRootRepoPath,
-      featureBranch,
-      rootCurrentBranch,
-      stdout: mergedIntoRoot.stdout,
-      stderr: mergedIntoRoot.stderr,
-    })
+    fail(
+      action,
+      'branch_not_fully_merged',
+      'featureBranch 尚未完全并入主工作区当前分支，拒绝 cleanup',
+      {
+        rootRepoPath: normalizedRootRepoPath,
+        featureBranch,
+        rootCurrentBranch,
+        stdout: mergedIntoRoot.stdout,
+        stderr: mergedIntoRoot.stderr,
+      },
+    )
   }
 
   console.log('删除 worktree')
