@@ -94,6 +94,52 @@ type GenerateTextFn = (input: GenerateTextInput) => Promise<GenerateTextResult>
 
 const AI_FAILURE_MESSAGE = 'AI 调用失败，错误详情已省略'
 
+function getErrorStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const statusCode = (error as Record<string, unknown>).statusCode
+  return typeof statusCode === 'number' ? statusCode : undefined
+}
+
+function getErrorRetryable(error: unknown): boolean | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const isRetryable = (error as Record<string, unknown>).isRetryable
+  return typeof isRetryable === 'boolean' ? isRetryable : undefined
+}
+
+function getSafeErrorMessage(error: unknown): string | undefined {
+  const statusCode = getErrorStatusCode(error)
+  switch (statusCode) {
+    case 400:
+      return 'Bad Request'
+    case 401:
+      return 'Unauthorized'
+    case 403:
+      return 'Forbidden'
+    case 404:
+      return 'Not Found'
+    case 408:
+      return 'Request Timeout'
+    case 409:
+      return 'Conflict'
+    case 413:
+      return 'Payload Too Large'
+    case 422:
+      return 'Unprocessable Entity'
+    case 429:
+      return 'Too Many Requests'
+    case 500:
+      return 'Internal Server Error'
+    case 502:
+      return 'Bad Gateway'
+    case 503:
+      return 'Service Unavailable'
+    case 504:
+      return 'Gateway Timeout'
+    default:
+      return undefined
+  }
+}
+
 interface ResolvedAiInvocation {
   provider: AiProviderResolved
   model: AiModelResolved
@@ -643,6 +689,9 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
             duration_ms: now() - startedAt,
             error_name: error instanceof Error ? error.name : 'Error',
             error_message: AI_FAILURE_MESSAGE,
+            'ai.error.status_code': getErrorStatusCode(error),
+            'ai.error.retryable': getErrorRetryable(error),
+            'ai.error.message': getSafeErrorMessage(error),
           })
           throw error
         },

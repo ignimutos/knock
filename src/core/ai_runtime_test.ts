@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
 import { resolveConfig } from '../config/resolve_config.ts'
 import { validateConfig } from '../config/validate_config.ts'
 import type { AppConfigInput } from '../config/schema.ts'
@@ -424,6 +424,9 @@ Deno.test('aiRuntime: AI 失败应写入固定摘要且继承注入 logger modul
   assertEquals(attributes.truncated, false)
   assertEquals(attributes['exception.type'], 'Error')
   assertEquals(attributes['exception.message'], 'AI 调用失败，错误详情已省略')
+  assertEquals(attributes['ai.error.message'], undefined)
+  assertEquals(attributes['ai.error.status_code'], undefined)
+  assertEquals(attributes['ai.error.retryable'], undefined)
   assertEquals(attributes['ai.provider'], 'openai')
   assertEquals(attributes['ai.model'], 'gpt-4o-mini')
   assertEquals(attributes['ai.model_ref'], 'openai_main/default')
@@ -433,4 +436,44 @@ Deno.test('aiRuntime: AI 失败应写入固定摘要且继承注入 logger modul
   assertEquals(attributes['ai.chunk'], false)
   assertEquals(String(JSON.stringify(record)).includes('secret'), false)
   assertEquals(String(JSON.stringify(record)).includes('provider returned'), false)
+})
+
+Deno.test('aiRuntime: AI 401 失败应记录安全诊断字段而不泄露原始 body', async () => {
+  const lines: string[] = []
+  const error = Object.assign(new Error('Unauthorized'), {
+    name: 'AI_APICallError',
+    statusCode: 401,
+    isRetryable: false,
+    responseBody: 'very secret provider body',
+  })
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    logger: createJsonLogger(lines, 'test.ai.runtime'),
+    now: (() => {
+      const values = [1000, 1006]
+      let index = 0
+      return () => values[index++] ?? values[values.length - 1]
+    })(),
+    generateText: () => Promise.reject(error),
+  })
+
+  await assertRejects(
+    () => runtime.translate(runtime.createEntryRuntime('source-a', 'entry-a'), 'hello body'),
+    Error,
+    'Unauthorized',
+  )
+
+  assertEquals(lines.length, 1)
+  const record = parseRecord(lines[0])
+  const attributes = getAttributes(record)
+  assertEquals(record.body, 'AI 调用失败')
+  assertEquals(attributes['exception.type'], 'AI_APICallError')
+  assertEquals(attributes['exception.message'], 'AI 调用失败，错误详情已省略')
+  assertEquals(attributes['ai.error.message'], 'Unauthorized')
+  assertEquals(attributes['ai.error.status_code'], 401)
+  assertEquals(attributes['ai.error.retryable'], false)
+  assertEquals(String(JSON.stringify(record)).includes('very secret provider body'), false)
+  assertEquals(String(JSON.stringify(record)).includes('hello body'), false)
+  assertStringIncludes(String(JSON.stringify(record)), 'Unauthorized')
 })
