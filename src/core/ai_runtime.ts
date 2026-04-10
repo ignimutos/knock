@@ -29,6 +29,7 @@ const PROVIDER_BYTES_PER_TOKEN = {
   gemini: 3.2,
 } as const
 const TOKEN_SAFETY_BUFFER = 512
+const DEFAULT_SUMMARIZE_LENGTH = 200
 
 type ProviderType = NonNullable<AiProviderResolved['type']>
 export type AiPromptStage =
@@ -67,6 +68,8 @@ export interface AiTranslateOptions {
 export interface AiSummarizeOptions {
   model?: string
   variant?: string
+  language?: string
+  length?: number
 }
 
 export interface CreateAiRuntimeOptions {
@@ -199,6 +202,10 @@ function hashString(value: string): string {
     hash = Math.imul(hash, 16777619)
   }
   return (hash >>> 0).toString(16)
+}
+
+function hashAiFingerprint(parts: Array<string | number | undefined>): string {
+  return hashString(parts.map((part) => String(part ?? '')).join('|'))
 }
 
 function estimateTokens(providerType: ProviderType, text: string): number {
@@ -436,9 +443,27 @@ function buildTranslateChunkPrompt(
   }
 }
 
-function buildSummarizeSinglePrompt(text: string): { system: string; prompt: string } {
+function buildSummarizeLanguageInstruction(language?: string): string {
+  if (language) {
+    return `直接输出 ${language} 摘要，不要先输出原文语言版本。`
+  }
+  return '默认保持输入文本的主语言；专有名词、代码、标识符与固定术语保持原样，不要隐式翻译。'
+}
+
+function buildSummarizeLengthInstruction(length: number): string {
+  return `最终摘要限制在 ${length} 字以内。`
+}
+
+function buildSummarizeSinglePrompt(
+  text: string,
+  options: { language?: string; length: number },
+): { system: string; prompt: string } {
   return {
-    system: '请提炼用户提供文本的核心信息，只输出摘要，不要解释。',
+    system: [
+      '请提炼用户提供文本的核心信息，只输出摘要，不要解释。',
+      buildSummarizeLanguageInstruction(options.language),
+      buildSummarizeLengthInstruction(options.length),
+    ].join(' '),
     prompt: `<TEXT>\n${text}\n</TEXT>`,
   }
 }
@@ -447,19 +472,30 @@ function buildSummarizeChunkPrompt(
   text: string,
   chunkIndex: number,
   chunkCount: number,
+  language?: string,
 ): {
   system: string
   prompt: string
 } {
   return {
-    system: '请提炼该分段的关键信息，只输出简洁摘要，不要解释。',
+    system: [
+      '请提炼该分段的关键信息，只输出简洁摘要，不要解释。',
+      buildSummarizeLanguageInstruction(language),
+    ].join(' '),
     prompt: `<CHUNK index="${chunkIndex + 1}" total="${chunkCount}">\n${text}\n</CHUNK>`,
   }
 }
 
-function buildSummarizeReducePrompt(text: string): { system: string; prompt: string } {
+function buildSummarizeReducePrompt(
+  text: string,
+  options: { language?: string; length: number },
+): { system: string; prompt: string } {
   return {
-    system: '请基于这些分段摘要生成统一总摘要，只输出最终摘要，不要解释。',
+    system: [
+      '请基于这些分段摘要生成统一总摘要，只输出最终摘要，不要解释。',
+      buildSummarizeLanguageInstruction(options.language),
+      buildSummarizeLengthInstruction(options.length),
+    ].join(' '),
     prompt: `<CHUNK_SUMMARIES>\n${text}\n</CHUNK_SUMMARIES>`,
   }
 }
@@ -793,6 +829,12 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     const text = toText(value)
     const modelRefValue = toTrimmedString('model', summarizeOptions.model)
     const variantValue = toTrimmedString('variant', summarizeOptions.variant)
+    const languageValue = toTrimmedString('language', summarizeOptions.language)
+    const lengthValue = summarizeOptions.length ?? DEFAULT_SUMMARIZE_LENGTH
+    if (!Number.isSafeInteger(lengthValue) || lengthValue < 1) {
+      throw new Error('length 参数必须是正整数')
+    }
+
     const invocation = resolveInvocation(modelRefValue, variantValue)
     const needsChunk = shouldChunkText(
       invocation.provider.type,
@@ -803,16 +845,20 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     )
 
     if (!needsChunk) {
-      const prompt = buildSummarizeSinglePrompt(text)
+      const prompt = buildSummarizeSinglePrompt(text, {
+        language: languageValue,
+        length: lengthValue,
+      })
       return await callAiText({
         entryRuntime,
         promptId: PROMPT_ID_SUMMARIZE,
         stage: 'summarize.single',
         inputText: text,
+        language: languageValue,
         invocation,
         system: prompt.system,
         prompt: prompt.prompt,
-        promptFingerprint: hashString(text),
+        promptFingerprint: hashAiFingerprint([text, languageValue, lengthValue]),
       })
     }
 
@@ -827,20 +873,21 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     const chunkSummaries: string[] = []
 
     for (const [index, chunk] of chunks.entries()) {
-      const prompt = buildSummarizeChunkPrompt(chunk.text, index, chunks.length)
+      const prompt = buildSummarizeChunkPrompt(chunk.text, index, chunks.length, languageValue)
       chunkSummaries.push(
         await callAiText({
           entryRuntime,
           promptId: PROMPT_ID_SUMMARIZE,
           stage: 'summarize.chunk',
           inputText: chunk.text,
+          language: languageValue,
           invocation: {
             ...invocation,
             maxOutputTokens: chunkOutputTokens,
           },
           system: prompt.system,
           prompt: prompt.prompt,
-          promptFingerprint: hashString(`${index}|${chunks.length}|${chunk.text}`),
+          promptFingerprint: hashAiFingerprint([index, chunks.length, chunk.text, languageValue]),
           chunkIndex: index,
           chunkCount: chunks.length,
         }),
@@ -858,16 +905,20 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
       )
 
       if (reduceInputs.length === 1) {
-        const reducePrompt = buildSummarizeReducePrompt(reduceInputs[0])
+        const reducePrompt = buildSummarizeReducePrompt(reduceInputs[0], {
+          language: languageValue,
+          length: lengthValue,
+        })
         return await callAiText({
           entryRuntime,
           promptId: PROMPT_ID_SUMMARIZE,
           stage: 'summarize.reduce',
           inputText: reduceInputs[0],
+          language: languageValue,
           invocation,
           system: reducePrompt.system,
           prompt: reducePrompt.prompt,
-          promptFingerprint: hashString(reduceInputs[0]),
+          promptFingerprint: hashAiFingerprint([reduceInputs[0], languageValue, lengthValue]),
           chunkCount: chunks.length,
           truncated: false,
         })
@@ -875,17 +926,21 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
 
       reduceSummaries = []
       for (const reduceInput of reduceInputs) {
-        const reducePrompt = buildSummarizeReducePrompt(reduceInput)
+        const reducePrompt = buildSummarizeReducePrompt(reduceInput, {
+          language: languageValue,
+          length: lengthValue,
+        })
         reduceSummaries.push(
           await callAiText({
             entryRuntime,
             promptId: PROMPT_ID_SUMMARIZE,
             stage: 'summarize.reduce',
             inputText: reduceInput,
+            language: languageValue,
             invocation,
             system: reducePrompt.system,
             prompt: reducePrompt.prompt,
-            promptFingerprint: hashString(reduceInput),
+            promptFingerprint: hashAiFingerprint([reduceInput, languageValue, lengthValue]),
             chunkCount: chunks.length,
             truncated: false,
           }),

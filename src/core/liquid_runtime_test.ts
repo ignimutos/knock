@@ -400,7 +400,84 @@ Deno.test('liquidRuntime: ai_translate 支持异步渲染并走 entry 级 runtim
   assertEquals(calls.length, 1)
 })
 
-Deno.test('liquidRuntime: ai filter 参数必须是字符串字面量', async () => {
+Deno.test('liquidRuntime: ai filter 命名参数支持字符串与数字字面量', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {
+                creative: {
+                  temperature: 0.8,
+                },
+              },
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        default: {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: 'ok' })
+    },
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+    },
+    entryRuntime,
+  )
+
+  const translated = await runtime.render(
+    "{{ item.content | ai_translate: language: 'ja' }}",
+    context,
+  )
+  const summarized = await runtime.render(
+    "{{ item.content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', length: 80 }}",
+    context,
+  )
+
+  assertEquals(translated, 'ok')
+  assertEquals(summarized, 'ok')
+  assertEquals(calls.length, 2)
+  assertEquals(String(calls[0].system).includes('ja'), true)
+  assertEquals(String(calls[1].system).includes('80 字以内'), true)
+})
+
+Deno.test('liquidRuntime: ai filter 不再兼容旧位置参数', async () => {
   const aiRuntime = createAiRuntime({
     ai: {
       providers: [
@@ -457,8 +534,127 @@ Deno.test('liquidRuntime: ai filter 参数必须是字符串字面量', async ()
   await assertRejects(
     () => runtime.render('{{ item.content | ai_translate: model_name }}', context),
     Error,
+    '仅支持命名参数',
+  )
+})
+
+Deno.test('liquidRuntime: ai filter 命名参数不允许变量值', async () => {
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        default: {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: () => Promise.resolve({ text: 'never' }),
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+      target_lang: 'ja',
+    },
+    entryRuntime,
+  )
+
+  await assertRejects(
+    () => runtime.render('{{ item.content | ai_translate: language: target_lang }}', context),
+    Error,
     '字符串字面量',
   )
+})
+
+Deno.test('liquidRuntime: ai_summarize 的 length 支持字符串数字字面量', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: '摘要' })
+    },
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+    },
+    entryRuntime,
+  )
+
+  const out = await runtime.render("{{ item.content | ai_summarize: length: '80' }}", context)
+
+  assertEquals(out, '摘要')
+  assertEquals(String(calls[0].system).includes('80 字以内'), true)
 })
 
 Deno.test('liquidRuntime: 字符串字面量中的 ai filter 文本不应误报', async () => {

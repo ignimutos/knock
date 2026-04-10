@@ -39,22 +39,25 @@ function parseInvertArg(filterName: string, invert: unknown): boolean {
   throw new Error(`${filterName} 的 invert 参数必须是布尔值`)
 }
 
-function assertAiFilterLiteralArguments(
-  filterName: 'ai_translate' | 'ai_summarize',
+type AiFilterName = 'ai_translate' | 'ai_summarize'
+type AiFilterTokenValue = { kind?: number }
+type AiFilterNamedTokenArg = [string?, AiFilterTokenValue?]
+
+interface AiFilterNamedArg {
+  key: string
+  value: unknown
+  valueToken: AiFilterTokenValue
+}
+
+function getAiFilterNamedArguments(
+  filterName: AiFilterName,
   args: unknown[],
   filterThis: unknown,
-): void {
-  const maxArgs = filterName === 'ai_translate' ? 3 : 2
-  if (args.length > maxArgs) {
-    throw new Error(`${filterName} 仅支持 ${maxArgs} 个字符串字面量参数`)
-  }
-
+): AiFilterNamedArg[] {
   const tokenArgs = (
     filterThis as {
       token?: {
-        args?: Array<{
-          kind?: number
-        }>
+        args?: AiFilterNamedTokenArg[]
       }
     }
   )?.token?.args
@@ -63,50 +66,148 @@ function assertAiFilterLiteralArguments(
     throw new Error(`${filterName} 参数解析失败`)
   }
 
-  for (const tokenArg of tokenArgs) {
-    if (tokenArg?.kind !== TokenKind.Quoted) {
-      throw new Error('AI filter 参数必须是字符串字面量')
+  return tokenArgs.map((tokenArg, index) => {
+    if (!Array.isArray(tokenArg) || tokenArg.length !== 2 || typeof tokenArg[0] !== 'string') {
+      throw new Error(`${filterName} 仅支持命名参数`)
     }
-  }
+
+    const runtimeArg = args[index]
+    if (
+      !Array.isArray(runtimeArg) ||
+      runtimeArg.length !== 2 ||
+      typeof runtimeArg[0] !== 'string' ||
+      runtimeArg[0] !== tokenArg[0]
+    ) {
+      throw new Error(`${filterName} 参数解析失败`)
+    }
+
+    if (!tokenArg[1] || typeof tokenArg[1] !== 'object') {
+      throw new Error(`${filterName} 的 ${tokenArg[0]} 参数缺少值`)
+    }
+
+    return {
+      key: tokenArg[0],
+      value: runtimeArg[1],
+      valueToken: tokenArg[1],
+    }
+  })
 }
 
-function parseTranslateArgs(args: unknown[]): {
+function parseAiStringLiteralArg(
+  filterName: AiFilterName,
+  key: string,
+  value: unknown,
+  valueToken: AiFilterTokenValue,
+): string {
+  if (valueToken.kind !== TokenKind.Quoted) {
+    throw new Error(`${filterName} 的 ${key} 参数必须是字符串字面量`)
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${filterName} 的 ${key} 参数必须是字符串字面量`)
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    throw new Error(`${filterName} 的 ${key} 参数不能为空字符串`)
+  }
+  return trimmed
+}
+
+function parseAiPositiveIntegerArg(
+  filterName: AiFilterName,
+  key: string,
+  value: unknown,
+  valueToken: AiFilterTokenValue,
+): number {
+  if (valueToken.kind !== TokenKind.Quoted && valueToken.kind !== TokenKind.Number) {
+    throw new Error(`${filterName} 的 ${key} 参数必须是正整数，或可解析为正整数的字符串字面量`)
+  }
+
+  const raw =
+    typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : ''
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${filterName} 的 ${key} 参数必须是正整数，或可解析为正整数的字符串字面量`)
+  }
+
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${filterName} 的 ${key} 参数必须是正整数，或可解析为正整数的字符串字面量`)
+  }
+  return parsed
+}
+
+function parseTranslateArgs(
+  args: unknown[],
+  filterThis: unknown,
+): {
   model?: string
   variant?: string
   language?: string
 } {
-  if (args.length > 3) {
-    throw new Error('ai_translate 最多只接受 3 个字符串字面量参数')
-  }
-  for (const arg of args) {
-    if (arg !== undefined && typeof arg !== 'string') {
-      throw new Error('ai_translate 的 model / variant / language 参数必须是字符串字面量')
+  const namedArgs = getAiFilterNamedArguments('ai_translate', args, filterThis)
+  const parsed: {
+    model?: string
+    variant?: string
+    language?: string
+  } = {}
+  const seen = new Set<string>()
+
+  for (const { key, value, valueToken } of namedArgs) {
+    if (seen.has(key)) {
+      throw new Error(`ai_translate 的 ${key} 参数重复`)
+    }
+    seen.add(key)
+
+    switch (key) {
+      case 'model':
+        parsed.model = parseAiStringLiteralArg('ai_translate', key, value, valueToken)
+        break
+      case 'variant':
+        parsed.variant = parseAiStringLiteralArg('ai_translate', key, value, valueToken)
+        break
+      case 'language':
+        parsed.language = parseAiStringLiteralArg('ai_translate', key, value, valueToken)
+        break
+      default:
+        throw new Error(`ai_translate 不支持命名参数 ${key}`)
     }
   }
 
-  if (args.length === 0) return {}
-  if (args.length === 1) return { language: args[0] as string }
-  if (args.length === 2) return { model: args[0] as string, language: args[1] as string }
-  return {
-    model: args[0] as string,
-    variant: args[1] as string,
-    language: args[2] as string,
-  }
+  return parsed
 }
 
-function parseSummarizeArgs(args: unknown[]): { model?: string; variant?: string } {
-  if (args.length > 2) {
-    throw new Error('ai_summarize 最多只接受 2 个字符串字面量参数')
-  }
-  for (const arg of args) {
-    if (arg !== undefined && typeof arg !== 'string') {
-      throw new Error('ai_summarize 的 model / variant 参数必须是字符串字面量')
+function parseSummarizeArgs(
+  args: unknown[],
+  filterThis: unknown,
+): { model?: string; variant?: string; language?: string; length?: number } {
+  const namedArgs = getAiFilterNamedArguments('ai_summarize', args, filterThis)
+  const parsed: { model?: string; variant?: string; language?: string; length?: number } = {}
+  const seen = new Set<string>()
+
+  for (const { key, value, valueToken } of namedArgs) {
+    if (seen.has(key)) {
+      throw new Error(`ai_summarize 的 ${key} 参数重复`)
+    }
+    seen.add(key)
+
+    switch (key) {
+      case 'model':
+        parsed.model = parseAiStringLiteralArg('ai_summarize', key, value, valueToken)
+        break
+      case 'variant':
+        parsed.variant = parseAiStringLiteralArg('ai_summarize', key, value, valueToken)
+        break
+      case 'language':
+        parsed.language = parseAiStringLiteralArg('ai_summarize', key, value, valueToken)
+        break
+      case 'length':
+        parsed.length = parseAiPositiveIntegerArg('ai_summarize', key, value, valueToken)
+        break
+      default:
+        throw new Error(`ai_summarize 不支持命名参数 ${key}`)
     }
   }
 
-  if (args.length === 0) return {}
-  if (args.length === 1) return { model: args[0] as string }
-  return { model: args[0] as string, variant: args[1] as string }
+  return parsed
 }
 
 function getEntryRuntimeFromFilterThis(filterThis: unknown) {
@@ -608,7 +709,6 @@ function registerAiLiquidFilters(engine: Liquid, aiRuntime?: AiRuntime): void {
   engine.registerFilter(
     'ai_translate',
     async function (value: unknown, ...args: unknown[]): Promise<string> {
-      assertAiFilterLiteralArguments('ai_translate', args, this)
       if (!aiRuntime) {
         throw new Error('未配置 ai，无法使用 ai_translate')
       }
@@ -616,14 +716,13 @@ function registerAiLiquidFilters(engine: Liquid, aiRuntime?: AiRuntime): void {
       if (!entryRuntime) {
         throw new Error('缺少 entry 级 AI runtime，无法执行 ai_translate')
       }
-      return await aiRuntime.translate(entryRuntime, value, parseTranslateArgs(args))
+      return await aiRuntime.translate(entryRuntime, value, parseTranslateArgs(args, this))
     },
   )
 
   engine.registerFilter(
     'ai_summarize',
     async function (value: unknown, ...args: unknown[]): Promise<string> {
-      assertAiFilterLiteralArguments('ai_summarize', args, this)
       if (!aiRuntime) {
         throw new Error('未配置 ai，无法使用 ai_summarize')
       }
@@ -631,7 +730,7 @@ function registerAiLiquidFilters(engine: Liquid, aiRuntime?: AiRuntime): void {
       if (!entryRuntime) {
         throw new Error('缺少 entry 级 AI runtime，无法执行 ai_summarize')
       }
-      return await aiRuntime.summarize(entryRuntime, value, parseSummarizeArgs(args))
+      return await aiRuntime.summarize(entryRuntime, value, parseSummarizeArgs(args, this))
     },
   )
 }
