@@ -122,7 +122,10 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     defaultLanguage: config.language,
     logger: logger.child({ module: 'core.ai.runtime' }),
   })
-  const contentRuntime = createContentRuntime({ aiRuntime })
+  const contentRuntime = createContentRuntime({
+    aiRuntime,
+    logger: logger.child({ module: 'content.render' }),
+  })
   const db = createDbClient({
     sqlite: config.sqlite,
     logger: logger.child({ module: 'db.sqlite' }),

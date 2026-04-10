@@ -210,16 +210,25 @@ Deno.test('liquidRuntime: to_markdown 不再接受 format 参数', () => {
   )
 })
 
-Deno.test('liquidRuntime: to_telegram_html 保留 Telegram 支持标签并清理危险内容', () => {
+Deno.test('liquidRuntime: to_telegram_html 默认保留 blockquote expandable 属性', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
+    item: {
+      content: '<blockquote expandable>Quote</blockquote>',
+    },
+  })
+  assertEquals(out, '<blockquote expandable>Quote</blockquote>')
+})
+
+Deno.test('liquidRuntime: to_telegram_html 对齐 Telegram 官方 HTML 子集并清理危险内容', () => {
   const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
     item: {
       content:
-        '<strong>Bold</strong><span class="tg-spoiler">Hidden</span><blockquote>Quote</blockquote><a href="tg://resolve?domain=knock">Open</a><script>alert(1)</script>',
+        '<strong>Bold</strong><span class="tg-spoiler">Hidden</span><blockquote expandable>Quote</blockquote><pre><code class="language-c++">const x = 1;</code></pre><tg-emoji emoji-id="5368324170671202286">👍</tg-emoji><a href="tg://resolve?domain=knock">Open</a><script>alert(1)</script>',
     },
   })
   assertEquals(
     out,
-    '<b>Bold</b><span class="tg-spoiler">Hidden</span><blockquote>Quote</blockquote><a href="tg://resolve?domain=knock">Open</a>',
+    '<strong>Bold</strong><tg-spoiler>Hidden</tg-spoiler><blockquote expandable>Quote</blockquote><pre><code class="language-c++">const x = 1;</code></pre><tg-emoji emoji-id="5368324170671202286">👍</tg-emoji><a href="tg://resolve?domain=knock">Open</a>',
   )
 })
 
@@ -230,6 +239,51 @@ Deno.test('liquidRuntime: to_telegram_html 拒绝相对链接', () => {
     },
   })
   assertEquals(out, 'Releases')
+})
+
+Deno.test('liquidRuntime: to_telegram_html 拒绝带换行内容的相对链接', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
+    item: {
+      content: '<a href="/docs/releases">Release\nnotes</a>',
+    },
+  })
+  assertEquals(out, 'Release\nnotes')
+})
+
+Deno.test('liquidRuntime: to_telegram_html 支持 tg-emoji emoji-id', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
+    item: {
+      content: '<tg-emoji emoji-id="5368324170671202286">👍</tg-emoji>',
+    },
+  })
+  assertEquals(out, '<tg-emoji emoji-id="5368324170671202286">👍</tg-emoji>')
+})
+
+Deno.test('liquidRuntime: to_telegram_html 支持嵌套 pre code language class 官方写法', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
+    item: {
+      content: '<pre><code class="language-python">print(&quot;hi&quot;)</code></pre>',
+    },
+  })
+  assertEquals(out, '<pre><code class="language-python">print("hi")</code></pre>')
+})
+
+Deno.test('liquidRuntime: to_telegram_html 不再保留旧 pre language 属性', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
+    item: {
+      content: '<pre language="python">print(&quot;hi&quot;)</pre>',
+    },
+  })
+  assertEquals(out, '<pre>print("hi")</pre>')
+})
+
+Deno.test('liquidRuntime: to_telegram_html 不为 standalone code 保留语言类', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_html }}', {
+    item: {
+      content: '<code class="language-python">print(&quot;hi&quot;)</code>',
+    },
+  })
+  assertEquals(out, '<code>print("hi")</code>')
 })
 
 Deno.test('liquidRuntime: to_telegram_markdown_v2 转义纯文本特殊字符', () => {
@@ -248,6 +302,24 @@ Deno.test('liquidRuntime: to_markdown 后可链式转成 telegram markdown v2', 
     },
   })
   assertEquals(out, '*Bold* & _italic_')
+})
+
+Deno.test('liquidRuntime: to_telegram_markdown_v2 按第三方库现有行为归一化合法语法', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_markdown_v2 }}', {
+    item: {
+      content: '*Bold* _italic_ ||spoiler||',
+    },
+  })
+  assertEquals(out, '_Bold_ _italic_ \\|\\|spoiler\\|\\|')
+})
+
+Deno.test('liquidRuntime: to_telegram_markdown_v2 对非法片段做最小转义', () => {
+  const out = renderLiquidSync('{{ item.content | to_telegram_markdown_v2 }}', {
+    item: {
+      content: 'Hello [broken link',
+    },
+  })
+  assertEquals(out, 'Hello \\[broken link')
 })
 
 Deno.test('liquidRuntime: to_telegram_html 不再接受额外参数', () => {
