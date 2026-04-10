@@ -1794,6 +1794,12 @@ sources:
 deno task check
 ```
 
+```bash
+deno task check src/config
+```
+
+传入路径时会覆盖默认 check 范围，不会继续运行默认入口集合。
+
 ### 代码格式化（Prettier）
 
 ```bash
@@ -1806,10 +1812,16 @@ deno task fmt
 deno task fmt:check
 ```
 
-### lint
+### lint 修复
 
 ```bash
 deno task lint
+```
+
+### lint 校验
+
+```bash
+deno task lint:check
 ```
 
 ### 测试
@@ -1830,7 +1842,7 @@ deno task test src/config
 
 传入路径时会覆盖默认测试范围，不会继续运行 `src web` 全量测试。
 
-已知慢测建议按分组触发：
+共享边界改动但尚不足以要求全量时，建议显式传入关联测试文件或目录，而不是依赖脚本自动推断。例如：
 
 ```bash
 deno task test src/main_test.ts src/core/app_test.ts
@@ -1843,8 +1855,6 @@ deno task test src/db/client_test.ts src/db/source_state_store_test.ts
 ```bash
 deno task test src/sources/xquery_test.ts src/sources/source_runtime_test.ts src/web/xquery_playground_test.ts web/routes/api/xquery/evaluate_test.ts
 ```
-
-当改动命中 app / db / xquery 共享边界，但又不足以要求全量测试时，优先运行对应慢测组，而不是直接退回 `deno task test`。
 
 ### 默认启动（web + daemon）
 

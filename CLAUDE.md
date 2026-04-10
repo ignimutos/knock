@@ -42,9 +42,9 @@ Runtime entrypoint: `src/main.ts`
 ## Common commands (single source: `deno.json`)
 
 - `deno task start` - 运行守护进程
-- `deno task check` - 类型检查
+- `deno task check` - 类型检查；无参数时使用默认入口，传入文件/目录时仅检查对应范围
 - `deno task fmt` / `deno task fmt:check` - 格式化 / 校验
-- `deno task lint` - lint
+- `deno task lint` / `deno task lint:check` - lint 修复 / 校验
 - `deno task test` - 测试；无参数时全量，传入文件/目录时仅运行对应范围
 - `deno task build` - 编译二进制
 
@@ -160,15 +160,13 @@ Runtime entrypoint: `src/main.ts`
 - **MUST** 先跑最窄相关验证（优先使用 `deno task test <file-or-dir>`）
 - 对共享入口、测试基础设施、数据库基础设施、共享运行时边界，或影响面无法可靠枚举的改动，收尾前 **MUST** 运行一次全量 `deno task test`
 - 对影响面可枚举的局部改动，**SHOULD** 按受影响文件、目录与直接调用边界扩大验证，**MUST NOT** 机械追加全量 `deno task test`
+- 对 `fmt` / `fmt:check` / `lint` / `lint:check` / `check` / `test` 这类支持 scoped 输入的 task，agent 直接调用时 **MUST** 传入实际需要检查的文件/目录；只有在明确需要默认基线验证时，才 **MAY** 无参调用
+- 调用 `workflow-finish` 脚本时，agent **MUST** 先显式整理并传入 `--path`；这些路径除了直接改动文件外，**SHOULD** 包含需要补跑的关联测试文件或目录
 - 典型全量触发项包括：`deno.json`、`scripts/run-paths.sh`、`src/test_runtime.ts`、`src/main.ts`、`src/core/app.ts`、`src/db/client.ts`、`src/db/schema.ts`、`src/db/migrations/**`、`src/sources/xquery.ts`、`src/sources/source_runtime.ts`
-- 对已知慢测，**SHOULD** 优先按分组触发，而不是为单点改动直接回到全量：
-  - app/daemon 组：`src/main_test.ts`、`src/core/app_test.ts`
-  - db 组：`src/db/client_test.ts`、`src/db/source_state_store_test.ts`
-  - xquery 组：`src/sources/xquery_test.ts`、`src/sources/source_runtime_test.ts`、`src/web/xquery_playground_test.ts`、`web/routes/api/xquery/evaluate_test.ts`
-- 当改动命中对应共享边界但尚不足以要求全量时，**SHOULD** 先补跑对应慢测组，再决定是否扩大到全量。
+- 当改动影响共享边界但尚不足以要求全量时，agent **SHOULD** 主动识别并显式补跑关联测试文件或目录，作为 `deno task test <path...>` 的输入；**MUST NOT** 依赖 workflow 脚本隐式推断慢测组。
 - 按改动影响 **MUST/SHOULD** 运行：
   - `deno task check`
-  - `deno task lint`
+  - `deno task lint:check`
   - `deno task fmt:check`
   - `deno task build`（仅 build 受影响时）
 
@@ -186,4 +184,4 @@ Runtime entrypoint: `src/main.ts`
 - 当前工作流文件为 `.github/workflows/docker.yml`
 - 该工作流当前主要执行 Docker build/push
 - CI 目前不强制执行 `fmt/check/lint/test`
-- 因此本地验证基线仍应按本文件执行（`check` / `fmt:check` / `lint` / `test`）
+- 因此本地验证基线仍应按本文件执行（`check` / `fmt:check` / `lint:check` / `test`）
