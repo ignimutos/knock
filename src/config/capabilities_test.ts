@@ -31,6 +31,14 @@ Deno.test('capabilities: 关键用户输入字段应有能力声明', () => {
     'sources.*.http.url',
     'sources.*.filter',
     'sources.*.syndication.entry.*',
+    'ai.defaultModel',
+    'ai.providers.*.apiKey',
+    'ai.providers.*.baseURL',
+    'ai.providers.*.headers.*',
+    'ai.providers.*.models.*.model',
+    'ai.providers.*.options.organization',
+    'ai.providers.*.options.project',
+    'ai.providers.*.options.authToken',
   ]
 
   assertEquals(

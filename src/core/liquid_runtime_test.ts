@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert'
-import { renderLiquid, renderLiquidSync } from './liquid_runtime.ts'
+import { attachAiEntryRuntime, createAiRuntime } from './ai_runtime.ts'
+import { createLiquidRuntime, renderLiquid, renderLiquidSync } from './liquid_runtime.ts'
 
 Deno.test('liquidRuntime: async 渲染可用', async () => {
   const out = await renderLiquid('{{ item.title }}', {
@@ -266,5 +267,150 @@ Deno.test('liquidRuntime: to_telegram_markdown_v2 不再接受额外参数', () 
         item: { content: 'Rust' },
       }),
     Error,
+  )
+})
+
+Deno.test('liquidRuntime: ai_translate 支持异步渲染并走 entry 级 runtime', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: '译文' })
+    },
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+    },
+    entryRuntime,
+  )
+
+  const out = await runtime.render('{{ item.content | ai_translate }}', context)
+
+  assertEquals(out, '译文')
+  assertEquals(calls.length, 1)
+})
+
+Deno.test('liquidRuntime: ai filter 参数必须是字符串字面量', async () => {
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        default: {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: () => Promise.resolve({ text: 'never' }),
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+      model_name: 'openai_main/default',
+    },
+    entryRuntime,
+  )
+
+  await assertRejects(
+    () => runtime.render('{{ item.content | ai_translate: model_name }}', context),
+    Error,
+    '字符串字面量',
+  )
+})
+
+Deno.test('liquidRuntime: 字符串字面量中的 ai filter 文本不应误报', async () => {
+  const out = await renderLiquid('{{ "literal | ai_translate: model_name" }}', {})
+  assertEquals(out, 'literal | ai_translate: model_name')
+})
+
+Deno.test('liquidRuntime: 纯文本中的 ai filter 文本不应误报', async () => {
+  const out = await renderLiquid('plain | ai_translate: model_name text', {})
+  assertEquals(out, 'plain | ai_translate: model_name text')
+})
+
+Deno.test('liquidRuntime: comment 中的 ai filter 文本不应误报', async () => {
+  const out = await renderLiquid('{% comment %}| ai_translate: model_name{% endcomment %}', {})
+  assertEquals(out, '')
+})
+
+Deno.test('liquidRuntime: ai filter 在 sync 渲染中直接报错', () => {
+  assertThrows(
+    () =>
+      renderLiquidSync("{{ item.content | ai_summarize: 'default' }}", {
+        item: { content: 'Hello' },
+      }),
+    Error,
+    '仅支持异步渲染',
   )
 })

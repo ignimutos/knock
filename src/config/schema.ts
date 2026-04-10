@@ -1,4 +1,5 @@
 import { CronPattern } from 'croner'
+import { TokenKind } from 'liquidjs'
 import { z } from 'zod'
 import {
   createInvalidIssueMessage,
@@ -14,8 +15,9 @@ import {
   ISSUE_SOURCE_TRANSPORT_REQUIRED,
   ISSUE_STRING_ARRAY,
   ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED,
+  ISSUE_ENV_EXPANSION_FORBIDDEN,
 } from './issue_codes.ts'
-import { getConfigFieldCapability } from './capabilities.ts'
+import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilities.ts'
 import { assertLiquidCapability } from './liquid_capabilities.ts'
 import { isRuntimeDuration } from './runtime_semantics.ts'
 import { assertLiquidTemplateSyntax } from '../core/liquid_runtime.ts'
@@ -138,6 +140,16 @@ function validateLiquidTemplate(
   capabilityPath?: string,
 ): void {
   if (capabilityPath) {
+    const capability = getConfigFieldCapability(capabilityPath)
+    if (capability && !capability.allowEnv && template.includes('${')) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: ISSUE_ENV_EXPANSION_FORBIDDEN,
+      })
+      return
+    }
+
     try {
       assertLiquidCapability(capabilityPath, template)
     } catch (error) {
@@ -149,7 +161,6 @@ function validateLiquidTemplate(
       return
     }
 
-    const capability = getConfigFieldCapability(capabilityPath)
     if (capability && !capability.allowLiquid) {
       return
     }
@@ -164,6 +175,10 @@ function validateLiquidTemplate(
       message: createInvalidIssueMessage(error instanceof Error ? error.message : String(error)),
     })
   }
+}
+
+function getParsedLiquidTemplate(template: string): unknown {
+  return assertLiquidTemplateSyntax(template)
 }
 
 function validateLiquidPayload(
@@ -222,6 +237,25 @@ export const timezoneSchema = requiredString().superRefine((value, ctx) => {
     })
   }
 })
+
+export const languageSchema = requiredString()
+  .superRefine((value, ctx) => {
+    try {
+      const [canonical] = Intl.getCanonicalLocales(value)
+      if (!canonical) {
+        ctx.addIssue({
+          code: 'custom',
+          message: createInvalidIssueMessage(value),
+        })
+      }
+    } catch {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  })
+  .transform((value) => Intl.getCanonicalLocales(value)[0] ?? value)
 
 export const loggingConsoleSchema = z
   .object({
@@ -627,6 +661,382 @@ export const deliverySchema = z
     }
   })
 
+function isAiFilterName(name: unknown): boolean {
+  return (
+    typeof name === 'string' &&
+    (name === 'ai_translate' || name === 'ai_summarize' || name.startsWith('llm_'))
+  )
+}
+
+function containsAiFilterToken(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false
+
+  const maybeToken = (node as { token?: { kind?: number; name?: unknown } }).token
+  if (maybeToken?.kind === TokenKind.Filter && isAiFilterName(maybeToken.name)) {
+    return true
+  }
+
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      if (value.some((item) => containsAiFilterToken(item))) return true
+      continue
+    }
+    if (value && typeof value === 'object' && containsAiFilterToken(value)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function detectAiFilterUsage(template: string): boolean {
+  try {
+    return containsAiFilterToken(getParsedLiquidTemplate(template))
+  } catch {
+    return false
+  }
+}
+
+function matchesAiFilterCapabilityPath(
+  capabilityPath: string,
+  path: Array<string | number>,
+  capabilityIndex = 0,
+  pathIndex = 0,
+): boolean {
+  const capabilitySegments = capabilityPath.split('.')
+
+  if (capabilityIndex === capabilitySegments.length) {
+    return pathIndex === path.length
+  }
+
+  const segment = capabilitySegments[capabilityIndex]
+
+  if (segment === '**') {
+    if (capabilityIndex === capabilitySegments.length - 1) return true
+    for (let nextPathIndex = pathIndex; nextPathIndex <= path.length; nextPathIndex += 1) {
+      if (matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, nextPathIndex)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  if (pathIndex >= path.length) return false
+
+  const pathSegment = path[pathIndex]
+
+  if (segment === '*') {
+    return (
+      typeof pathSegment === 'string' &&
+      matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, pathIndex + 1)
+    )
+  }
+
+  if (segment === '*[]') {
+    if (typeof pathSegment !== 'string') return false
+    const nextPathSegment = path[pathIndex + 1]
+    const nextPathIndex = typeof nextPathSegment === 'number' ? pathIndex + 2 : pathIndex + 1
+    return matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, nextPathIndex)
+  }
+
+  if (segment.endsWith('[]')) {
+    if (pathSegment !== segment.slice(0, -2)) return false
+    const nextPathSegment = path[pathIndex + 1]
+    const nextPathIndex = typeof nextPathSegment === 'number' ? pathIndex + 2 : pathIndex + 1
+    return matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, nextPathIndex)
+  }
+
+  return (
+    pathSegment === segment &&
+    matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, pathIndex + 1)
+  )
+}
+
+const AI_FILTER_STATIC_CHECK_PATHS = CONFIG_FIELD_CAPABILITIES.filter(
+  (capability) => capability.allowLiquid,
+).map((capability) => capability.path)
+
+function collectAiFilterTemplatePaths(
+  value: unknown,
+  currentPath: Array<string | number>,
+  matches: Array<Array<string | number>>,
+): void {
+  if (typeof value === 'string') {
+    if (
+      detectAiFilterUsage(value) &&
+      AI_FILTER_STATIC_CHECK_PATHS.some((capabilityPath) =>
+        matchesAiFilterCapabilityPath(capabilityPath, currentPath),
+      )
+    ) {
+      matches.push(currentPath)
+    }
+    return
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      collectAiFilterTemplatePaths(item, [...currentPath, index], matches)
+    })
+    return
+  }
+
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      collectAiFilterTemplatePaths(child, [...currentPath, key], matches)
+    }
+  }
+}
+
+const aiOpenAiReasoningEffortSchema = requiredString()
+
+const aiOpenAiModelOptionsSchema = z
+  .object({
+    reasoningEffort: aiOpenAiReasoningEffortSchema.optional(),
+    json: z.boolean({ error: ISSUE_BOOLEAN }).optional(),
+  })
+  .catchall(z.unknown())
+  .superRefine((value, ctx) => {
+    for (const key of Object.keys(value)) {
+      if (!['reasoningEffort', 'json'].includes(key)) {
+        ctx.addIssue({
+          path: [key],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+    }
+  })
+
+const aiNumericTemperatureSchema = z.number().superRefine((value, ctx) => {
+  if (!Number.isFinite(value)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: createInvalidIssueMessage(String(value)),
+    })
+  }
+})
+
+const aiPositiveIntegerSchema = z
+  .number({ error: ISSUE_INTEGER })
+  .int({ message: ISSUE_INTEGER })
+  .superRefine((value, ctx) => {
+    if (value < 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(String(value)),
+      })
+    }
+  })
+
+const aiModelVariantSchema = z
+  .object({
+    temperature: aiNumericTemperatureSchema.optional(),
+    maxOutputTokens: aiPositiveIntegerSchema.optional(),
+    options: z.record(z.string(), z.unknown()).optional(),
+  })
+  .catchall(z.unknown())
+  .superRefine((value, ctx) => {
+    for (const key of Object.keys(value)) {
+      if (!['temperature', 'maxOutputTokens', 'options'].includes(key)) {
+        ctx.addIssue({
+          path: [key],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+    }
+  })
+
+const aiModelSchema = z
+  .object({
+    model: requiredString(),
+    context: aiPositiveIntegerSchema.optional(),
+    temperature: aiNumericTemperatureSchema.optional(),
+    maxOutputTokens: aiPositiveIntegerSchema.optional(),
+    options: z.record(z.string(), z.unknown()).optional(),
+    variants: z.record(z.string(), aiModelVariantSchema).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validateLiquidTemplate(value.model, ctx, ['model'], 'ai.providers.*.models.*.model')
+  })
+
+function validateAiModelOptions(
+  providerType: z.output<typeof aiProviderTypeSchema>,
+  options: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  level: 'model' | 'variant',
+): void {
+  if (options === undefined) return
+
+  if (providerType === 'openai') {
+    const parsed = aiOpenAiModelOptionsSchema.safeParse(options)
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({
+          path: [...path, ...issue.path],
+          code: 'custom',
+          message: issue.message,
+        })
+      }
+    }
+    return
+  }
+
+  if (
+    options &&
+    typeof options === 'object' &&
+    Object.keys(options as Record<string, unknown>).length > 0
+  ) {
+    ctx.addIssue({
+      path,
+      code: 'custom',
+      message: createInvalidIssueMessage(`${providerType} ${level} 不支持 options`),
+    })
+  }
+}
+
+const aiProviderTypeSchema = createEnumSchema(['openai', 'anthropic', 'gemini'])
+
+const aiProviderSchema = z
+  .object({
+    type: aiProviderTypeSchema,
+    apiKey: z.string().optional(),
+    baseURL: z.string().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    models: z.record(z.string(), aiModelSchema),
+    options: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.apiKey !== undefined) {
+      validateLiquidTemplate(value.apiKey, ctx, ['apiKey'], 'ai.providers.*.apiKey')
+    }
+    if (value.baseURL !== undefined) {
+      validateLiquidTemplate(value.baseURL, ctx, ['baseURL'], 'ai.providers.*.baseURL')
+    }
+    if (value.headers) {
+      for (const [key, headerValue] of Object.entries(value.headers)) {
+        validateLiquidTemplate(headerValue, ctx, ['headers', key], 'ai.providers.*.headers.*')
+      }
+    }
+
+    const optionKeys = Object.keys(value.options ?? {})
+    const allowedOptionKeys =
+      value.type === 'openai'
+        ? ['organization', 'project']
+        : value.type === 'anthropic'
+          ? ['authToken']
+          : []
+
+    for (const [modelId, model] of Object.entries(value.models)) {
+      validateAiModelOptions(
+        value.type,
+        model.options,
+        ctx,
+        ['models', modelId, 'options'],
+        'model',
+      )
+
+      for (const [variantId, variant] of Object.entries(model.variants ?? {})) {
+        validateAiModelOptions(
+          value.type,
+          variant.options,
+          ctx,
+          ['models', modelId, 'variants', variantId, 'options'],
+          'variant',
+        )
+      }
+    }
+
+    for (const key of optionKeys) {
+      if (!allowedOptionKeys.includes(key)) {
+        const detail =
+          value.type === 'gemini'
+            ? 'gemini provider 不支持 options'
+            : `${value.type} provider 不支持 options.${key}`
+        ctx.addIssue({
+          path: ['options'],
+          code: 'custom',
+          message: createInvalidIssueMessage(detail),
+        })
+        break
+      }
+
+      const optionValue = value.options?.[key]
+      if (typeof optionValue !== 'string' || optionValue.trim() === '') {
+        ctx.addIssue({
+          path: ['options', key],
+          code: 'custom',
+          message: ISSUE_REQUIRED,
+        })
+        continue
+      }
+
+      validateLiquidTemplate(optionValue, ctx, ['options', key], `ai.providers.*.options.${key}`)
+    }
+  })
+
+export const aiSchema = z
+  .object({
+    defaultModel: requiredString().optional(),
+    providers: z.record(z.string(), aiProviderSchema),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.defaultModel !== undefined) {
+      validateLiquidTemplate(value.defaultModel, ctx, ['defaultModel'], 'ai.defaultModel')
+    }
+
+    const modelProviders = new Map<string, string[]>()
+
+    for (const [providerId, provider] of Object.entries(value.providers)) {
+      for (const modelId of Object.keys(provider.models)) {
+        modelProviders.set(modelId, [...(modelProviders.get(modelId) ?? []), providerId])
+      }
+    }
+
+    if (!value.defaultModel) return
+
+    if (value.defaultModel.includes('/')) {
+      const [providerId, modelId, ...rest] = value.defaultModel.split('/')
+      if (
+        !providerId ||
+        !modelId ||
+        rest.length > 0 ||
+        !value.providers[providerId]?.models[modelId]
+      ) {
+        ctx.addIssue({
+          path: ['defaultModel'],
+          code: 'custom',
+          message: createInvalidIssueMessage(`未找到模型 ${value.defaultModel}`),
+        })
+      }
+      return
+    }
+
+    const providers = modelProviders.get(value.defaultModel) ?? []
+    if (providers.length === 0) {
+      ctx.addIssue({
+        path: ['defaultModel'],
+        code: 'custom',
+        message: createInvalidIssueMessage(`未找到模型 ${value.defaultModel}`),
+      })
+      return
+    }
+
+    if (providers.length > 1) {
+      ctx.addIssue({
+        path: ['defaultModel'],
+        code: 'custom',
+        message: createInvalidIssueMessage(
+          `裸 modelId ${value.defaultModel} 存在多个 provider，请改用 providerId/modelId`,
+        ),
+      })
+    }
+  })
+
 export const sourceSchema = z
   .object({
     name: z.string().optional(),
@@ -702,10 +1112,21 @@ export const sourceSchema = z
 export const deliveriesSchema = z.record(z.string(), deliverySchema)
 export const sourcesSchema = z.record(z.string(), sourceSchema)
 
+function hasResolvableAiModel(ai: AiConfigInput | undefined): boolean {
+  if (!ai) return false
+
+  for (const provider of Object.values(ai.providers)) {
+    if (Object.keys(provider.models).length > 0) return true
+  }
+
+  return false
+}
+
 function validateAppConfigReferences(
   value: {
     deliveries?: Record<string, DeliveryConfigInput>
     sources?: Record<string, SourceConfigInput>
+    ai?: AiConfigInput
   },
   ctx: z.core.$RefinementCtx,
 ) {
@@ -721,12 +1142,37 @@ function validateAppConfigReferences(
       }
     }
   }
+
+  if (!hasResolvableAiModel(value.ai)) {
+    const aiFilterTemplatePaths: Array<Array<string | number>> = []
+    collectAiFilterTemplatePaths(value, [], aiFilterTemplatePaths)
+
+    for (const path of aiFilterTemplatePaths) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: createInvalidIssueMessage('模板使用了 AI filter，但未解析到可用模型'),
+      })
+    }
+  }
+
+  for (const [providerId, provider] of Object.entries(value.ai?.providers ?? {})) {
+    if (provider.type === 'anthropic' && provider.apiKey && provider.options?.authToken) {
+      ctx.addIssue({
+        path: ['ai', 'providers', providerId],
+        code: 'custom',
+        message: `ai.providers.${providerId} 不能同时配置 apiKey 与 options.authToken`,
+      })
+    }
+  }
 }
 
 const userAppConfigShape = {
+  language: languageSchema.optional(),
   timezone: timezoneSchema.optional(),
   timestampFormat: requiredString().default('yyyy-MM-dd HH:mm:ss'),
   sqlite: sqliteSchema,
+  ai: aiSchema.optional(),
   deliveries: deliveriesSchema.optional(),
   sources: sourcesSchema.optional(),
   logging: loggingSchema,
@@ -749,9 +1195,11 @@ export const appConfigSchema = z
 export const appConfigValidatedSchema = appConfigSchema.transform((input) => ({
   __validated: true as const,
   runtimeDir: input.runtimeDir,
+  language: input.language,
   timezone: input.timezone,
   timestampFormat: input.timestampFormat,
   sqlite: input.sqlite,
+  ai: input.ai,
   deliveries: input.deliveries ?? {},
   sources: input.sources ?? {},
   logging: input.logging,
@@ -874,6 +1322,11 @@ export type PushRequestConfig = z.output<typeof pushRequestSchema>
  */
 export type HttpConfig = HttpTransportConfig
 
+export type AiProviderType = z.output<typeof aiProviderTypeSchema>
+export type AiModelVariantConfig = z.output<typeof aiModelVariantSchema>
+export type AiModelConfigInput = z.output<typeof aiModelSchema>
+export type AiProviderConfigInput = z.output<typeof aiProviderSchema>
+export type AiConfigInput = z.output<typeof aiSchema>
 export type PushResponseConfig = z.output<typeof pushResponseSchema>
 export type PushConfig = z.output<typeof pushSchema>
 export type DeliveryConfigInput = z.output<typeof deliverySchema>

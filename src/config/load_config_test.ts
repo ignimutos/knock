@@ -301,6 +301,111 @@ sources: {}
   }
 })
 
+test('loadConfig: AI defaultModel 禁止环境变量展开，与 validateConfig 保持一致', async () => {
+  await emptyDir(TEST_RUNTIME)
+  await ensureDir(TEST_RUNTIME)
+
+  Deno.env.set('KNOCK_TEST_DEFAULT_MODEL', 'main/mini')
+
+  try {
+    await Deno.writeTextFile(
+      join(TEST_RUNTIME, 'config.yml'),
+      `
+ai:
+  defaultModel: ${'${KNOCK_TEST_DEFAULT_MODEL}'}
+  providers:
+    main:
+      type: openai
+      models:
+        mini:
+          model: gpt-4o-mini
+
+sources: {}
+`,
+    )
+
+    const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
+    assertStringIncludes(err.message, 'ai.defaultModel 不支持环境变量展开')
+  } finally {
+    Deno.env.delete('KNOCK_TEST_DEFAULT_MODEL')
+  }
+})
+
+test('loadConfig: provider-specific options 允许 ENV 但不允许 Liquid，与 validateConfig 保持一致', async () => {
+  await emptyDir(TEST_RUNTIME)
+  await ensureDir(TEST_RUNTIME)
+
+  Deno.env.set('KNOCK_TEST_OPENAI_ORG', 'org-demo')
+  Deno.env.set('KNOCK_TEST_OPENAI_PROJECT', 'proj-demo')
+  Deno.env.set('KNOCK_TEST_ANTHROPIC_AUTH', 'anthropic-token')
+
+  try {
+    await Deno.writeTextFile(
+      join(TEST_RUNTIME, 'config.yml'),
+      `
+ai:
+  providers:
+    openai_main:
+      type: openai
+      options:
+        organization: ${'${KNOCK_TEST_OPENAI_ORG}'}
+        project: ${'${KNOCK_TEST_OPENAI_PROJECT}'}
+      models:
+        mini:
+          model: gpt-4o-mini
+    claude:
+      type: anthropic
+      options:
+        authToken: ${'${KNOCK_TEST_ANTHROPIC_AUTH}'}
+      models:
+        sonnet:
+          model: claude-3-7-sonnet-latest
+
+sources: {}
+`,
+    )
+
+    const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+    const openaiProvider = config.ai?.providers.find((provider) => provider.id === 'openai_main')
+    const anthropicProvider = config.ai?.providers.find((provider) => provider.id === 'claude')
+
+    assertEquals(openaiProvider?.options, {
+      organization: 'org-demo',
+      project: 'proj-demo',
+    })
+    assertEquals(anthropicProvider?.options, {
+      authToken: 'anthropic-token',
+    })
+
+    await Deno.writeTextFile(
+      join(TEST_RUNTIME, 'config.yml'),
+      `
+ai:
+  providers:
+    openai_main:
+      type: openai
+      options:
+        organization: "{{ entry.title }}"
+      models:
+        mini:
+          model: gpt-4o-mini
+
+sources: {}
+`,
+    )
+
+    const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
+    assertStringIncludes(
+      err.message,
+      'ai.providers.openai_main.options.organization 配置非法: ai.providers.*.options.organization 不支持 Liquid 模板',
+    )
+  } finally {
+    Deno.env.delete('KNOCK_TEST_OPENAI_ORG')
+    Deno.env.delete('KNOCK_TEST_OPENAI_PROJECT')
+    Deno.env.delete('KNOCK_TEST_ANTHROPIC_AUTH')
+  }
+})
+
 test('loadConfig: README HTTP 文档应保持 canonical 形态并拒绝 legacy 回流', async () => {
   const readme = await Deno.readTextFile(README_PATH)
 

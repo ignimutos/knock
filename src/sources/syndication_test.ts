@@ -1,6 +1,49 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import type { SyndicationSourceConfig } from '../config/schema.ts'
+import { createAiRuntime } from '../core/ai_runtime.ts'
 import { parseSyndicationSource } from './syndication.ts'
+
+function createTestAiRuntime(
+  generateText: (input: Record<string, unknown>) => Promise<{ text: string }>,
+) {
+  return createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => generateText(input as unknown as Record<string, unknown>),
+  })
+}
 
 Deno.test('syndication: RSS 默认输出扩展 unified 字段', async () => {
   const xml = `
@@ -239,6 +282,92 @@ Deno.test('syndication: 自定义字段循环依赖时报错', async () => {
   } as unknown as SyndicationSourceConfig
 
   await assertRejects(async () => await parseSyndicationSource(xml, mapping), Error, '存在循环依赖')
+})
+
+Deno.test('syndication: 自定义字段中间节点可使用 ai filter 且保持依赖顺序', async () => {
+  const xml = `<rss><channel><item><guid>g-1</guid><title>Hello</title><description>hello world</description></item></channel></rss>`
+  const aiRequests: Array<Record<string, unknown>> = []
+  const aiRuntime = createTestAiRuntime((input) => {
+    aiRequests.push(input)
+    return Promise.resolve({ text: 'AI 中间结果' })
+  })
+
+  const parsed = await parseSyndicationSource(
+    xml,
+    {
+      entry: {
+        id: '{{ id }}',
+        title: '{{ derived_title }}',
+        derived_title: '{{ raw_summary | ai_summarize }}',
+        raw_summary: '{{ description }}',
+      },
+    },
+    {},
+    {
+      sourceId: 'source-ai',
+      aiRuntime,
+    },
+  )
+
+  assertEquals(parsed.entries[0].mapped.title, 'AI 中间结果')
+  assertEquals(aiRequests.length, 1)
+  assertEquals(String(aiRequests[0].prompt ?? '').includes('hello world'), true)
+})
+
+Deno.test('syndication: feed 与 entry mapping 中可使用 ai filter', async () => {
+  const xml = `<rss><channel><title>Feed Title</title><item><guid>g-1</guid><title>Hello</title><description>entry body</description></item></channel></rss>`
+  const aiRequests: Array<Record<string, unknown>> = []
+  const aiRuntime = createTestAiRuntime((input) => {
+    aiRequests.push(input)
+    return Promise.resolve({ text: aiRequests.length === 1 ? 'AI Feed' : 'AI Entry' })
+  })
+
+  const parsed = await parseSyndicationSource(
+    xml,
+    {
+      feed: {
+        description: '{{ title | ai_summarize }}',
+      },
+      entry: {
+        id: '{{ id }}',
+        description: '{{ description | ai_summarize }}',
+      },
+    },
+    {},
+    {
+      sourceId: 'source-ai',
+      aiRuntime,
+    },
+  )
+
+  assertEquals(parsed.feed.description, 'AI Feed')
+  assertEquals(parsed.entries[0].mapped.description, 'AI Entry')
+  assertEquals(aiRequests.length, 2)
+})
+
+Deno.test('syndication: ai filter 失败应正确上抛', async () => {
+  const xml = `<rss><channel><item><guid>g-1</guid><description>entry body</description></item></channel></rss>`
+  const aiRuntime = createTestAiRuntime(() => Promise.reject(new Error('AI exploded')))
+
+  await assertRejects(
+    () =>
+      parseSyndicationSource(
+        xml,
+        {
+          entry: {
+            id: '{{ id }}',
+            description: '{{ description | ai_summarize }}',
+          },
+        },
+        {},
+        {
+          sourceId: 'source-ai',
+          aiRuntime,
+        },
+      ),
+    Error,
+    'AI exploded',
+  )
 })
 
 Deno.test('syndication: 非法 match_fuzzy mode 会报错', async () => {

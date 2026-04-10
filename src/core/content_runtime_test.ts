@@ -1,7 +1,9 @@
 import { assertEquals, assertRejects } from '@std/assert'
+import { getAiEntryRuntime } from './ai_runtime.ts'
 import { buildContext, renderContent, renderPayload, shouldPassFilter } from './content_runtime.ts'
 
 Deno.test('contentRuntime: buildContext 应默认将 entry 拍平到模板顶层并保留命名空间', () => {
+  const aiEntryRuntime = { sourceId: 's1', entryId: 'id-1', cache: new Map() }
   const context = buildContext(
     { id: 'id-1', title: 'Hello', link: 'https://example.com/entry' },
     { title: 'Feed', link: 'https://example.com/feed' },
@@ -14,6 +16,7 @@ Deno.test('contentRuntime: buildContext 应默认将 entry 拍平到模板顶层
       },
       syndication: {},
     } as never,
+    aiEntryRuntime,
   )
 
   assertEquals(context, {
@@ -32,6 +35,7 @@ Deno.test('contentRuntime: buildContext 应默认将 entry 拍平到模板顶层
       syndication: {},
     },
   })
+  assertEquals(getAiEntryRuntime(context), aiEntryRuntime)
 })
 
 Deno.test('contentRuntime: shouldPassFilter 支持顶层 entry 字段', async () => {

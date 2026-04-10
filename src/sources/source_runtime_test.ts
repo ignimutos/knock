@@ -1,7 +1,50 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import type { ResolvedSourceConfig } from '../config/types.ts'
+import { createAiRuntime } from '../core/ai_runtime.ts'
 import { createHttpClient } from '../core/http_client.ts'
 import { fetchAndParseSource } from './source_runtime.ts'
+
+function createTestAiRuntime(
+  generateText: (input: Record<string, unknown>) => Promise<{ text: string }>,
+) {
+  return createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => generateText(input as unknown as Record<string, unknown>),
+  })
+}
 
 function getRequestClient(init: RequestInit | undefined): Deno.HttpClient | undefined {
   return (init as (RequestInit & { client?: Deno.HttpClient }) | undefined)?.client
@@ -439,5 +482,81 @@ Deno.test('source_runtime: byparr 返回 status 非 ok 时应抛统一抓取错�
       }),
     Error,
     '[source] 抓取失败 source=s-byparr status=403',
+  )
+})
+
+Deno.test('source_runtime: syndication parse 链路可透传 aiRuntime 并支持 ai filter', async () => {
+  const aiRequests: Array<Record<string, unknown>> = []
+  const aiRuntime = createTestAiRuntime((input) => {
+    aiRequests.push(input)
+    return Promise.resolve({ text: 'AI Summary' })
+  })
+
+  const parsed = await fetchAndParseSource({
+    source: {
+      id: 's1',
+      enabled: true,
+      deliveries: [],
+      http: {
+        url: 'https://example.com/feed.xml',
+      },
+      syndication: {
+        entry: {
+          id: '{{ id }}',
+          description: '{{ description | ai_summarize }}',
+        },
+      },
+    },
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response(
+            '<rss><channel><item><guid>id-1</guid><description>need ai</description></item></channel></rss>',
+          ),
+        ),
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+    aiRuntime,
+  })
+
+  assertEquals(parsed.entries[0].mapped.description, 'AI Summary')
+  assertEquals(aiRequests.length, 1)
+})
+
+Deno.test('source_runtime: syndication parse 链路中的 ai 失败应上抛', async () => {
+  const aiRuntime = createTestAiRuntime(() =>
+    Promise.reject(new Error('AI failed in source runtime')),
+  )
+
+  await assertRejects(
+    () =>
+      fetchAndParseSource({
+        source: {
+          id: 's1',
+          enabled: true,
+          deliveries: [],
+          http: {
+            url: 'https://example.com/feed.xml',
+          },
+          syndication: {
+            entry: {
+              id: '{{ id }}',
+              description: '{{ description | ai_summarize }}',
+            },
+          },
+        },
+        httpClient: createHttpClient({
+          fetcher: () =>
+            Promise.resolve(
+              new Response(
+                '<rss><channel><item><guid>id-1</guid><description>need ai</description></item></channel></rss>',
+              ),
+            ),
+        }),
+        timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+        aiRuntime,
+      }),
+    Error,
+    'AI failed in source runtime',
   )
 })

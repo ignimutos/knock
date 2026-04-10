@@ -1,6 +1,7 @@
 import { z } from 'zod'
+import { attachAiEntryRuntime, getAiEntryRuntime } from '../core/ai_runtime.ts'
+import { renderContent } from '../core/content_runtime.ts'
 import type { Logger } from '../core/logger.ts'
-import { renderLiquid } from '../core/liquid_runtime.ts'
 import type { HttpClient } from '../core/http_client.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import type {
@@ -16,11 +17,13 @@ export interface HttpDeliveryRequest {
   http: PushHttpConfig
   request: PushRequestConfig
   response?: PushResponseConfig
+  templateContext?: Record<string, unknown>
 }
 
 export interface HttpDeliveryFactoryOptions {
   logger?: Logger
   httpClient: HttpClient
+  renderContent?: (template: string, context: Record<string, unknown>) => Promise<string>
 }
 
 export interface HttpDelivery {
@@ -113,7 +116,23 @@ async function normalizeResponse(response: Response): Promise<Record<string, unk
   }
 }
 
+function buildResponseTemplateContext(
+  response: Record<string, unknown>,
+  templateContext?: Record<string, unknown>,
+): Record<string, unknown> {
+  const mergedContext = {
+    ...(templateContext ?? {}),
+    ...response,
+  }
+  return attachAiEntryRuntime(
+    mergedContext,
+    templateContext ? getAiEntryRuntime(templateContext) : undefined,
+  )
+}
+
 export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDelivery {
+  const renderTemplate = options.renderContent ?? renderContent
+
   return {
     async push(req: HttpDeliveryRequest): Promise<void> {
       const { url, init } = buildRequestInit(req)
@@ -130,14 +149,14 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
         init,
       })
       const normalized = await normalizeResponse(response)
-      const responseContext = normalized as Record<string, unknown>
+      const responseContext = buildResponseTemplateContext(normalized, req.templateContext)
       const predicate = req.response?.predicate
       const messageTemplate = req.response?.message
       const passed = predicate
-        ? (await renderLiquid(predicate, responseContext)).trim() === 'true'
+        ? (await renderTemplate(predicate, responseContext)).trim() === 'true'
         : response.ok
       const message = messageTemplate
-        ? await renderLiquid(messageTemplate, responseContext)
+        ? await renderTemplate(messageTemplate, responseContext)
         : `HTTP 推送失败: status=${response.status}`
 
       if (!passed) {

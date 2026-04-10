@@ -1,4 +1,6 @@
 import { assertEquals, assertRejects } from '@std/assert'
+import { attachAiEntryRuntime, createAiRuntime } from '../core/ai_runtime.ts'
+import { createContentRuntime } from '../core/content_runtime.ts'
 import { createDeliveryRuntime } from './delivery_runtime.ts'
 
 Deno.test('deliveryRuntime: file 投递应选择并渲染 file content 模板后分发', async () => {
@@ -10,6 +12,7 @@ Deno.test('deliveryRuntime: file 投递应选择并渲染 file content 模板后
         renderedTemplates.push({ template, context })
         return Promise.resolve(`rendered:${template}`)
       },
+      renderPayload: (payload) => Promise.resolve(payload),
     },
     fileDelivery: {
       push: (req) => {
@@ -63,6 +66,15 @@ Deno.test('deliveryRuntime: HTTP 投递应只递归渲染 payload 而不额外�
       renderContent: (template, context) => {
         renderedTemplates.push({ template, context })
         return Promise.resolve(`rendered:${template}`)
+      },
+      renderPayload: (payload, context) => {
+        void payload
+        return Promise.resolve({
+          text: String((context.entry as { title?: string }).title ?? ''),
+          nested: {
+            source: String((context.source as { id?: string }).id ?? ''),
+          },
+        })
       },
     },
     fileDelivery: { push: () => Promise.resolve() },
@@ -128,6 +140,180 @@ Deno.test('deliveryRuntime: HTTP 投递应只递归渲染 payload 而不额外�
       response: {
         predicate: '{{ ok }}',
       },
+      templateContext,
+    },
+  ])
+})
+
+Deno.test('deliveryRuntime: HTTP payload 中可使用 ai_summarize', async () => {
+  const aiCalls: Array<Record<string, unknown>> = []
+  const calls: unknown[] = []
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      aiCalls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: 'AI 摘要' })
+    },
+  })
+  const runtime = createDeliveryRuntime({
+    contentRuntime: createContentRuntime({ aiRuntime }),
+    fileDelivery: { push: () => Promise.resolve() },
+    httpDelivery: {
+      push: (req) => {
+        calls.push(req)
+        return Promise.resolve()
+      },
+    },
+    emailDelivery: { push: () => Promise.resolve() },
+  })
+
+  const templateContext = attachAiEntryRuntime(
+    {
+      entry: { description: '需要摘要的正文' },
+    },
+    aiRuntime.createEntryRuntime('source-a', 'entry-a'),
+  )
+
+  await runtime.push(
+    {
+      id: 'webhook',
+      push: {
+        http: {
+          method: 'POST',
+          url: 'https://example.com/webhook',
+        },
+        request: {
+          type: 'body',
+          payload: {
+            summary: '{{ entry.description | ai_summarize }}',
+          },
+        },
+      },
+    },
+    templateContext,
+  )
+
+  assertEquals(aiCalls.length, 1)
+  assertEquals(calls, [
+    {
+      deliveryId: 'webhook',
+      http: {
+        method: 'POST',
+        url: 'https://example.com/webhook',
+        timeout: undefined,
+        headers: undefined,
+        proxy: undefined,
+      },
+      request: {
+        type: 'body',
+        payload: {
+          summary: 'AI 摘要',
+        },
+      },
+      response: undefined,
+      templateContext,
+    },
+  ])
+})
+
+Deno.test('deliveryRuntime: HTTP response 模板应保留原模板并透传 templateContext', async () => {
+  const renderedTemplates: Array<{ template: string; context: Record<string, unknown> }> = []
+  const calls: unknown[] = []
+  const runtime = createDeliveryRuntime({
+    contentRuntime: {
+      renderContent: (template, context) => {
+        renderedTemplates.push({ template, context })
+        return Promise.resolve(`rendered:${template}`)
+      },
+      renderPayload: (payload) => Promise.resolve(payload),
+    },
+    fileDelivery: { push: () => Promise.resolve() },
+    httpDelivery: {
+      push: (req) => {
+        calls.push(req)
+        return Promise.resolve()
+      },
+    },
+    emailDelivery: { push: () => Promise.resolve() },
+  })
+
+  const templateContext = {
+    entry: { description: '需要摘要的正文' },
+  }
+
+  await runtime.push(
+    {
+      id: 'webhook',
+      push: {
+        http: {
+          method: 'POST',
+          url: 'https://example.com/webhook',
+        },
+        request: {
+          type: 'body',
+        },
+        response: {
+          predicate: '{{ ok }}',
+          message: '{{ entry.description | ai_summarize }}',
+        },
+      },
+    },
+    templateContext,
+  )
+
+  assertEquals(renderedTemplates, [])
+  assertEquals(calls, [
+    {
+      deliveryId: 'webhook',
+      http: {
+        method: 'POST',
+        url: 'https://example.com/webhook',
+        timeout: undefined,
+        headers: undefined,
+        proxy: undefined,
+      },
+      request: {
+        type: 'body',
+        payload: undefined,
+      },
+      response: {
+        predicate: '{{ ok }}',
+        message: '{{ entry.description | ai_summarize }}',
+      },
+      templateContext,
     },
   ])
 })
@@ -152,6 +338,7 @@ Deno.test('deliveryRuntime: email 投递应渲染 message 字段并分发到 ema
         }
         return Promise.resolve(replacements[template] ?? template)
       },
+      renderPayload: (payload) => Promise.resolve(payload),
     },
     fileDelivery: { push: () => Promise.resolve() },
     httpDelivery: { push: () => Promise.resolve() },
@@ -244,6 +431,7 @@ Deno.test('deliveryRuntime: email 地址渲染后非法时应在发送前失败'
     contentRuntime: {
       renderContent: (template) =>
         Promise.resolve(template === '{{ bad }}' ? 'not-an-email' : template),
+      renderPayload: (payload) => Promise.resolve(payload),
     },
     fileDelivery: { push: () => Promise.resolve() },
     httpDelivery: { push: () => Promise.resolve() },
@@ -280,6 +468,7 @@ Deno.test('deliveryRuntime: delivery 标识应直接使用 delivery.id', () => {
   const runtime = createDeliveryRuntime({
     contentRuntime: {
       renderContent: () => Promise.resolve('ignored'),
+      renderPayload: (payload) => Promise.resolve(payload),
     },
     fileDelivery: { push: () => Promise.resolve() },
     httpDelivery: { push: () => Promise.resolve() },
@@ -306,6 +495,7 @@ Deno.test('deliveryRuntime: 未配置目标时应报错', async () => {
   const runtime = createDeliveryRuntime({
     contentRuntime: {
       renderContent: () => Promise.resolve('ignored'),
+      renderPayload: (payload) => Promise.resolve(payload),
     },
     fileDelivery: { push: () => Promise.resolve() },
     httpDelivery: { push: () => Promise.resolve() },

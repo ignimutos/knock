@@ -3,18 +3,19 @@ import { z } from 'zod'
 import { loadConfig } from '../config/load_config.ts'
 import { createDbClient } from '../db/client.ts'
 import { createSourceStateStore } from '../db/source_state_store.ts'
-import { buildContext, renderContent, shouldPassFilter } from './content_runtime.ts'
-import { createScheduler } from './scheduler.ts'
 import { createDeliveryRuntime } from '../deliveries/delivery_runtime.ts'
 import { createEmailDelivery } from '../deliveries/email.ts'
 import { createFileDelivery } from '../deliveries/file.ts'
-import nodemailer from 'nodemailer'
 import { createHttpDelivery } from '../deliveries/http.ts'
 import { fetchAndParseSource } from '../sources/source_runtime.ts'
-import { createLogger } from './logger.ts'
-import { createSourceProcessor } from './source_processor.ts'
+import { createAiRuntime } from './ai_runtime.ts'
+import { createContentRuntime } from './content_runtime.ts'
 import { createHttpClient } from './http_client.ts'
+import { createLogger } from './logger.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
+import { createScheduler } from './scheduler.ts'
+import { createSourceProcessor } from './source_processor.ts'
+import nodemailer from 'nodemailer'
 
 export interface StartAppOptions {
   runtimeDir?: string
@@ -116,6 +117,12 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     },
   })
 
+  const aiRuntime = createAiRuntime({
+    ai: config.ai,
+    defaultLanguage: config.language,
+    logger: logger.child({ module: 'core.ai.runtime' }),
+  })
+  const contentRuntime = createContentRuntime({ aiRuntime })
   const db = createDbClient({
     sqlite: config.sqlite,
     logger: logger.child({ module: 'db.sqlite' }),
@@ -133,13 +140,14 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
   const httpDelivery = createHttpDelivery({
     logger: logger.child({ module: 'delivery.http' }),
     httpClient,
+    renderContent: (template, context) => contentRuntime.renderContent(template, context),
   })
   const emailDelivery = createEmailDelivery({
     logger: logger.child({ module: 'delivery.email' }),
     createTransport: emailTransportFactory,
   })
   const deliveryRuntime = createDeliveryRuntime({
-    contentRuntime: { renderContent },
+    contentRuntime,
     fileDelivery,
     httpDelivery,
     emailDelivery,
@@ -156,14 +164,13 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
             timezone: config.timezone,
             timestampFormat: config.timestampFormat,
           },
+          aiRuntime,
         }),
     },
-    contentRuntime: {
-      buildContext,
-      shouldPassFilter,
-    },
+    contentRuntime,
     deliveryRuntime,
     sourceStateStore,
+    aiRuntime,
   })
 
   const enabledSources = config.sources.filter((source) => source.enabled)

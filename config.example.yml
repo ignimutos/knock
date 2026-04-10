@@ -1,8 +1,45 @@
+# 输出与 AI 配置默认使用的语言标签；需为 BCP 47（可选；示例: zh-CN）
+language: zh-CN
+
 # 运行时使用的时区；不配置时默认使用系统时区（可选；默认: 使用系统时区；失败时回退 UTC）
 timezone: Asia/Shanghai
 
 # 日志与模板输出使用的时间戳格式（可选；默认: yyyy-MM-dd HH:mm:ss）
 timestampFormat: yyyy-MM-dd HH:mm:ss
+
+# AI provider / model 静态配置（可选）
+ai:
+  # 缺省时按 providers 声明顺序、再按各 models 声明顺序取第一个模型
+  defaultModel: openai_main/default
+  providers:
+    openai_main:
+      # 仅支持 openai / anthropic / gemini
+      type: openai
+      # 共同字段（可选）
+      apiKey: "${OPENAI_API_KEY}"
+      baseURL: "https://api.openai.com/v1"
+      headers:
+        X-Trace-Id: "${TRACE_ID}"
+      # provider-specific 选项（openai 仅支持 organization / project）
+      options:
+        organization: "${OPENAI_ORG_ID}"
+        project: "${OPENAI_PROJECT_ID}"
+      models:
+        default:
+          # model 必须是静态字面量，不支持 ${ENV_VAR} / Liquid
+          model: gpt-4o-mini
+          # context / maxOutputTokens 可省略，省略时走内置默认表
+          temperature: 0.2
+          # model/variant options 当前仅 openai 支持 reasoningEffort / json
+          options:
+            reasoningEffort: low
+            json: false
+          variants:
+            creative:
+              temperature: 0.8
+              options:
+                reasoningEffort: medium
+                json: true
 
 # SQLite 存储配置（可选；默认: 内置默认值）
 sqlite:
