@@ -578,6 +578,9 @@ async function main() {
   }
 
   console.log('删除 worktree')
+  console.log(
+    `切换脚本进程 cwd 到主工作区：${rootRepoPath}（仅影响当前脚本进程，不会切换 Claude 会话）`,
+  )
   Deno.chdir(rootRepoPath)
   const removeWorktree = await runGit(['worktree', 'remove', '-f', worktreePath], rootRepoPath)
   if (removeWorktree.code !== 0) {
@@ -600,7 +603,7 @@ async function main() {
     })
   }
 
-  console.log(`workflow-finish 完成，主工作区：${rootRepoPath}`)
+  console.log(`workflow-finish 脚本阶段完成，待 skill 恢复主工作区会话：${rootRepoPath}`)
   printJson({
     ok: true,
     action,

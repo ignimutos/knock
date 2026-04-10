@@ -85,17 +85,13 @@ function getWorktreeDirName(worktreePath: string) {
   return segments.at(-1)
 }
 
+function generateRandomWorktreeName() {
+  return `wt-${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`
+}
+
 async function main() {
   const action = 'init'
   const explicitName = parseFlag(Deno.args, '--name')?.trim()
-  if (!explicitName) {
-    fail(action, 'missing_worktree_name', 'workflow-init 需要完整的 worktree 名称')
-  }
-
-  const normalizedName = normalizeWorktreeName(explicitName)
-  if (!normalizedName) {
-    fail(action, 'invalid_worktree_name', 'worktree 名称无效', { worktreeName: explicitName })
-  }
 
   const topLevel = await requireGitValue(
     action,
@@ -105,7 +101,11 @@ async function main() {
 
   if (topLevel.includes('/.claude/worktrees/')) {
     const currentName = getWorktreeDirName(topLevel)
-    if (currentName && currentName !== normalizedName) {
+    const normalizedName = explicitName ? normalizeWorktreeName(explicitName) : currentName
+    if (explicitName && !normalizedName) {
+      fail(action, 'invalid_worktree_name', 'worktree 名称无效', { worktreeName: explicitName })
+    }
+    if (currentName && normalizedName && currentName !== normalizedName) {
       fail(action, 'already_in_other_worktree', '当前已在其他 worktree 中，拒绝复用错误上下文', {
         currentWorktreeName: currentName,
         requestedWorktreeName: normalizedName,
@@ -119,11 +119,17 @@ async function main() {
       action,
       data: {
         mode: 'already_in_target_worktree',
-        ...(currentName ? { worktreeName: currentName } : { worktreeName: normalizedName }),
+        worktreeName: currentName ?? normalizedName,
         worktreePath: topLevel,
       },
     } satisfies Success<Record<string, unknown>>)
     return
+  }
+
+  const requestedName = explicitName || generateRandomWorktreeName()
+  const normalizedName = normalizeWorktreeName(requestedName)
+  if (!normalizedName) {
+    fail(action, 'invalid_worktree_name', 'worktree 名称无效', { worktreeName: requestedName })
   }
 
   console.log(`准备进入/创建 worktree：${normalizedName}`)

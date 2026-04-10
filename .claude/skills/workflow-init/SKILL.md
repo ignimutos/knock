@@ -10,8 +10,8 @@ description: Use when starting implementation work that should create or enter t
 输入优先级：
 
 - 若用户显式提供 worktree 名称，优先使用用户输入。
-- 否则由模型生成完整 worktree 名称。
-- 若两者都没有，直接失败。
+- 否则若用户提供了任务上下文，由模型生成完整 worktree 名称。
+- 若两者都没有，**MUST NOT** 因命名问题追问或失败；应直接继续调用脚本，让脚本生成安全随机的 worktree 名称。
 
 调用脚本：
 
