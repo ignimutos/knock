@@ -1,13 +1,20 @@
 ---
 name: otel-logging-design
-description: Use when adding, refactoring, or reviewing structured logs and deciding OpenTelemetry field placement, scope names, attribute namespaces, or context ownership between resource, scope, attributes, and trace fields.
+description: Use when structured logging design still needs judgment after reading existing rules: decide OpenTelemetry field placement, severity, optional event naming, scope naming, attribute namespaces, and console display priorities without mixing ownership boundaries.
 ---
 
 # otel-logging-design
 
 先把日志设计问题当成“上下文归谁拥有”的问题，而不是“字段放哪儿顺手”的问题。
 
-这个 skill 只处理判断流程：当固定 rules 还不足以直接回答时，用它决定字段放置、`scope.name`、业务 namespace，以及上下文该落在 `resource` / `scope` / `attributes` / trace 字段何处。
+当现有 rules 已经能直接回答时，直接按 rules 落地，不要为了走流程再套这个 skill。
+这个 skill 只处理“仍需要判断”的部分：字段归属、严重级别、是否需要事件名、`scope.name` 稳定性、业务 namespace，以及展示层最小/扩展字段的取舍。
+
+## 先看现有规则
+
+- 先读 `.claude/rules/logging-otel.md` 与 `.claude/rules/logging-console.md`。
+- 若现有规则已经直接回答问题，直接使用它们。
+- 若发现规则缺口，SHOULD 优先更新现有 rule 文档；只有当文件明显臃肿或职责边界已不清晰时，才考虑拆出新文档。
 
 ## 何时使用
 
@@ -15,58 +22,91 @@ description: Use when adding, refactoring, or reviewing structured logs and deci
 - 重构既有日志模型
 - review 日志字段是否放错层级
 - 不确定某段上下文属于资源、生产者、事件还是 trace 关联
+- 不确定严重级别该落在 `debug` / `info` / `warn` / `error` 哪一档
+- 不确定是否需要引入事件名概念
 - 不确定 `scope.name` 是否稳定
 - 不确定自定义业务字段应该挂到哪个 namespace
+- 不确定控制台该显示最小字段还是补充哪些扩展上下文
 
 不适用：
 
-- 只是在既有规则下机械补字段
-- 只讨论展示层样式或输出排版
+- 规则已明确，只需机械落地
+- 只讨论颜色、换行、缩进等纯排版问题
+- 只是在既有契约里补已有字段值
 
 ## 决策顺序
 
 1. 先定义事件本身
    - 这条日志到底在描述什么事件？
    - 这条记录最短的人类可读结论是什么？这通常就是 `body` 的核心。
+   - 先把“事件是什么”说清，再讨论字段怎么分。
 
-2. 列出候选上下文
+2. 先定严重级别
+   - 先问：这条日志对正确性、运维注意力、排障价值各是什么级别？
+   - 可用仓库本地策略快速判断：
+     - `trace`：极细粒度、高频、逐步骤诊断，默认极少使用
+     - `debug`：默认诊断级别
+     - `info`：生命周期里程碑、正常成功、以及预期内且高频的非成功结果
+     - `warn`：还能继续，但明显次优且需要关注
+     - `error`：当前操作失败，或正确性已受影响
+     - `fatal`：进程无法继续
+   - 不要因为文案“听起来严重”就升级级别；先看真实影响。
+
+3. 判断是否真的需要事件名
+   - 只有当“稳定事件类别名”能带来额外价值时，才考虑事件名概念。
+   - 若 `body` 加结构化字段已经足够，SHOULD 直接省略事件名。
+   - 若需要事件名，它 SHOULD 短小、稳定、可枚举。
+   - 事件名 MUST NOT 承载自由文本、ID、结果态、trace 信息或上下文细节。
+   - 其确切承载形式取决于所用模型、API 与约定；不要先假设当前运行时一定已经有固定 `event_name` 字段。
+
+4. 列出候选上下文
    - 把你想记录的每个字段单独列出来。
    - 不要先假设它们都在 `attributes`。
 
-3. 逐个判断归属
+5. 逐个判断归属
 
-| 问题                                                         | 归属                  |
-| ------------------------------------------------------------ | --------------------- |
-| 这个事实是否对同一运行实体的大量日志都稳定成立？             | `resource.attributes` |
-| 这个事实是否在标识“哪一个日志生产者”而不是“哪一次事件”？     | `scope`               |
-| 这个事实是否只是在表达当前日志与 trace/span 的真实因果关联？ | trace 字段            |
-| 否则，它是否属于当前这次事件，并且需要被过滤、聚合、统计？   | `attributes`          |
-| 如果它只是给人看的叙述，不需要机器查询？                     | `body`                |
+| 问题                                                         | 归属                   |
+| ------------------------------------------------------------ | ---------------------- |
+| 这个事实是否对同一运行实体的大量日志都稳定成立？             | `resource.attributes`  |
+| 这个事实是否在标识“哪一个日志生产者”，而不是“哪一次事件”？   | `scope` / `scope.name` |
+| 这个事实是否只是在表达当前日志与 trace/span 的真实因果关联？ | trace 字段             |
+| 否则，它是否属于当前这次事件，并且需要被过滤、聚合、统计？   | `attributes`           |
+| 如果它只是给人看的最短叙述，不需要机器查询？                 | `body`                 |
 
-4. 再判断是否已有标准键
+6. 再判断是否已有标准键
    - 若标准键足够准确，直接用标准键。
    - 若标准键不够，再落到自定义业务 namespace。
    - 不要为了“更顺口”重造标准概念的近义词。
 
-5. 决定 `scope.name`
+7. 决定 `scope.name`
    - 先问自己：我是在给“生产者”命名，还是在给“事件结果”命名？
+   - `scope.name` 目标是稳定点分命名，而不是把上下文揉进一个字符串。
+   - 新增命名 SHOULD 优先 3 段；既有稳定的 2 段、3 段或 4 段都可以保留。
    - 如果名字里出现实例 ID、环境、结果态、重试态、用户输入，通常已经偏离了 `scope.name` 的职责。
    - 目标是：同一生产者在不同事件上复用同一个 `scope.name`，只让事件差异进入 `attributes` 或 `body`。
 
-6. 决定自定义业务 namespace
+8. 决定自定义业务 namespace
    - 先找最接近职责归属的业务域，再继续往下细分。
    - 若一个值横跨多个步骤，优先按“谁拥有这个语义并负责解释它”来放置，而不是按“最早在哪里拿到它”来放置。
    - 若两个字段只有自由文本区别、没有稳定枚举意义，优先保留一个结构化字段加 `body`，而不是制造两套近义字段。
 
-7. 做一次可观测性复盘
-   - 不读 `body`，只看结构化字段，能否回答：
-     - 谁产生日志？
-     - 属于哪个运行资源？
-     - 当前发生了什么？
-     - 结果如何？
-     - 为什么这样？
-     - 是否与 trace 关联？
-   - 如果不能，说明字段归属还没定好。
+9. 最后做一次展示层检查
+   - 先确认底层 record 已经成立，再讨论控制台怎么显示。
+   - 控制台最小可见字段应能覆盖：时间戳、severity、`scope.name`、`body`。
+   - `warn` / `error` 应优先显示真实且相关的结果、原因、trace 关联上下文。
+   - `debug` / `trace` 可以显示更多真实诊断属性。
+   - 若某字段本来不存在，就省略；不要为了“好看”发明占位 trace / event / attribute 字段。
+
+10. 做一次可观测性复盘
+
+- 不读 `body`，只看结构化字段，能否回答：
+  - 谁产生日志？
+  - 属于哪个运行资源？
+  - 当前发生了什么？
+  - 结果如何？
+  - 为什么这样？
+  - 是否与 trace 关联？
+- 如果不能，说明字段归属还没定好。
 
 ## 快速判断提示
 
@@ -74,12 +114,15 @@ description: Use when adding, refactoring, or reviewing structured logs and deci
 - “这个 logger/handler/client 发出的”通常是 `scope`
 - “这一次请求/抓取/投递/重试才有”通常是 `attributes`
 - “只是因为当前 span 存在”才成立的关联，才是 trace 字段
+- “预期内且高频的不成功”通常先想 `info`，不是自动升 `warn`
 - “需要人读一句话才能懂”写进 `body`，但不要把可查询字段只埋在 `body`
 
 ## 常见误判
 
 - 把请求级、任务级、重试级上下文塞进 `resource.attributes`
 - 把 source id、delivery id、结果态塞进 `scope.name`
+- 把 `warn` 当成“一切不成功”的默认级别
+- 明明不需要稳定事件类别名，却硬造一个事件名
 - 明明已有标准键，却另造一套业务近义词
 - 把自由文本原因当成唯一结构化结果字段
 - 因为展示层想看得舒服，就反推底层模型结构
@@ -87,7 +130,10 @@ description: Use when adding, refactoring, or reviewing structured logs and deci
 ## 交付前自检
 
 - 每个字段都能解释“为什么属于这一层”
+- 严重级别能解释“为什么是这一档，不是更高也不是更低”
+- 若采用事件名，能解释“为什么 `body` 加 `attributes` 还不够”
 - `scope.name` 在不同实例、不同结果下仍然稳定
 - 自定义字段只在标准键不够用时出现
 - 非成功结果既有人类可读结论，也有机器可查询字段
+- 控制台最小字段与可选扩展字段的边界清楚
 - 脱敏发生在任何展示层格式化之前
