@@ -12,6 +12,7 @@ import {
   ISSUE_SOURCE_TRANSPORT_REQUIRED,
   ISSUE_STRING_ARRAY,
   ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED,
+  ISSUE_ENV_EXPANSION_FORBIDDEN,
   parseInvalidIssueMessage,
 } from './issue_codes.ts'
 import { appConfigValidatedSchema } from './schema.ts'
@@ -88,6 +89,9 @@ function formatCustomIssue(issue: z.ZodIssue): string | undefined {
   }
   if (message === ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED && path) {
     return `${path} 必须至少配置 text 或 html`
+  }
+  if (message === ISSUE_ENV_EXPANSION_FORBIDDEN && path) {
+    return `${path} 不支持环境变量展开`
   }
 
   return undefined

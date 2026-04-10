@@ -6,6 +6,7 @@ import type {
 import type { PersistParsedSourceInput, SourceStateStore } from '../db/source_state_store.ts'
 import type { DeliveryRuntime } from '../deliveries/delivery_runtime.ts'
 import type { FetchedParsedSourceResult, ParsedSourceResult } from '../sources/source_runtime.ts'
+import type { AiRuntime } from './ai_runtime.ts'
 import type { ContentContext } from './content_runtime.ts'
 import { createRunId, type Logger } from './logger.ts'
 import type { Scheduler } from './scheduler.ts'
@@ -19,6 +20,7 @@ export interface SourceProcessorContentRuntime {
     entry: UnifiedEntryFields | Record<string, string>,
     feed: UnifiedFeedFields | Record<string, string>,
     source: ResolvedSourceConfig,
+    aiEntryRuntime?: ReturnType<AiRuntime['createEntryRuntime']>,
   ): ContentContext
   shouldPassFilter(filterTemplate: string | undefined, context: ContentContext): Promise<boolean>
 }
@@ -34,6 +36,7 @@ export interface CreateSourceProcessorOptions {
   contentRuntime: SourceProcessorContentRuntime
   deliveryRuntime: DeliveryRuntime
   sourceStateStore: SourceStateStore
+  aiRuntime?: AiRuntime
   createRunId?: typeof createRunId
   now?: () => number
 }
@@ -143,10 +146,12 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
               continue
             }
 
+            const aiEntryRuntime = options.aiRuntime?.createEntryRuntime(source.id, entryId)
             const templateContext = options.contentRuntime.buildContext(
               entry,
               parsed.feedMapped,
               source,
+              aiEntryRuntime,
             )
 
             const filterStartedAt = now()

@@ -1,4 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
+import { attachAiEntryRuntime, createAiRuntime } from '../core/ai_runtime.ts'
+import { createContentRuntime } from '../core/content_runtime.ts'
 import { createHttpClient } from '../core/http_client.ts'
 import { createLogger } from '../core/logger.ts'
 import { createHttpDelivery } from './http.ts'
@@ -313,6 +315,94 @@ Deno.test(
     })
     assertEquals(getRequestClient(calls[0]), proxyClient)
     assertEquals(closeCalls, 1)
+  },
+)
+
+Deno.test(
+  'httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链',
+  async () => {
+    const aiCalls: Array<Record<string, unknown>> = []
+    const aiRuntime = createAiRuntime({
+      ai: {
+        providers: [
+          {
+            id: 'openai_main',
+            type: 'openai',
+            apiKey: 'test-key',
+            models: [
+              {
+                id: 'default',
+                providerId: 'openai_main',
+                providerType: 'openai',
+                ref: 'openai_main/default',
+                model: 'gpt-4o-mini',
+                context: 8192,
+                maxOutputTokens: 400,
+                variants: {},
+              },
+            ],
+          },
+        ],
+        defaultModel: {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+        modelRefs: {
+          'openai_main/default': {
+            ref: 'openai_main/default',
+            providerId: 'openai_main',
+            modelId: 'default',
+          },
+        },
+      },
+      defaultLanguage: 'zh-CN',
+      generateText: (input) => {
+        aiCalls.push(input as unknown as Record<string, unknown>)
+        return Promise.resolve({ text: 'AI 摘要' })
+      },
+    })
+    const contentRuntime = createContentRuntime({ aiRuntime })
+    const delivery = createHttpDelivery({
+      httpClient: createHttpClient({
+        fetcher: () =>
+          Promise.resolve(
+            new Response(JSON.stringify({ text: '需要摘要的正文' }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          ),
+      }),
+      renderContent: (template, context) => contentRuntime.renderContent(template, context),
+    })
+
+    await assertRejects(
+      () =>
+        delivery.push({
+          deliveryId: 'webhook',
+          http: {
+            method: 'POST',
+            url: 'https://example.com/webhook',
+          },
+          request: {
+            type: 'body',
+          },
+          response: {
+            predicate: '{{ body.text | ai_summarize | match_exact: "not-ai" }}',
+            message: '{{ body.text | ai_summarize }}',
+          },
+          templateContext: attachAiEntryRuntime(
+            {
+              entry: { id: 'entry-1' },
+            },
+            aiRuntime.createEntryRuntime('source-a', 'entry-1'),
+          ),
+        }),
+      Error,
+      'AI 摘要',
+    )
+
+    assertEquals(aiCalls.length, 1)
   },
 )
 

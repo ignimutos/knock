@@ -6,7 +6,9 @@ import type {
   UnifiedFeedField,
   UnifiedFeedFields,
 } from '../config/types.ts'
-import { renderLiquidSync } from '../core/liquid_runtime.ts'
+import type { AiEntryRuntime, AiRuntime } from '../core/ai_runtime.ts'
+import { attachAiEntryRuntime } from '../core/ai_runtime.ts'
+import { createLiquidRuntime } from '../core/liquid_runtime.ts'
 import {
   type FeedParseOptions,
   isTemplateValue,
@@ -24,6 +26,11 @@ export interface ParsedSyndicationSource {
   format: 'rss' | 'atom' | 'json'
 }
 
+export interface SyndicationParseRuntimeOptions {
+  sourceId?: string
+  aiRuntime?: AiRuntime
+}
+
 type MappingScope = Record<string, string>
 type FeedRecord = Record<string, unknown>
 type EntryRecord = Record<string, unknown>
@@ -37,6 +44,10 @@ type RawEntryDefaults = {
   content: string
   published: string
   updated: string
+}
+
+interface TemplateRenderer {
+  render(template: string, context: Record<string, unknown>): Promise<string>
 }
 
 const FEED_FIELDS: UnifiedFeedField[] = [
@@ -225,11 +236,49 @@ function toMappingScope(values: Record<string, unknown>): MappingScope {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, toText(value)]))
 }
 
-function resolveCustomMapping(
+function toSyndicationSourceId(sourceId?: string): string {
+  const normalized = sourceId?.trim()
+  return normalized && normalized !== '' ? normalized : '__syndication__'
+}
+
+function createFeedAiEntryRuntime(
+  runtimeOptions: SyndicationParseRuntimeOptions,
+): AiEntryRuntime | undefined {
+  if (!runtimeOptions.aiRuntime) return undefined
+  return runtimeOptions.aiRuntime.createEntryRuntime(
+    toSyndicationSourceId(runtimeOptions.sourceId),
+    '__feed__',
+  )
+}
+
+function createEntryAiEntryRuntime(
+  runtimeOptions: SyndicationParseRuntimeOptions,
+  rawDefaults: RawEntryDefaults,
+  entryIndex: number,
+): AiEntryRuntime | undefined {
+  if (!runtimeOptions.aiRuntime) return undefined
+  return runtimeOptions.aiRuntime.createEntryRuntime(
+    toSyndicationSourceId(runtimeOptions.sourceId),
+    normalizeDefaultText(rawDefaults.id) || `__entry_${entryIndex}`,
+  )
+}
+
+async function renderTemplate(
+  renderer: TemplateRenderer,
+  template: string,
+  context: Record<string, unknown>,
+  aiEntryRuntime?: AiEntryRuntime,
+): Promise<string> {
+  return await renderer.render(template, attachAiEntryRuntime(context, aiEntryRuntime))
+}
+
+async function resolveCustomMapping(
   customMapping: Record<string, string>,
   baseScope: MappingScope,
   extras: Record<string, unknown>,
-): MappingScope {
+  renderer: TemplateRenderer,
+  aiEntryRuntime?: AiEntryRuntime,
+): Promise<MappingScope> {
   const keys = Object.keys(customMapping)
   if (keys.length === 0) return {}
 
@@ -253,11 +302,16 @@ function resolveCustomMapping(
 
       const template = customMapping[key]
       resolved[key] = isTemplateValue(template)
-        ? renderLiquidSync(template, {
-            ...baseScope,
-            ...resolved,
-            ...extras,
-          })
+        ? await renderTemplate(
+            renderer,
+            template,
+            {
+              ...baseScope,
+              ...resolved,
+              ...extras,
+            },
+            aiEntryRuntime,
+          )
         : template
 
       pending.delete(key)
@@ -272,20 +326,28 @@ function resolveCustomMapping(
   return resolved
 }
 
-function renderFeedMapping(
+async function renderFeedMapping(
   rawDefaults: RawFeedDefaults,
   normalizedDefaults: UnifiedFeedFields,
   mapping: SyndicationSourceConfig['feed'],
-): UnifiedFeedFields {
+  renderer: TemplateRenderer,
+  aiEntryRuntime?: AiEntryRuntime,
+): Promise<UnifiedFeedFields> {
   if (!mapping) return { ...normalizedDefaults }
 
   const customMapping = Object.fromEntries(
     Object.entries(mapping).filter(([key]) => !FEED_FIELDS.includes(key as UnifiedFeedField)),
   )
   const baseScope = toMappingScope({ ...rawDefaults })
-  const customValues = resolveCustomMapping(customMapping, baseScope, {
-    feed: rawDefaults,
-  })
+  const customValues = await resolveCustomMapping(
+    customMapping,
+    baseScope,
+    {
+      feed: rawDefaults,
+    },
+    renderer,
+    aiEntryRuntime,
+  )
   const scope: MappingScope = { ...baseScope, ...customValues }
   const output: UnifiedFeedFields = { ...normalizedDefaults }
 
@@ -293,32 +355,45 @@ function renderFeedMapping(
     const value = mapping[key]
     if (!value) continue
     output[key] = isTemplateValue(value)
-      ? renderLiquidSync(value, {
-          ...scope,
-          feed: { ...rawDefaults, ...customValues, ...output },
-        })
+      ? await renderTemplate(
+          renderer,
+          value,
+          {
+            ...scope,
+            feed: { ...rawDefaults, ...customValues, ...output },
+          },
+          aiEntryRuntime,
+        )
       : value
   }
 
   return output
 }
 
-function renderEntryMapping(
+async function renderEntryMapping(
   rawDefaults: RawEntryDefaults,
   normalizedDefaults: UnifiedEntryFields,
   mapping: SyndicationSourceConfig['entry'],
   feed: UnifiedFeedFields,
-): UnifiedEntryFields {
+  renderer: TemplateRenderer,
+  aiEntryRuntime?: AiEntryRuntime,
+): Promise<UnifiedEntryFields> {
   if (!mapping) return { ...normalizedDefaults }
 
   const customMapping = Object.fromEntries(
     Object.entries(mapping).filter(([key]) => !ENTRY_FIELDS.includes(key as UnifiedEntryField)),
   )
   const baseScope = toMappingScope({ ...rawDefaults })
-  const customValues = resolveCustomMapping(customMapping, baseScope, {
-    feed,
-    entry: rawDefaults,
-  })
+  const customValues = await resolveCustomMapping(
+    customMapping,
+    baseScope,
+    {
+      feed,
+      entry: rawDefaults,
+    },
+    renderer,
+    aiEntryRuntime,
+  )
   const scope: MappingScope = { ...baseScope, ...customValues }
   const output: UnifiedEntryFields = { ...normalizedDefaults }
 
@@ -326,11 +401,16 @@ function renderEntryMapping(
     const value = mapping[key]
     if (!value) continue
     output[key] = isTemplateValue(value)
-      ? renderLiquidSync(value, {
-          ...scope,
-          entry: { ...rawDefaults, ...customValues, ...output },
-          feed,
-        })
+      ? await renderTemplate(
+          renderer,
+          value,
+          {
+            ...scope,
+            entry: { ...rawDefaults, ...customValues, ...output },
+            feed,
+          },
+          aiEntryRuntime,
+        )
       : value
   }
 
@@ -351,23 +431,45 @@ function extractNormalizedFeed(
   return { feed, entries: toRecordArray(feed.items) }
 }
 
-export function parseSyndicationSource(
+export async function parseSyndicationSource(
   payload: string,
   mapping: SyndicationSourceConfig = {},
   options: FeedParseOptions = {},
-): ParsedSyndicationSource {
+  runtimeOptions: SyndicationParseRuntimeOptions = {},
+): Promise<ParsedSyndicationSource> {
   const format = detectSyndicationFormat(payload)
   const parsed = extractNormalizedFeed(payload, format)
   const rawFeedDefaults = pickRawFeedDefaults(format, parsed.feed)
   const feedDefaults = normalizeFeedDefaults(rawFeedDefaults, options)
-  const feed = renderFeedMapping(rawFeedDefaults, feedDefaults, mapping.feed)
-  const entries = parsed.entries.map((item) => {
+  const liquidRuntime = createLiquidRuntime({ aiRuntime: runtimeOptions.aiRuntime })
+  const renderer: TemplateRenderer = {
+    render(template, context) {
+      return liquidRuntime.render(template, context)
+    },
+  }
+  const feed = await renderFeedMapping(
+    rawFeedDefaults,
+    feedDefaults,
+    mapping.feed,
+    renderer,
+    createFeedAiEntryRuntime(runtimeOptions),
+  )
+  const entries: ParsedSyndicationEntry[] = []
+
+  for (const [entryIndex, item] of parsed.entries.entries()) {
     const rawDefaults = pickRawEntryDefaults(format, item)
     const defaults = normalizeEntryDefaults(rawDefaults, options)
-    return {
-      mapped: renderEntryMapping(rawDefaults, defaults, mapping.entry, feed),
-    }
-  })
+    entries.push({
+      mapped: await renderEntryMapping(
+        rawDefaults,
+        defaults,
+        mapping.entry,
+        feed,
+        renderer,
+        createEntryAiEntryRuntime(runtimeOptions, rawDefaults, entryIndex),
+      ),
+    })
+  }
 
   return {
     feed,

@@ -3,6 +3,7 @@ import type {
   UnifiedEntryFields,
   UnifiedFeedFields,
 } from '../config/types.ts'
+import type { AiRuntime } from '../core/ai_runtime.ts'
 import type { HttpClient } from '../core/http_client.ts'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
 import { parseSyndicationSource } from './syndication.ts'
@@ -25,6 +26,7 @@ export interface FetchAndParseSourceInput {
     timezone: string
     timestampFormat: string
   }
+  aiRuntime?: AiRuntime
 }
 
 export interface SourceRuntimeTiming {
@@ -130,13 +132,17 @@ async function fetchSourcePayload(
   return await response.text()
 }
 
-function parseSourcePayload(
+async function parseSourcePayload(
   source: ResolvedSourceConfig,
   payload: string,
   timeOptions: { timezone: string; timestampFormat: string },
-): ParsedSourceResult {
+  aiRuntime?: AiRuntime,
+): Promise<ParsedSourceResult> {
   if (source.syndication) {
-    const parsed = parseSyndicationSource(payload, source.syndication, timeOptions)
+    const parsed = await parseSyndicationSource(payload, source.syndication, timeOptions, {
+      sourceId: source.id,
+      aiRuntime,
+    })
     return {
       feedMapped: parsed.feed,
       entries: parsed.entries,
@@ -168,7 +174,7 @@ export async function fetchAndParseSource(
   const fetchDurationMs = Date.now() - fetchStartedAt
 
   const parseStartedAt = Date.now()
-  const parsed = parseSourcePayload(input.source, payload, input.timeOptions)
+  const parsed = await parseSourcePayload(input.source, payload, input.timeOptions, input.aiRuntime)
   const parseDurationMs = Date.now() - parseStartedAt
 
   return {

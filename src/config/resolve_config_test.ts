@@ -335,6 +335,15 @@ Deno.test('resolveConfig: source 显式 enabled=false 时应保留禁用状态',
   assertEquals(resolved.sources[0].enabled, false)
 })
 
+Deno.test('resolveConfig: 未配置 language 时应补系统语言，失败时回退 zh-CN', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+  }
+
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.language?.length ? true : false, true)
+})
+
 Deno.test('resolveConfig: 缺省时应补系统时区与默认时间格式', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
@@ -497,4 +506,196 @@ Deno.test('resolveConfig: sqlite.path 绝对路径应保持原样', () => {
 
   const resolved = resolveConfig(validateConfig(input))
   assertEquals(resolved.sqlite.path, '/var/lib/knock/custom.db')
+})
+
+Deno.test('resolveConfig: AI defaultModel 缺省时按 provider 与 models 声明顺序选第一个模型', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          second: {
+            type: 'anthropic',
+            models: {
+              sonnet: {
+                model: 'claude-3-7-sonnet-latest',
+              },
+            },
+          },
+          first: {
+            type: 'openai',
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+              },
+              full: {
+                model: 'gpt-4o',
+              },
+            },
+          },
+        },
+      },
+    } as AppConfigInput),
+  )
+
+  assertEquals(resolved.ai?.defaultModel?.providerId, 'second')
+  assertEquals(resolved.ai?.defaultModel?.modelId, 'sonnet')
+  assertEquals(resolved.ai?.defaultModel?.ref, 'second/sonnet')
+})
+
+Deno.test('resolveConfig: 裸 modelRef 与 providerId/modelId 都应可解析', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        defaultModel: 'mini',
+        providers: {
+          openai_main: {
+            type: 'openai',
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+              },
+            },
+          },
+        },
+      },
+    } as AppConfigInput),
+  )
+
+  assertEquals(resolved.ai?.defaultModel?.providerId, 'openai_main')
+  assertEquals(resolved.ai?.defaultModel?.modelId, 'mini')
+  assertEquals(resolved.ai?.defaultModel?.ref, 'openai_main/mini')
+  assertEquals(resolved.ai?.modelRefs['mini']?.ref, 'openai_main/mini')
+  assertEquals(resolved.ai?.modelRefs['openai_main/mini']?.ref, 'openai_main/mini')
+})
+
+Deno.test('resolveConfig: variant options 应与 model options 做浅合并', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          openai_main: {
+            type: 'openai',
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+                temperature: 0.2,
+                options: {
+                  reasoningEffort: 'low',
+                  json: false,
+                },
+                variants: {
+                  creative: {
+                    temperature: 0.8,
+                    options: {
+                      json: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as unknown as AppConfigInput),
+  )
+
+  assertEquals(resolved.ai?.providers[0].models[0].variants.creative.temperature, 0.8)
+  assertEquals(resolved.ai?.providers[0].models[0].variants.creative.options, {
+    reasoningEffort: 'low',
+    json: true,
+  })
+})
+
+Deno.test('resolveConfig: openai model options 应保留到 resolved 层供 runtime 消费', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          openai_main: {
+            type: 'openai',
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+                options: {
+                  reasoningEffort: 'low',
+                  json: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    } as unknown as AppConfigInput),
+  )
+
+  assertEquals(resolved.ai?.providers[0].models[0].options, {
+    reasoningEffort: 'low',
+    json: true,
+  })
+})
+
+Deno.test('resolveConfig: 热门模型默认表未命中时应回退 provider 默认值', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          google: {
+            type: 'gemini',
+            models: {
+              custom: {
+                model: 'gemini-custom-preview',
+              },
+            },
+          },
+        },
+      },
+    } as AppConfigInput),
+  )
+
+  assertEquals(resolved.ai?.providers[0].models[0].context, 1048576)
+  assertEquals(resolved.ai?.providers[0].models[0].maxOutputTokens, 8192)
+})
+
+Deno.test('resolveConfig: provider 根层共同字段应进入 resolved，不会被静默忽略', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          openai_main: {
+            type: 'openai',
+            apiKey: '${OPENAI_API_KEY}',
+            baseURL: 'https://openai.example.com/v1',
+            headers: {
+              'X-Trace-Id': 'trace-1',
+            },
+            options: {
+              organization: 'org-demo',
+              project: 'proj-demo',
+            },
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+              },
+            },
+          },
+        },
+      },
+    } as AppConfigInput),
+  )
+
+  assertEquals(resolved.ai?.providers[0].apiKey, '${OPENAI_API_KEY}')
+  assertEquals(resolved.ai?.providers[0].baseURL, 'https://openai.example.com/v1')
+  assertEquals(resolved.ai?.providers[0].headers, {
+    'X-Trace-Id': 'trace-1',
+  })
+  assertEquals(resolved.ai?.providers[0].options, {
+    organization: 'org-demo',
+    project: 'proj-demo',
+  })
 })

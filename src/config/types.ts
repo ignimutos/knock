@@ -1,4 +1,8 @@
 import {
+  type AiConfigInput,
+  type AiModelConfigInput,
+  type AiModelVariantConfig,
+  type AiProviderType,
   type DeliveryConfigInput,
   type EmailConfig,
   ENTRY_FIELD_KEYS,
@@ -69,6 +73,36 @@ export interface UnifiedEntryFields {
   updated: string
 }
 
+export type AiModelVariantResolved = AiModelVariantConfig
+
+export interface AiModelResolved extends Omit<AiModelConfigInput, 'variants'> {
+  id: string
+  providerId: string
+  providerType: AiProviderType
+  ref: string
+  variants: Record<string, AiModelVariantResolved>
+}
+
+export interface AiProviderResolved extends Omit<
+  NonNullable<AiConfigInput['providers'][string]>,
+  'models'
+> {
+  id: string
+  models: AiModelResolved[]
+}
+
+export interface AiModelRefResolved {
+  ref: string
+  providerId: string
+  modelId: string
+}
+
+export interface AiConfigResolved {
+  providers: AiProviderResolved[]
+  defaultModel?: AiModelRefResolved
+  modelRefs: Record<string, AiModelRefResolved>
+}
+
 export interface ResolvedSourceConfig extends Omit<SourceConfigInput, 'enabled' | 'deliveries'> {
   id: string
   enabled: boolean
@@ -77,9 +111,11 @@ export interface ResolvedSourceConfig extends Omit<SourceConfigInput, 'enabled' 
 
 export interface AppConfigResolved {
   runtimeDir: string
+  language: string
   timezone: string
   timestampFormat: string
   sqlite: SqliteConfigResolved
+  ai?: AiConfigResolved
   deliveries: Array<{
     id: string
     file?: FileDeliveryConfig

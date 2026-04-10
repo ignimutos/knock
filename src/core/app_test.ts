@@ -446,6 +446,112 @@ sources:
   assertEquals(deliveryClientCloseCalls, 1)
 })
 
+test('app: immediate 模式下文件模板主链路应可使用 ai_summarize', async () => {
+  const testRuntime = getTestRuntime('oneshot-ai-runtime')
+  await emptyDir(testRuntime)
+  await ensureDir(testRuntime)
+
+  const aiRequests: Array<Record<string, unknown>> = []
+  const aiServer = Deno.serve({ hostname: '127.0.0.1', port: 0 }, async (request) => {
+    aiRequests.push((await request.json()) as Record<string, unknown>)
+    return new Response(
+      JSON.stringify({
+        id: 'resp_1',
+        created_at: 1_710_000_000,
+        model: 'gpt-4o-mini',
+        output: [
+          {
+            type: 'message',
+            role: 'assistant',
+            id: 'msg_1',
+            content: [
+              {
+                type: 'output_text',
+                text: 'AI 摘要',
+                annotations: [],
+              },
+            ],
+          },
+        ],
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          total_tokens: 15,
+        },
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    )
+  })
+
+  try {
+    await Deno.writeTextFile(
+      join(testRuntime, 'config.yml'),
+      `
+language: zh-CN
+ai:
+  defaultModel: openai_main/default
+  providers:
+    openai_main:
+      type: openai
+      apiKey: test-key
+      baseURL: http://127.0.0.1:${aiServer.addr.port}/v1
+      models:
+        default:
+          model: gpt-4o-mini
+          context: 8192
+          maxOutputTokens: 400
+
+deliveries:
+  local:
+    file:
+      path: outputs/source.md
+      content: "{{ entry.description | ai_summarize }}"
+
+sources:
+  rust:
+    http:
+      url: https://example.com/rust.xml
+    syndication:
+      entry:
+        id: "{{ id }}"
+        title: "{{ title }}"
+        description: "{{ description }}"
+    deliveries:
+      - local
+`,
+    )
+
+    const result = await startApp({
+      runtimeDir: testRuntime,
+      httpFetcher: async () => {
+        const xml = `
+<rss>
+  <channel>
+    <item>
+      <guid>id-1</guid>
+      <title>Hello Rust</title>
+      <description>需要摘要的正文</description>
+    </item>
+  </channel>
+</rss>`
+        return await Promise.resolve(new Response(xml))
+      },
+      keepAlive: false,
+      immediate: true,
+    })
+
+    assertEquals(result.mode, 'daemon')
+    const output = await Deno.readTextFile(join(testRuntime, 'outputs', 'source.md'))
+    assertStringIncludes(output, 'AI 摘要')
+    assertEquals(aiRequests.length, 1)
+  } finally {
+    await aiServer.shutdown()
+  }
+})
+
 test('app: immediate 模式应执行一次并进入非调度模式', async () => {
   const testRuntime = getTestRuntime('oneshot')
   await emptyDir(testRuntime)

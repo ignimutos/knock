@@ -1,7 +1,8 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import type { ResolvedSourceConfig } from '../config/types.ts'
-import { createSourceProcessor } from './source_processor.ts'
+import { attachAiEntryRuntime, getAiEntryRuntime } from './ai_runtime.ts'
 import type { Logger } from './logger.ts'
+import { createSourceProcessor } from './source_processor.ts'
 
 function createTestLogger(
   records: Array<Record<string, unknown>>,
@@ -52,6 +53,8 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
   const persisted: Array<Record<string, unknown>> = []
   const pruned: Array<Record<string, unknown>> = []
   const filterCalls: string[] = []
+  const aiRuntimeCalls: Array<{ sourceId: string; entryId: string }> = []
+  const pushedContextAiEntryIds: string[] = []
 
   const source = createSource()
   const processor = createSourceProcessor({
@@ -81,7 +84,15 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
         }),
     },
     contentRuntime: {
-      buildContext: (entry, feed, currentSource) => ({ entry, feed, source: currentSource }),
+      buildContext: (entry, feed, currentSource, aiEntryRuntime) =>
+        attachAiEntryRuntime(
+          {
+            entry,
+            feed,
+            source: currentSource,
+          },
+          aiEntryRuntime,
+        ),
       shouldPassFilter: (_filter, context) => {
         const itemId = String((context.entry as { id?: string }).id ?? '')
         filterCalls.push(itemId)
@@ -92,6 +103,7 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
       getDeliveryId: (delivery) => `delivery:${delivery.id}`,
       push: (_delivery, context) => {
         pushedItemIds.push(String((context.entry as { id?: string }).id ?? ''))
+        pushedContextAiEntryIds.push(String(getAiEntryRuntime(context)?.entryId ?? ''))
         return Promise.resolve()
       },
     },
@@ -109,6 +121,14 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
         pruned.push({ sourceId, activeTargetCount })
       },
     },
+    aiRuntime: {
+      createEntryRuntime: (sourceId, entryId) => {
+        aiRuntimeCalls.push({ sourceId, entryId })
+        return { sourceId, entryId, cache: new Map() }
+      },
+      translate: () => Promise.resolve(''),
+      summarize: () => Promise.resolve(''),
+    },
     createRunId: () => 'run-1',
     now: (() => {
       const values = [1000, 1010, 1020, 1030, 1040]
@@ -121,7 +141,13 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
 
   assertEquals(schedulerCalls, ['rust'])
   assertEquals(filterCalls, ['filtered', 'delivered', 'deduped'])
+  assertEquals(aiRuntimeCalls, [
+    { sourceId: 'rust', entryId: 'filtered' },
+    { sourceId: 'rust', entryId: 'delivered' },
+    { sourceId: 'rust', entryId: 'deduped' },
+  ])
   assertEquals(pushedItemIds, ['delivered'])
+  assertEquals(pushedContextAiEntryIds, ['delivered'])
   assertEquals(persisted.length, 1)
   assertEquals(persisted[0].sourceId, 'rust')
   assertEquals(pruned, [{ sourceId: 'rust', activeTargetCount: 1 }])

@@ -137,6 +137,46 @@ export const CONFIG_FIELD_CAPABILITIES: ConfigFieldCapability[] = [
     allowEnv: true,
     allowLiquid: true,
   },
+  {
+    path: 'ai.defaultModel',
+    allowEnv: false,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.apiKey',
+    allowEnv: true,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.baseURL',
+    allowEnv: true,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.headers.*',
+    allowEnv: true,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.models.*.model',
+    allowEnv: false,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.options.organization',
+    allowEnv: true,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.options.project',
+    allowEnv: true,
+    allowLiquid: false,
+  },
+  {
+    path: 'ai.providers.*.options.authToken',
+    allowEnv: true,
+    allowLiquid: false,
+  },
 ]
 
 function matchesPath(pattern: string, path: string): boolean {

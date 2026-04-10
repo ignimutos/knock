@@ -11,6 +11,7 @@ export const ISSUE_SOURCE_PARSER_CONFLICT = '__source_parser_conflict__'
 export const ISSUE_SOURCE_TRANSPORT_CONFLICT = '__source_transport_conflict__'
 export const ISSUE_SOURCE_TRANSPORT_REQUIRED = '__source_transport_required__'
 export const ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED = '__email_message_content_required__'
+export const ISSUE_ENV_EXPANSION_FORBIDDEN = '__env_expansion_forbidden__'
 
 export function createInvalidIssueMessage(value: unknown): string {
   return `${ISSUE_INVALID}:${String(value)}`

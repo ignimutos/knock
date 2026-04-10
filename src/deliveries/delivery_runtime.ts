@@ -1,6 +1,7 @@
 import { getPostRenderValidator } from '../config/capabilities.ts'
+import type { HttpPayload } from '../config/schema.ts'
 import type { ResolvedDeliveryConfig } from '../config/types.ts'
-import { type ContentContext, renderPayload } from '../core/content_runtime.ts'
+import type { ContentContext } from '../core/content_runtime.ts'
 import type { EmailDeliveryRequest } from './email.ts'
 import type { FileDeliveryRequest } from './file.ts'
 import type { HttpDeliveryRequest } from './http.ts'
@@ -13,6 +14,10 @@ export interface DeliveryRuntime {
 export interface DeliveryRuntimeDependencies {
   contentRuntime: {
     renderContent(template: string, context: ContentContext): Promise<string>
+    renderPayload(
+      payload: HttpPayload | undefined,
+      context: ContentContext,
+    ): Promise<HttpPayload | undefined>
   }
   fileDelivery: { push(req: FileDeliveryRequest): Promise<void> }
   httpDelivery: { push(req: HttpDeliveryRequest): Promise<void> }
@@ -45,6 +50,7 @@ function renderDeliveryContent(
 }
 
 async function buildHttpDeliveryRequest(
+  dependencies: DeliveryRuntimeDependencies,
   delivery: ResolvedDeliveryConfig & {
     push: NonNullable<ResolvedDeliveryConfig['push']>
   },
@@ -61,9 +67,13 @@ async function buildHttpDeliveryRequest(
     },
     request: {
       type: delivery.push.request.type,
-      payload: await renderPayload(delivery.push.request.payload, templateContext),
+      payload: await dependencies.contentRuntime.renderPayload(
+        delivery.push.request.payload,
+        templateContext,
+      ),
     },
     response: delivery.push.response ? { ...delivery.push.response } : undefined,
+    templateContext,
   }
 }
 
@@ -199,6 +209,7 @@ export function createDeliveryRuntime(dependencies: DeliveryRuntimeDependencies)
       if (delivery.push) {
         await dependencies.httpDelivery.push(
           await buildHttpDeliveryRequest(
+            dependencies,
             delivery as ResolvedDeliveryConfig & {
               push: NonNullable<ResolvedDeliveryConfig['push']>
             },

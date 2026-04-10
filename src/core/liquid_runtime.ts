@@ -1,11 +1,24 @@
-import { Liquid } from 'liquidjs'
+import { Liquid, TokenKind } from 'liquidjs'
 import MarkdownIt from 'markdown-it'
 import sanitizeHtml from 'sanitize-html'
 import { convert as convertTelegramMarkdownV2 } from 'telegram-markdown-v2'
 import TurndownService from 'turndown'
+import type { AiRuntime } from './ai_runtime.ts'
+import { getAiEntryRuntime } from './ai_runtime.ts'
 
 type LiquidContext = Record<string, unknown>
 type MatchMode = 'left' | 'right' | 'both'
+
+interface CreateLiquidRuntimeOptions {
+  aiRuntime?: AiRuntime
+}
+
+interface LiquidRuntime {
+  asyncEngine: Liquid
+  syncEngine: Liquid
+  render(template: string, context: LiquidContext): Promise<string>
+  renderSync(template: string, context: LiquidContext): string
+}
 
 function toLiquidString(value: unknown): string {
   return String(value ?? '')
@@ -22,6 +35,101 @@ function parseInvertArg(filterName: string, invert: unknown): boolean {
   if (invert === undefined) return false
   if (typeof invert === 'boolean') return invert
   throw new Error(`${filterName} 的 invert 参数必须是布尔值`)
+}
+
+function assertAiFilterLiteralArguments(
+  filterName: 'ai_translate' | 'ai_summarize',
+  args: unknown[],
+  filterThis: unknown,
+): void {
+  const maxArgs = filterName === 'ai_translate' ? 3 : 2
+  if (args.length > maxArgs) {
+    throw new Error(`${filterName} 仅支持 ${maxArgs} 个字符串字面量参数`)
+  }
+
+  const tokenArgs = (
+    filterThis as {
+      token?: {
+        args?: Array<{
+          kind?: number
+        }>
+      }
+    }
+  )?.token?.args
+
+  if (!Array.isArray(tokenArgs) || tokenArgs.length !== args.length) {
+    throw new Error(`${filterName} 参数解析失败`)
+  }
+
+  for (const tokenArg of tokenArgs) {
+    if (tokenArg?.kind !== TokenKind.Quoted) {
+      throw new Error('AI filter 参数必须是字符串字面量')
+    }
+  }
+}
+
+function parseTranslateArgs(args: unknown[]): {
+  model?: string
+  variant?: string
+  language?: string
+} {
+  if (args.length > 3) {
+    throw new Error('ai_translate 最多只接受 3 个字符串字面量参数')
+  }
+  for (const arg of args) {
+    if (arg !== undefined && typeof arg !== 'string') {
+      throw new Error('ai_translate 的 model / variant / language 参数必须是字符串字面量')
+    }
+  }
+
+  if (args.length === 0) return {}
+  if (args.length === 1) return { language: args[0] as string }
+  if (args.length === 2) return { model: args[0] as string, language: args[1] as string }
+  return {
+    model: args[0] as string,
+    variant: args[1] as string,
+    language: args[2] as string,
+  }
+}
+
+function parseSummarizeArgs(args: unknown[]): { model?: string; variant?: string } {
+  if (args.length > 2) {
+    throw new Error('ai_summarize 最多只接受 2 个字符串字面量参数')
+  }
+  for (const arg of args) {
+    if (arg !== undefined && typeof arg !== 'string') {
+      throw new Error('ai_summarize 的 model / variant 参数必须是字符串字面量')
+    }
+  }
+
+  if (args.length === 0) return {}
+  if (args.length === 1) return { model: args[0] as string }
+  return { model: args[0] as string, variant: args[1] as string }
+}
+
+function getEntryRuntimeFromFilterThis(filterThis: unknown) {
+  if (!filterThis || typeof filterThis !== 'object') return undefined
+  const maybeContext = (
+    filterThis as {
+      context?: { environments?: Record<PropertyKey, unknown>; scopes?: unknown[] }
+    }
+  ).context
+  if (!maybeContext) return undefined
+
+  const direct = maybeContext.environments
+  if (direct && typeof direct === 'object') {
+    const runtime = getAiEntryRuntime(direct)
+    if (runtime) return runtime
+  }
+
+  for (const scope of maybeContext.scopes ?? []) {
+    if (scope && typeof scope === 'object') {
+      const runtime = getAiEntryRuntime(scope as Record<PropertyKey, unknown>)
+      if (runtime) return runtime
+    }
+  }
+
+  return undefined
 }
 
 const markdownRenderer = new MarkdownIt({
@@ -113,18 +221,11 @@ function convertToTelegramMarkdownV2(value: unknown): string {
   }
 }
 
-interface LiquidRuntime {
-  engine: Liquid
-  render(template: string, context: LiquidContext): Promise<string>
-  renderSync(template: string, context: LiquidContext): string
-}
-
-export function assertLiquidTemplateSyntax(template: string): void {
-  getSharedLiquidRuntime().engine.parse(template)
+export function assertLiquidTemplateSyntax(template: string) {
+  return getSharedLiquidRuntime().asyncEngine.parse(template)
 }
 
 function registerSharedLiquidFilters(engine: Liquid): void {
-  // 共享 runtime 同时服务同步与异步渲染，新增 filter 必须兼容同步调用。
   engine.registerFilter(
     'match_exact',
     (value: unknown, target: unknown, invert?: unknown): boolean => {
@@ -208,17 +309,64 @@ function registerSharedLiquidFilters(engine: Liquid): void {
   })
 }
 
-function createLiquidRuntime(): LiquidRuntime {
-  const engine = new Liquid()
-  registerSharedLiquidFilters(engine)
+function registerAiLiquidFilters(engine: Liquid, aiRuntime?: AiRuntime): void {
+  engine.registerFilter(
+    'ai_translate',
+    async function (value: unknown, ...args: unknown[]): Promise<string> {
+      assertAiFilterLiteralArguments('ai_translate', args, this)
+      if (!aiRuntime) {
+        throw new Error('未配置 ai，无法使用 ai_translate')
+      }
+      const entryRuntime = getEntryRuntimeFromFilterThis(this)
+      if (!entryRuntime) {
+        throw new Error('缺少 entry 级 AI runtime，无法执行 ai_translate')
+      }
+      return await aiRuntime.translate(entryRuntime, value, parseTranslateArgs(args))
+    },
+  )
+
+  engine.registerFilter(
+    'ai_summarize',
+    async function (value: unknown, ...args: unknown[]): Promise<string> {
+      assertAiFilterLiteralArguments('ai_summarize', args, this)
+      if (!aiRuntime) {
+        throw new Error('未配置 ai，无法使用 ai_summarize')
+      }
+      const entryRuntime = getEntryRuntimeFromFilterThis(this)
+      if (!entryRuntime) {
+        throw new Error('缺少 entry 级 AI runtime，无法执行 ai_summarize')
+      }
+      return await aiRuntime.summarize(entryRuntime, value, parseSummarizeArgs(args))
+    },
+  )
+}
+
+function registerSyncAiGuards(engine: Liquid): void {
+  engine.registerFilter('ai_translate', (): never => {
+    throw new Error('ai_translate 仅支持异步渲染')
+  })
+  engine.registerFilter('ai_summarize', (): never => {
+    throw new Error('ai_summarize 仅支持异步渲染')
+  })
+}
+
+export function createLiquidRuntime(options: CreateLiquidRuntimeOptions = {}): LiquidRuntime {
+  const asyncEngine = new Liquid()
+  registerSharedLiquidFilters(asyncEngine)
+  registerAiLiquidFilters(asyncEngine, options.aiRuntime)
+
+  const syncEngine = new Liquid()
+  registerSharedLiquidFilters(syncEngine)
+  registerSyncAiGuards(syncEngine)
 
   return {
-    engine,
+    asyncEngine,
+    syncEngine,
     render(template: string, context: LiquidContext): Promise<string> {
-      return engine.parseAndRender(template, context)
+      return asyncEngine.parseAndRender(template, context)
     },
     renderSync(template: string, context: LiquidContext): string {
-      return engine.parseAndRenderSync(template, context)
+      return syncEngine.parseAndRenderSync(template, context)
     },
   }
 }
@@ -241,5 +389,6 @@ export function renderLiquidSync(template: string, context: LiquidContext): stri
 }
 
 export function registerLiquidFilter(name: string, filter: unknown): void {
-  getSharedLiquidRuntime().engine.registerFilter(name, filter as never)
+  getSharedLiquidRuntime().asyncEngine.registerFilter(name, filter as never)
+  getSharedLiquidRuntime().syncEngine.registerFilter(name, filter as never)
 }

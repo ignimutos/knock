@@ -10,6 +10,8 @@ Deno.test('config.example.yml: 提交的示例应可通过当前 schema 校验',
     ...(parsed ?? {}),
   })
 
+  assertEquals(validated.language, 'zh-CN')
+  assertEquals(validated.ai?.defaultModel, 'openai_main/default')
   assertEquals(Object.keys(validated.deliveries ?? {}).sort(), [
     'local',
     'release_email',

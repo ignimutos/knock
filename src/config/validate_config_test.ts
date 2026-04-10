@@ -567,3 +567,686 @@ Deno.test('validateConfig: 非法 timezone 时应报错', () => {
 
   assertThrows(() => validateConfig(input), Error, 'timezone 配置非法: Invalid/Zone')
 })
+
+Deno.test('validateConfig: language 应做 BCP47 规范化', () => {
+  const validated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    language: 'ZH-cn',
+  } as AppConfigInput)
+
+  assertEquals(validated.language, 'zh-CN')
+})
+
+Deno.test('validateConfig: 非法 language 时应报错', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        language: 'not a language',
+      } as AppConfigInput),
+    Error,
+    'language 配置非法: not a language',
+  )
+})
+
+Deno.test('validateConfig: AI provider.type 仅支持 openai anthropic gemini', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            main: {
+              type: 'azure',
+              models: {
+                default: {
+                  model: 'gpt-4o-mini',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.main.type 配置非法: azure',
+  )
+})
+
+Deno.test('validateConfig: gemini provider 不支持 provider-specific options', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            google: {
+              type: 'gemini',
+              options: {
+                project: 'demo',
+              },
+              models: {
+                flash: {
+                  model: 'gemini-2.5-flash',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.google.options 配置非法: gemini provider 不支持 options',
+  )
+})
+
+Deno.test('validateConfig: openai model/variant options 仅支持已落地字段', () => {
+  const validated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    ai: {
+      providers: {
+        openai_main: {
+          type: 'openai',
+          models: {
+            default: {
+              model: 'gpt-4o-mini',
+              options: {
+                reasoningEffort: 'low',
+                json: false,
+              },
+              variants: {
+                creative: {
+                  options: {
+                    reasoningEffort: 'medium',
+                    json: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  } as unknown as AppConfigInput)
+
+  assertEquals(validated.ai?.providers.openai_main.models.default.options, {
+    reasoningEffort: 'low',
+    json: false,
+  })
+  assertEquals(validated.ai?.providers.openai_main.models.default.variants?.creative.options, {
+    reasoningEffort: 'medium',
+    json: true,
+  })
+})
+
+Deno.test('validateConfig: openai model/variant options 不支持未落地字段', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            openai_main: {
+              type: 'openai',
+              models: {
+                default: {
+                  model: 'gpt-4o-mini',
+                  options: {
+                    responseFormat: 'json_schema',
+                  },
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.openai_main.models.default.options.responseFormat 非法',
+  )
+})
+
+Deno.test('validateConfig: anthropic 与 gemini 的非空 model/variant options 应在配置期报错', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            claude: {
+              type: 'anthropic',
+              models: {
+                sonnet: {
+                  model: 'claude-3-7-sonnet-latest',
+                  options: {
+                    reasoningEffort: 'low',
+                  },
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.claude.models.sonnet.options 配置非法: anthropic model 不支持 options',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            google: {
+              type: 'gemini',
+              models: {
+                flash: {
+                  model: 'gemini-2.5-flash',
+                  variants: {
+                    fast: {
+                      options: {
+                        json: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.google.models.flash.variants.fast.options 配置非法: gemini variant 不支持 options',
+  )
+})
+
+Deno.test('validateConfig: anthropic 同时配置 apiKey 与 authToken 时应报错', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            claude: {
+              type: 'anthropic',
+              apiKey: 'key',
+              options: {
+                authToken: 'token',
+              },
+              models: {
+                sonnet: {
+                  model: 'claude-3-7-sonnet-latest',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.claude 不能同时配置 apiKey 与 options.authToken',
+  )
+})
+
+Deno.test('validateConfig: provider-specific options 允许 ENV 但不允许 Liquid', () => {
+  const envValidated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    ai: {
+      providers: {
+        openai_main: {
+          type: 'openai',
+          options: {
+            organization: '${OPENAI_ORG}',
+            project: '${OPENAI_PROJECT}',
+          },
+          models: {
+            mini: {
+              model: 'gpt-4o-mini',
+            },
+          },
+        },
+        claude: {
+          type: 'anthropic',
+          options: {
+            authToken: '${ANTHROPIC_AUTH_TOKEN}',
+          },
+          models: {
+            sonnet: {
+              model: 'claude-3-7-sonnet-latest',
+            },
+          },
+        },
+      },
+    },
+  } as unknown as AppConfigInput)
+
+  assertEquals(envValidated.ai?.providers.openai_main.options, {
+    organization: '${OPENAI_ORG}',
+    project: '${OPENAI_PROJECT}',
+  })
+  assertEquals(envValidated.ai?.providers.claude.options, {
+    authToken: '${ANTHROPIC_AUTH_TOKEN}',
+  })
+
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            openai_main: {
+              type: 'openai',
+              options: {
+                organization: '{{ entry.title }}',
+              },
+              models: {
+                mini: {
+                  model: 'gpt-4o-mini',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.openai_main.options.organization 配置非法: ai.providers.*.options.organization 不支持 Liquid 模板',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            claude: {
+              type: 'anthropic',
+              options: {
+                authToken: '{{ entry.title }}',
+              },
+              models: {
+                sonnet: {
+                  model: 'claude-3-7-sonnet-latest',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.claude.options.authToken 配置非法: ai.providers.*.options.authToken 不支持 Liquid 模板',
+  )
+})
+
+Deno.test('validateConfig: defaultModel 不允许 ENV 或 Liquid', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          defaultModel: '${OPENAI_DEFAULT_MODEL}',
+          providers: {
+            main: {
+              type: 'openai',
+              models: {
+                mini: {
+                  model: 'gpt-4o-mini',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.defaultModel 不支持环境变量展开',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          defaultModel: '{{ entry.title }}',
+          providers: {
+            main: {
+              type: 'openai',
+              models: {
+                mini: {
+                  model: 'gpt-4o-mini',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.defaultModel 配置非法: ai.defaultModel 不支持 Liquid 模板',
+  )
+})
+
+Deno.test('validateConfig: modelRef 裸 modelId 跨 provider 重名时应报错', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          defaultModel: 'shared',
+          providers: {
+            openai_main: {
+              type: 'openai',
+              models: {
+                shared: {
+                  model: 'gpt-4o-mini',
+                },
+              },
+            },
+            anthropic_main: {
+              type: 'anthropic',
+              models: {
+                shared: {
+                  model: 'claude-3-5-haiku-latest',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.defaultModel 配置非法: 裸 modelId shared 存在多个 provider，请改用 providerId/modelId',
+  )
+})
+
+Deno.test('validateConfig: variant 不允许覆盖 model 与 context', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            main: {
+              type: 'openai',
+              models: {
+                default: {
+                  model: 'gpt-4o-mini',
+                  variants: {
+                    hot: {
+                      model: 'gpt-4o',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.main.models.default.variants.hot.model 非法',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            main: {
+              type: 'openai',
+              models: {
+                default: {
+                  model: 'gpt-4o-mini',
+                  variants: {
+                    hot: {
+                      context: 1,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.main.models.default.variants.hot.context 非法',
+  )
+})
+
+Deno.test('validateConfig: model 必须是静态字面量，不允许 ENV 或 Liquid', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            main: {
+              type: 'openai',
+              models: {
+                env_model: {
+                  model: '${OPENAI_MODEL}',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.main.models.env_model.model 不支持环境变量展开',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            main: {
+              type: 'openai',
+              models: {
+                liquid_model: {
+                  model: '{{ entry.title }}',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.main.models.liquid_model.model 配置非法: ai.providers.*.models.*.model 不支持 Liquid 模板',
+  )
+})
+
+Deno.test('validateConfig: sources.filter 字符串字面量里的 AI filter 文本不应误报', () => {
+  const validated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        filter: '{{ "literal | ai_translate: \"zh-CN\"" }}',
+      },
+    },
+  } as unknown as AppConfigInput)
+
+  assertEquals(validated.sources.feed.filter, '{{ "literal | ai_translate: \"zh-CN\"" }}')
+})
+
+Deno.test('validateConfig: sources.filter comment 里的 AI filter 文本不应误报', () => {
+  const validated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        filter: '{% comment %}| ai_translate: "zh-CN"{% endcomment %}',
+      },
+    },
+  } as unknown as AppConfigInput)
+
+  assertEquals(
+    validated.sources.feed.filter,
+    '{% comment %}| ai_translate: "zh-CN"{% endcomment %}',
+  )
+})
+
+Deno.test('validateConfig: sources.filter 真实命中 AI filter 且无可解析模型时应报错', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        sources: {
+          feed: {
+            http: {
+              url: 'https://example.com/feed.xml',
+            },
+            filter: '{{ title | ai_summarize }}',
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'source.feed.filter 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+  )
+})
+
+Deno.test('validateConfig: 其他 Liquid 位点命中 AI filter 且无可解析模型时应报错', () => {
+  const cases = [
+    {
+      name: 'deliveries.file.content',
+      input: {
+        runtimeDir: '/tmp/runtime',
+        deliveries: {
+          archive: {
+            file: {
+              path: 'out.txt',
+              content: '{{ entry.title | ai_summarize }}',
+            },
+          },
+        },
+      },
+      message: 'delivery.archive.file.content 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+    },
+    {
+      name: 'deliveries.push.request.payload.**',
+      input: {
+        runtimeDir: '/tmp/runtime',
+        deliveries: {
+          webhook: {
+            push: {
+              http: {
+                method: 'POST',
+                url: 'https://example.com/hook',
+              },
+              request: {
+                type: 'body',
+                payload: {
+                  nested: {
+                    text: '{{ entry.title | ai_summarize }}',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      message:
+        'delivery.webhook.push.request.payload.nested.text 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+    },
+    {
+      name: 'deliveries.push.response.message',
+      input: {
+        runtimeDir: '/tmp/runtime',
+        deliveries: {
+          webhook: {
+            push: {
+              http: {
+                method: 'POST',
+                url: 'https://example.com/hook',
+              },
+              response: {
+                message: '{{ body.error | ai_summarize }}',
+              },
+            },
+          },
+        },
+      },
+      message:
+        'delivery.webhook.push.response.message 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+    },
+    {
+      name: 'deliveries.email.message.subject',
+      input: {
+        runtimeDir: '/tmp/runtime',
+        deliveries: {
+          release_email: {
+            email: {
+              smtp: {
+                host: 'smtp.example.com',
+                port: 465,
+                security: 'implicit',
+              },
+              message: {
+                from: 'bot@example.com',
+                to: ['team@example.com'],
+                subject: '{{ entry.title | ai_summarize }}',
+                text: 'plain text',
+              },
+            },
+          },
+        },
+      },
+      message:
+        'delivery.release_email.email.message.subject 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+    },
+    {
+      name: 'deliveries.email.message.headers.*',
+      input: {
+        runtimeDir: '/tmp/runtime',
+        deliveries: {
+          release_email: {
+            email: {
+              smtp: {
+                host: 'smtp.example.com',
+                port: 465,
+                security: 'implicit',
+              },
+              message: {
+                from: 'bot@example.com',
+                to: ['team@example.com'],
+                subject: 'hello',
+                text: 'plain text',
+                headers: {
+                  'X-AI-Summary': '{{ entry.title | ai_summarize }}',
+                },
+              },
+            },
+          },
+        },
+      },
+      message:
+        'delivery.release_email.email.message.headers.X-AI-Summary 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+    },
+    {
+      name: 'sources.syndication.entry.*',
+      input: {
+        runtimeDir: '/tmp/runtime',
+        sources: {
+          feed: {
+            http: {
+              url: 'https://example.com/feed.xml',
+            },
+            syndication: {
+              entry: {
+                summary: '{{ entry.title | ai_summarize }}',
+              },
+            },
+          },
+        },
+      },
+      message:
+        'source.feed.syndication.entry.summary 配置非法: 模板使用了 AI filter，但未解析到可用模型',
+    },
+  ] as const satisfies Array<{
+    name: string
+    input: AppConfigInput
+    message: string
+  }>
+
+  for (const testCase of cases) {
+    assertThrows(() => validateConfig(testCase.input), Error, testCase.message, testCase.name)
+  }
+})
