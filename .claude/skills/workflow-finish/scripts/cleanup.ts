@@ -18,6 +18,13 @@ type Failure = {
   }
 }
 
+type GitResult = {
+  code: number
+  stdout: string
+  stderr: string
+  source: 'git' | 'spawn'
+}
+
 function printJson(value: unknown) {
   console.log(JSON.stringify(value, null, 2))
 }
@@ -36,7 +43,7 @@ function fail(
   Deno.exit(1)
 }
 
-async function runGit(args: string[], cwd = Deno.cwd()) {
+async function runGit(args: string[], cwd = Deno.cwd()): Promise<GitResult> {
   try {
     const command = new Deno.Command('git', {
       args,
@@ -49,12 +56,14 @@ async function runGit(args: string[], cwd = Deno.cwd()) {
       code: result.code,
       stdout: new TextDecoder().decode(result.stdout).trim(),
       stderr: new TextDecoder().decode(result.stderr).trim(),
+      source: 'git',
     }
   } catch (error) {
     return {
       code: 1,
       stdout: '',
       stderr: error instanceof Error ? error.message : String(error),
+      source: 'spawn',
     }
   }
 }
@@ -68,7 +77,12 @@ function parseFlag(args: string[], flag: string) {
 async function requireGitValue(action: string, args: string[], code: string, cwd = Deno.cwd()) {
   const result = await runGit(args, cwd)
   if (result.code !== 0 || !result.stdout) {
-    fail(action, code, result.stderr || 'git 命令失败', { args, cwd })
+    fail(action, code, result.stderr || 'git 命令失败', {
+      args,
+      cwd,
+      source: result.source,
+      ...(result.stderr ? { stderr: result.stderr } : {}),
+    })
   }
   return result.stdout
 }
@@ -164,6 +178,7 @@ async function main() {
       worktreePath: normalizedWorktreePath,
       stdout: worktreeStatus.stdout,
       stderr: worktreeStatus.stderr,
+      source: worktreeStatus.source,
     })
   }
   if (worktreeStatus.stdout) {
@@ -188,8 +203,18 @@ async function main() {
         rootCurrentBranch,
         stdout: mergedIntoRoot.stdout,
         stderr: mergedIntoRoot.stderr,
+        source: mergedIntoRoot.source,
       },
     )
+  }
+
+  try {
+    Deno.chdir(normalizedRootRepoPath)
+  } catch (error) {
+    fail(action, 'chdir_root_failed', '切换 cleanup 工作目录失败', {
+      rootRepoPath: normalizedRootRepoPath,
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 
   console.log('删除 worktree')
@@ -203,6 +228,7 @@ async function main() {
       worktreePath: normalizedWorktreePath,
       stdout: removeWorktree.stdout,
       stderr: removeWorktree.stderr,
+      source: removeWorktree.source,
       featureBranch,
     })
   }
@@ -216,6 +242,7 @@ async function main() {
       featureBranch,
       stdout: deleteBranch.stdout,
       stderr: deleteBranch.stderr,
+      source: deleteBranch.source,
     })
   }
 
