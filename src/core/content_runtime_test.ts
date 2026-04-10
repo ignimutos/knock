@@ -1,6 +1,13 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
 import { getAiEntryRuntime } from './ai_runtime.ts'
-import { buildContext, renderContent, renderPayload, shouldPassFilter } from './content_runtime.ts'
+import {
+  createContentRuntime,
+  buildContext,
+  renderContent,
+  renderPayload,
+  shouldPassFilter,
+} from './content_runtime.ts'
+import { createLogger } from './logger.ts'
 
 Deno.test('contentRuntime: buildContext 应默认将 entry 拍平到模板顶层并保留命名空间', () => {
   const aiEntryRuntime = { sourceId: 's1', entryId: 'id-1', cache: new Map() }
@@ -194,4 +201,120 @@ Deno.test('contentRuntime: renderPayload 应递归渲染 HTTP payload 中的 Liq
     enabled: true,
     nullable: null,
   })
+})
+
+Deno.test('contentRuntime: 业务 runtime 在 to_telegram_html 正常路径输出 debug 日志', async () => {
+  const logs: Array<Record<string, unknown>> = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'app.startup',
+    now: () => new Date('2026-04-10T08:00:00.000Z'),
+    writeStdout: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    writeWarn: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    writeStderr: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+  })
+  const runtime = createContentRuntime({
+    logger: logger.child({ module: 'content.render' }),
+  } as never)
+
+  const out = await runtime.renderContent('{{ entry.content | to_telegram_html }}', {
+    entry: {
+      content: '<blockquote expandable>Quote</blockquote><a href="https://example.com">Link</a>',
+    },
+  })
+
+  assertEquals(
+    out,
+    '<blockquote expandable>Quote</blockquote><a href="https://example.com">Link</a>',
+  )
+  assertEquals(logs.length, 1)
+  assertEquals(logs[0].severityText, 'DEBUG')
+  assertEquals((logs[0].scope as Record<string, unknown>).name, 'content.render')
+  assertStringIncludes(String(logs[0].body ?? ''), 'Telegram HTML')
+  assertEquals((logs[0].attributes as Record<string, unknown>).filter_name, 'to_telegram_html')
+  assertEquals((logs[0].attributes as Record<string, unknown>).operation, 'sanitize_telegram_html')
+  assertEquals((logs[0].attributes as Record<string, unknown>).reason, 'unchanged')
+  assertEquals((logs[0].attributes as Record<string, unknown>).changed, false)
+})
+
+Deno.test('contentRuntime: 业务 runtime 在 to_telegram_html 自动修正时输出 info 日志', async () => {
+  const logs: Array<Record<string, unknown>> = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'app.startup',
+    now: () => new Date('2026-04-10T08:00:00.000Z'),
+    writeStdout: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    writeWarn: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    writeStderr: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+  })
+  const runtime = createContentRuntime({
+    logger: logger.child({ module: 'content.render' }),
+  } as never)
+
+  const out = await runtime.renderContent('{{ entry.content | to_telegram_html }}', {
+    entry: {
+      content: '<a href="/docs/releases" rel="nofollow">Releases</a><foo bar="baz">ignored</foo>',
+    },
+  })
+
+  assertEquals(out, 'Releasesignored')
+  assertEquals(logs.length, 1)
+  assertEquals(logs[0].severityText, 'INFO')
+  assertEquals((logs[0].scope as Record<string, unknown>).name, 'content.render')
+  assertEquals((logs[0].attributes as Record<string, unknown>).filter_name, 'to_telegram_html')
+  assertEquals((logs[0].attributes as Record<string, unknown>).operation, 'sanitize_telegram_html')
+  assertEquals((logs[0].attributes as Record<string, unknown>).reason, 'auto_corrected')
+  assertEquals((logs[0].attributes as Record<string, unknown>).changed, true)
+  assertEquals((logs[0].attributes as Record<string, unknown>).removed_link_count, 1)
+  assertEquals((logs[0].attributes as Record<string, unknown>).stripped_tag_count, 1)
+})
+
+Deno.test(
+  'contentRuntime: 业务 runtime 在 multiline 相对链接自动修正时仍只输出一条 info 日志',
+  async () => {
+    const logs: Array<Record<string, unknown>> = []
+    const logger = createLogger({
+      enabled: true,
+      level: 'debug',
+      module: 'app.startup',
+      now: () => new Date('2026-04-10T08:00:00.000Z'),
+      writeStdout: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+      writeWarn: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+      writeStderr: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    })
+    const runtime = createContentRuntime({
+      logger: logger.child({ module: 'content.render' }),
+    } as never)
+
+    const out = await runtime.renderContent('{{ entry.content | to_telegram_html }}', {
+      entry: {
+        content: '<a href="/docs/releases">Release\nnotes</a>',
+      },
+    })
+
+    assertEquals(out, 'Release\nnotes')
+    assertEquals(logs.length, 1)
+    assertEquals(logs[0].severityText, 'INFO')
+    assertEquals((logs[0].scope as Record<string, unknown>).name, 'content.render')
+    assertEquals((logs[0].attributes as Record<string, unknown>).filter_name, 'to_telegram_html')
+    assertEquals(
+      (logs[0].attributes as Record<string, unknown>).operation,
+      'sanitize_telegram_html',
+    )
+    assertEquals((logs[0].attributes as Record<string, unknown>).reason, 'auto_corrected')
+    assertEquals((logs[0].attributes as Record<string, unknown>).changed, true)
+    assertEquals((logs[0].attributes as Record<string, unknown>).removed_link_count, 1)
+  },
+)
+
+Deno.test('contentRuntime: shared runtime 的 to_telegram_html 不产生日志', async () => {
+  const out = await renderContent('{{ entry.content | to_telegram_html }}', {
+    entry: {
+      content: '<a href="/docs/releases">Releases</a>',
+    },
+  })
+
+  assertEquals(out, 'Releases')
 })

@@ -5,12 +5,14 @@ import { convert as convertTelegramMarkdownV2 } from 'telegram-markdown-v2'
 import TurndownService from 'turndown'
 import type { AiRuntime } from './ai_runtime.ts'
 import { getAiEntryRuntime } from './ai_runtime.ts'
+import type { Logger } from './logger.ts'
 
 type LiquidContext = Record<string, unknown>
 type MatchMode = 'left' | 'right' | 'both'
 
 interface CreateLiquidRuntimeOptions {
   aiRuntime?: AiRuntime
+  logger?: Logger
 }
 
 interface LiquidRuntime {
@@ -162,6 +164,67 @@ function convertToMarkdown(value: unknown): string {
   return markdownConverter.turndown(text)
 }
 
+const TELEGRAM_HTML_ALLOWED_TAGS = new Set([
+  'a',
+  'b',
+  'blockquote',
+  'code',
+  'del',
+  'em',
+  'i',
+  'ins',
+  'pre',
+  's',
+  'strike',
+  'strong',
+  'tg-emoji',
+  'tg-spoiler',
+  'u',
+])
+const TELEGRAM_HTML_SEMANTIC_LOSS_TAGS = new Set([
+  'audio',
+  'dl',
+  'dt',
+  'dd',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'iframe',
+  'img',
+  'li',
+  'ol',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+  'video',
+])
+const TELEGRAM_HTML_START_TAG_PATTERN = /<([a-zA-Z][\w-]*)(\s[^<>]*?)?\s*>/g
+const TELEGRAM_HTML_ATTRIBUTE_PATTERN =
+  /([:@a-zA-Z_][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
+
+interface TelegramHtmlMetrics {
+  changed: boolean
+  normalizedTagCount: number
+  reason: 'auto_corrected' | 'semantic_loss' | 'unchanged'
+  removedAttributeCount: number
+  removedLinkCount: number
+  semanticLossTagCount: number
+  strippedTagCount: number
+}
+
+interface TelegramHtmlSanitizeResult {
+  html: string
+  metrics: TelegramHtmlMetrics
+}
+
 function isAllowedTelegramHref(value: string): boolean {
   try {
     const url = new URL(value)
@@ -171,25 +234,156 @@ function isAllowedTelegramHref(value: string): boolean {
   }
 }
 
-function convertToTelegramHtml(value: unknown): string {
-  const text = toLiquidString(value)
+function parseTelegramHtmlAttributes(
+  rawAttributes: string | undefined,
+): Record<string, string | true> {
+  if (!rawAttributes) return {}
+
+  const attributes: Record<string, string | true> = {}
+  for (const match of rawAttributes.matchAll(TELEGRAM_HTML_ATTRIBUTE_PATTERN)) {
+    const [, rawName, doubleQuoted, singleQuoted, bareValue] = match
+    attributes[rawName.toLowerCase()] = doubleQuoted ?? singleQuoted ?? bareValue ?? true
+  }
+  return attributes
+}
+
+function hasTelegramSpoilerClass(attributes: Record<string, string | true>): boolean {
+  const classValue = attributes.class
+  if (typeof classValue !== 'string') return false
+  return classValue
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token !== '')
+    .includes('tg-spoiler')
+}
+
+function getTelegramAttributeValue(
+  attributes: Record<string, string | true>,
+  key: string,
+): string | undefined {
+  const value = attributes[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function getTelegramCodeLanguageClass(
+  attributes: Record<string, string | true>,
+): string | undefined {
+  const classValue = attributes.class
+  if (typeof classValue !== 'string') return undefined
+  return classValue
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token !== '')
+    .find((token) => /^language-[\w#+-]+$/.test(token))
+}
+
+function collectTelegramHtmlMetrics(text: string): Omit<TelegramHtmlMetrics, 'changed' | 'reason'> {
+  let normalizedTagCount = 0
+  let removedAttributeCount = 0
+  let removedLinkCount = 0
+  let semanticLossTagCount = 0
+  let strippedTagCount = 0
+
+  for (const match of text.matchAll(TELEGRAM_HTML_START_TAG_PATTERN)) {
+    const [, rawTagName, rawAttributes] = match
+    const tagName = rawTagName.toLowerCase()
+    const attributes = parseTelegramHtmlAttributes(rawAttributes)
+    const attributeNames = Object.keys(attributes)
+
+    if (tagName === 'span') {
+      if (hasTelegramSpoilerClass(attributes)) {
+        normalizedTagCount += 1
+        removedAttributeCount += Math.max(0, attributeNames.length - 1)
+      } else {
+        strippedTagCount += 1
+        removedAttributeCount += attributeNames.length
+      }
+      continue
+    }
+
+    if (!TELEGRAM_HTML_ALLOWED_TAGS.has(tagName)) {
+      strippedTagCount += 1
+      removedAttributeCount += attributeNames.length
+      if (TELEGRAM_HTML_SEMANTIC_LOSS_TAGS.has(tagName)) {
+        semanticLossTagCount += 1
+      }
+      continue
+    }
+
+    if (tagName === 'a') {
+      const href = getTelegramAttributeValue(attributes, 'href')
+      const hasAllowedHref = typeof href === 'string' && isAllowedTelegramHref(href)
+      if (!hasAllowedHref) {
+        removedLinkCount += 1
+      }
+      removedAttributeCount += attributeNames.length - (hasAllowedHref ? 1 : 0)
+      continue
+    }
+
+    if (tagName === 'blockquote') {
+      removedAttributeCount +=
+        attributeNames.length - (Object.hasOwn(attributes, 'expandable') ? 1 : 0)
+      continue
+    }
+
+    if (tagName === 'pre') {
+      removedAttributeCount += attributeNames.length
+      continue
+    }
+
+    if (tagName === 'code') {
+      removedAttributeCount +=
+        attributeNames.length - (getTelegramCodeLanguageClass(attributes) ? 1 : 0)
+      continue
+    }
+
+    if (tagName === 'tg-emoji') {
+      const emojiId = getTelegramAttributeValue(attributes, 'emoji-id')
+      removedAttributeCount += attributeNames.length - (typeof emojiId === 'string' ? 1 : 0)
+      continue
+    }
+
+    removedAttributeCount += attributeNames.length
+  }
+
+  return {
+    normalizedTagCount,
+    removedAttributeCount,
+    removedLinkCount,
+    semanticLossTagCount,
+    strippedTagCount,
+  }
+}
+
+function sanitizeTelegramHtml(text: string): TelegramHtmlSanitizeResult {
+  const metrics = collectTelegramHtmlMetrics(text)
+  const rawTagStack: string[] = []
   const sanitized = sanitizeHtml(text, {
-    allowedTags: ['b', 'i', 'u', 's', 'code', 'pre', 'a', 'tg-spoiler', 'blockquote', 'span'],
+    allowedTags: Array.from(TELEGRAM_HTML_ALLOWED_TAGS),
     allowedAttributes: {
       a: ['href'],
-      span: ['class'],
+      blockquote: ['expandable'],
+      code: ['class'],
+      'tg-emoji': ['emoji-id'],
     },
     allowedClasses: {
-      span: ['tg-spoiler'],
+      code: ['language-*'],
     },
     allowedSchemes: ['http', 'https', 'mailto', 'tg'],
     allowProtocolRelative: false,
+    onOpenTag: (tagName: string) => {
+      rawTagStack.push(tagName.toLowerCase())
+    },
+    onCloseTag: (tagName: string) => {
+      const normalizedTagName = tagName.toLowerCase()
+      for (let index = rawTagStack.length - 1; index >= 0; index -= 1) {
+        if (rawTagStack[index] === normalizedTagName) {
+          rawTagStack.splice(index, 1)
+          break
+        }
+      }
+    },
     transformTags: {
-      strong: 'b',
-      em: 'i',
-      ins: 'u',
-      strike: 's',
-      del: 's',
       a: (tagName: string, attribs: Record<string, string>) => {
         const href = attribs.href
         if (typeof href !== 'string' || !isAllowedTelegramHref(href)) {
@@ -197,16 +391,117 @@ function convertToTelegramHtml(value: unknown): string {
         }
         return { tagName, attribs: { href } }
       },
+      blockquote: (tagName: string, attribs: Record<string, string>) => {
+        if (Object.hasOwn(attribs, 'expandable')) {
+          return { tagName, attribs: { expandable: 'expandable' } }
+        }
+        return { tagName, attribs: {} }
+      },
+      code: (tagName: string, attribs: Record<string, string>) => {
+        const languageClass = getTelegramCodeLanguageClass(attribs)
+        const parentTag = rawTagStack.at(-2)
+        if (parentTag === 'pre' && typeof languageClass === 'string') {
+          return { tagName, attribs: { class: languageClass } }
+        }
+        return { tagName, attribs: {} }
+      },
+      pre: (tagName: string) => {
+        return { tagName, attribs: {} }
+      },
       span: (tagName: string, attribs: Record<string, string>) => {
-        if (attribs.class === 'tg-spoiler') {
-          return { tagName, attribs: { class: 'tg-spoiler' } }
+        if (
+          typeof attribs.class === 'string' &&
+          attribs.class.split(/\s+/).includes('tg-spoiler')
+        ) {
+          return { tagName: 'tg-spoiler', attribs: {} }
+        }
+        return { tagName, attribs: {} }
+      },
+      'tg-emoji': (tagName: string, attribs: Record<string, string>) => {
+        const emojiId = attribs['emoji-id']
+        if (typeof emojiId === 'string' && emojiId.trim() !== '') {
+          return { tagName, attribs: { 'emoji-id': emojiId } }
         }
         return { tagName, attribs: {} }
       },
     },
+    exclusiveFilter: (frame: { tag: string; attribs: Record<string, string> }) => {
+      return frame.tag === 'a' && !frame.attribs.href ? 'excludeTag' : false
+    },
   })
+  const html = sanitized.replace(/<blockquote expandable(?:="[^"]*")?>/g, '<blockquote expandable>')
+  const changed =
+    html !== text ||
+    metrics.normalizedTagCount > 0 ||
+    metrics.removedAttributeCount > 0 ||
+    metrics.removedLinkCount > 0 ||
+    metrics.semanticLossTagCount > 0 ||
+    metrics.strippedTagCount > 0
+  const reason = !changed
+    ? 'unchanged'
+    : metrics.semanticLossTagCount > 0
+      ? 'semantic_loss'
+      : 'auto_corrected'
 
-  return sanitized.replace(/<span>(.*?)<\/span>/g, '$1').replace(/<a>(.*?)<\/a>/g, '$1')
+  return {
+    html,
+    metrics: {
+      ...metrics,
+      changed,
+      reason,
+    },
+  }
+}
+
+function logTelegramHtmlEvent(
+  logger: Logger | undefined,
+  result: TelegramHtmlSanitizeResult,
+): void {
+  if (!logger) return
+
+  const fields = {
+    changed: result.metrics.changed,
+    filter_name: 'to_telegram_html',
+    normalized_tag_count: result.metrics.normalizedTagCount,
+    operation: 'sanitize_telegram_html',
+    reason: result.metrics.reason,
+    removed_attribute_count: result.metrics.removedAttributeCount,
+    removed_link_count: result.metrics.removedLinkCount,
+    semantic_loss_tag_count: result.metrics.semanticLossTagCount,
+    stripped_tag_count: result.metrics.strippedTagCount,
+  }
+
+  if (result.metrics.reason === 'unchanged') {
+    logger.debug('Telegram HTML 渲染完成', fields)
+    return
+  }
+
+  if (result.metrics.reason === 'semantic_loss') {
+    logger.warn('Telegram HTML 渲染出现语义损失', fields)
+    return
+  }
+
+  logger.info('Telegram HTML 已自动修正', fields)
+}
+
+function renderTelegramHtml(value: unknown, logger?: Logger): string {
+  const text = toLiquidString(value)
+
+  try {
+    const result = sanitizeTelegramHtml(text)
+    logTelegramHtmlEvent(logger, result)
+    return result.html
+  } catch (error) {
+    logger?.error('Telegram HTML 渲染失败', {
+      changed: true,
+      filter_name: 'to_telegram_html',
+      operation: 'sanitize_telegram_html',
+      reason: 'render_failed',
+      error_name: error instanceof Error ? error.name : 'Error',
+      error_message: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 function convertToTelegramMarkdownV2(value: unknown): string {
@@ -225,7 +520,7 @@ export function assertLiquidTemplateSyntax(template: string) {
   return getSharedLiquidRuntime().asyncEngine.parse(template)
 }
 
-function registerSharedLiquidFilters(engine: Liquid): void {
+function registerSharedLiquidFilters(engine: Liquid, logger?: Logger): void {
   engine.registerFilter(
     'match_exact',
     (value: unknown, target: unknown, invert?: unknown): boolean => {
@@ -300,7 +595,7 @@ function registerSharedLiquidFilters(engine: Liquid): void {
 
   engine.registerFilter('to_telegram_html', (value: unknown, ...args: unknown[]): string => {
     if (args.length > 0) throw new Error('to_telegram_html 不再接受参数')
-    return convertToTelegramHtml(value)
+    return renderTelegramHtml(value, logger)
   })
 
   engine.registerFilter('to_telegram_markdown_v2', (value: unknown, ...args: unknown[]): string => {
@@ -352,11 +647,11 @@ function registerSyncAiGuards(engine: Liquid): void {
 
 export function createLiquidRuntime(options: CreateLiquidRuntimeOptions = {}): LiquidRuntime {
   const asyncEngine = new Liquid()
-  registerSharedLiquidFilters(asyncEngine)
+  registerSharedLiquidFilters(asyncEngine, options.logger)
   registerAiLiquidFilters(asyncEngine, options.aiRuntime)
 
   const syncEngine = new Liquid()
-  registerSharedLiquidFilters(syncEngine)
+  registerSharedLiquidFilters(syncEngine, options.logger)
   registerSyncAiGuards(syncEngine)
 
   return {

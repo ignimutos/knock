@@ -9,6 +9,7 @@ import { parseWithFirstIssue } from '../zod_utils.ts'
 import type { AiEntryRuntime, AiRuntime } from './ai_runtime.ts'
 import { attachAiEntryRuntime } from './ai_runtime.ts'
 import { createLiquidRuntime } from './liquid_runtime.ts'
+import type { Logger } from './logger.ts'
 
 export type ContentContext = Record<string, unknown>
 
@@ -29,6 +30,7 @@ export interface ContentRuntime {
 
 interface CreateContentRuntimeOptions {
   aiRuntime?: AiRuntime
+  logger?: Logger
 }
 
 const filterResultSchema = z.enum(['true', 'false'])
@@ -80,7 +82,10 @@ async function renderPayloadWithLiquid(
 }
 
 export function createContentRuntime(options: CreateContentRuntimeOptions = {}): ContentRuntime {
-  const liquidRuntime = createLiquidRuntime({ aiRuntime: options.aiRuntime })
+  const liquidRuntime = createLiquidRuntime({
+    aiRuntime: options.aiRuntime,
+    logger: options.logger,
+  })
   const renderLiquid = (template: string, context: ContentContext): Promise<string> => {
     return liquidRuntime.render(template, context)
   }
