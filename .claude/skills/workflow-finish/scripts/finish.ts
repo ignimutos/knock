@@ -209,18 +209,189 @@ async function runCommand(name: string, args: string[], cwd = Deno.cwd()) {
   }
 }
 
-async function runTask(task: string, cwd: string, paths: string[] = []) {
+type CommandResult = {
+  code: number
+  stdout: string
+  stderr: string
+}
+
+type TaskSelection =
+  | { mode: 'skip'; reason: string }
+  | { mode: 'default'; reason: string }
+  | { mode: 'paths'; reason: string; paths: readonly string[] }
+
+type VerificationPlan = {
+  fmtCheck: TaskSelection
+  lintCheck: TaskSelection
+  check: TaskSelection
+  test: TaskSelection
+}
+
+type TaskRunner = (task: string, cwd: string, paths?: readonly string[]) => Promise<CommandResult>
+
+const CODE_FILE_PATTERN = /\.(ts|tsx|js|jsx|mjs|mts|cts)$/i
+const NON_CODE_FILE_PATTERN = /\.(md|ya?ml|json)$/i
+const FULL_TEST_TRIGGER_PATTERNS = [
+  /^deno\.json$/,
+  /^scripts\/run-paths\.sh$/,
+  /^src\/test_runtime\.ts$/,
+  /^src\/main\.ts$/,
+  /^src\/core\/app\.ts$/,
+  /^src\/db\/client\.ts$/,
+  /^src\/db\/schema\.ts$/,
+  /^src\/db\/migrations\//,
+  /^src\/sources\/xquery\.ts$/,
+  /^src\/sources\/source_runtime\.ts$/,
+]
+
+async function runTask(task: string, cwd: string, paths: readonly string[] = []) {
   const args = ['task', task, ...paths]
   return await runCommand('deno', args, cwd)
 }
 
-function getLintablePaths(paths: string[]) {
-  return paths.filter((path) => /\.(ts|tsx|js|jsx|mjs|mts|cts)$/i.test(path))
+function dedupePaths(paths: string[]) {
+  return [...new Set(paths)]
 }
 
-function getTestTargets(paths: string[]) {
-  const testablePaths = paths.filter((path) => !/\.(md|ya?ml|json)$/i.test(path))
-  return testablePaths.length > 0 ? testablePaths : paths
+function isCodeFile(path: string) {
+  return CODE_FILE_PATTERN.test(path)
+}
+
+function isNonCodeFile(path: string) {
+  return NON_CODE_FILE_PATTERN.test(path)
+}
+
+async function isDirectoryTarget(cwd: string, path: string) {
+  try {
+    return (await Deno.stat(resolve(cwd, path))).isDirectory
+  } catch {
+    return false
+  }
+}
+
+async function getCodeTargets(cwd: string, paths: string[]) {
+  const targets: string[] = []
+  for (const path of paths) {
+    if (isCodeFile(path)) {
+      targets.push(path)
+      continue
+    }
+    if (!isNonCodeFile(path) && (await isDirectoryTarget(cwd, path))) {
+      targets.push(path)
+    }
+  }
+  return dedupePaths(targets)
+}
+
+function isFullTestTrigger(path: string) {
+  return FULL_TEST_TRIGGER_PATTERNS.some((pattern) => pattern.test(path))
+}
+
+function getTestSelection(paths: string[]): TaskSelection {
+  if (paths.some(isFullTestTrigger)) {
+    return { mode: 'default', reason: 'full_test_trigger' }
+  }
+
+  const testTargets = dedupePaths(paths.filter((path) => !isNonCodeFile(path)))
+
+  if (testTargets.length === 0) {
+    return { mode: 'skip', reason: 'docs_only' }
+  }
+
+  return {
+    mode: 'paths',
+    reason: 'scoped_paths',
+    paths: testTargets,
+  }
+}
+
+export async function buildVerificationPlan(
+  cwd: string,
+  paths: string[],
+): Promise<VerificationPlan> {
+  if (paths.length === 0) {
+    throw new Error('workflow-finish 需要至少一个 --path')
+  }
+
+  const fmtCheck: TaskSelection = { mode: 'paths', reason: 'scoped_paths', paths }
+  const lintTargets = await getCodeTargets(cwd, paths)
+  const checkTargets = await getCodeTargets(cwd, paths)
+
+  return {
+    fmtCheck,
+    lintCheck:
+      lintTargets.length > 0
+        ? { mode: 'paths', reason: 'scoped_paths', paths: lintTargets }
+        : { mode: 'skip', reason: 'no_lint_targets' },
+    check:
+      checkTargets.length > 0
+        ? { mode: 'paths', reason: 'scoped_paths', paths: checkTargets }
+        : { mode: 'skip', reason: 'no_check_targets' },
+    test: getTestSelection(paths),
+  }
+}
+
+function getTaskPaths(selection: TaskSelection) {
+  return selection.mode === 'paths' ? selection.paths : []
+}
+
+async function runSelectedTask(
+  task: string,
+  step: string,
+  errorCode: string,
+  selection: TaskSelection,
+  cwd: string,
+  runner: TaskRunner,
+) {
+  if (selection.mode === 'skip') return { ok: true as const }
+
+  console.log(`运行 ${step}`)
+  const result = await runner(task, cwd, getTaskPaths(selection))
+  if (result.code !== 0) {
+    return {
+      ok: false as const,
+      code: errorCode,
+      step,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    }
+  }
+
+  return { ok: true as const }
+}
+
+export async function runVerificationPlan(
+  cwd: string,
+  plan: VerificationPlan,
+  runner: TaskRunner = runTask,
+) {
+  const fmtCheck = await runSelectedTask(
+    'fmt:check',
+    'fmt:check',
+    'fmt_check_failed',
+    plan.fmtCheck,
+    cwd,
+    runner,
+  )
+  if (!fmtCheck.ok) return fmtCheck
+
+  const lintCheck = await runSelectedTask(
+    'lint:check',
+    'lint:check',
+    'lint_check_failed',
+    plan.lintCheck,
+    cwd,
+    runner,
+  )
+  if (!lintCheck.ok) return lintCheck
+
+  const check = await runSelectedTask('check', 'check', 'check_failed', plan.check, cwd, runner)
+  if (!check.ok) return check
+
+  const test = await runSelectedTask('test', 'test', 'test_failed', plan.test, cwd, runner)
+  if (!test.ok) return test
+
+  return { ok: true as const }
 }
 
 async function ensureRootWorkspaceClean(action: string, rootRepoPath: string) {
@@ -242,35 +413,8 @@ async function ensureRootWorkspaceClean(action: string, rootRepoPath: string) {
 }
 
 async function runVerification(cwd: string, paths: string[]) {
-  console.log('运行 fmt:check')
-  const fmtCheck = await runTask('fmt:check', cwd, paths)
-  if (fmtCheck.code !== 0) {
-    return { ok: false as const, code: 'fmt_check_failed', step: 'fmt:check', ...fmtCheck }
-  }
-
-  const lintablePaths = getLintablePaths(paths)
-  if (lintablePaths.length > 0) {
-    console.log('运行 lint')
-    const lint = await runTask('lint', cwd, lintablePaths)
-    if (lint.code !== 0) {
-      return { ok: false as const, code: 'lint_failed', step: 'lint', ...lint }
-    }
-  }
-
-  console.log('运行 check')
-  const check = await runTask('check', cwd)
-  if (check.code !== 0) {
-    return { ok: false as const, code: 'check_failed', step: 'check', ...check }
-  }
-
-  const testTargets = getTestTargets(paths)
-  console.log('运行 test')
-  const test = await runTask('test', cwd, testTargets)
-  if (test.code !== 0) {
-    return { ok: false as const, code: 'test_failed', step: 'test', ...test }
-  }
-
-  return { ok: true as const }
+  const plan = await buildVerificationPlan(cwd, paths)
+  return await runVerificationPlan(cwd, plan)
 }
 
 async function autoCommitAllChanges(message: string, cwd: string) {
@@ -312,6 +456,9 @@ async function main() {
     .map((path) => path.trim())
     .filter(Boolean)
   const uniquePaths = [...new Set(rawPaths)]
+  if (uniquePaths.length === 0) {
+    fail(action, 'missing_paths', 'workflow-finish 需要至少一个 --path')
+  }
 
   const worktreePath = await requireGitValue(
     action,
