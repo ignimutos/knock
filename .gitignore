@@ -1,5 +1,6 @@
 !.env.example
 *.code-workspace
+*.local.*
 *.log
 *.pyc
 .DS_Store
