@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { sourceHttpSchema, xquerySchema, type SourceConfigInput } from '../config/schema.ts'
+import {
+  byparrSchema,
+  sourceHttpSchema,
+  xquerySchema,
+  type SourceConfigInput,
+} from '../config/schema.ts'
 import { createHttpClient } from '../core/http_client.ts'
 import { fetchAndParseSource } from '../sources/source_runtime.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
@@ -23,6 +28,7 @@ const playgroundSectionSchema = z.discriminatedUnion('mode', [
 
 const playgroundRequestSchema = z
   .object({
+    runtime: z.enum(['native', 'byparr']).default('native'),
     url: z.string().url('url 配置非法'),
     headers: z.record(z.string(), z.string()).optional(),
     locate: z.string().optional(),
@@ -60,7 +66,7 @@ function isBlockedIpv6(hostname: string): boolean {
   )
 }
 
-function assertPlaygroundUrlAllowed(input: string) {
+export function assertPlaygroundUrlAllowed(input: string) {
   const url = new URL(input)
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -103,23 +109,32 @@ export function parsePlaygroundRequest(input: unknown): ParsedPlaygroundRequest 
     'xquery 配置非法',
   )
 
-  const http = parseWithFirstIssue(
-    sourceHttpSchema,
-    {
-      url: request.url,
-      headers: request.headers,
-    },
-    'http 配置非法',
-  )
+  const source =
+    request.runtime === 'byparr'
+      ? {
+          id: 'playground',
+          enabled: true as const,
+          deliveries: [] as [],
+          byparr: parseWithFirstIssue(byparrSchema, { url: request.url }, 'byparr 配置非法'),
+          xquery,
+        }
+      : {
+          id: 'playground',
+          enabled: true as const,
+          deliveries: [] as [],
+          http: parseWithFirstIssue(
+            sourceHttpSchema,
+            {
+              url: request.url,
+              headers: request.headers,
+            },
+            'http 配置非法',
+          ),
+          xquery,
+        }
 
   return {
-    source: {
-      id: 'playground',
-      enabled: true,
-      deliveries: [],
-      http,
-      xquery,
-    },
+    source,
     warnings,
   }
 }
@@ -161,6 +176,19 @@ function classifyValidationError(message: string): PlaygroundErrorResult | undef
       status: 400,
       message,
       code: 'playground_url_blocked',
+      category: 'validation',
+    }
+  }
+
+  if (
+    message === '__illegal__' ||
+    (message.startsWith('xquery.') && message.endsWith(' 非法')) ||
+    (message.startsWith('syndication.') && message.endsWith(' 非法'))
+  ) {
+    return {
+      status: 400,
+      message: message === '__illegal__' ? 'Playground 请求非法' : message,
+      code: 'playground_request_invalid',
       category: 'validation',
     }
   }
@@ -271,6 +299,7 @@ export async function evaluatePlayground(input: EvaluatePlaygroundInput) {
       parseDurationMs: result.timing.parseDurationMs,
     },
     parser: result.parser,
+    rawContent: result.payload,
     feed: result.feedMapped,
     entries: result.entries,
   }

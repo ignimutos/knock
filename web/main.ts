@@ -5,7 +5,9 @@ import { createLogger, type Logger } from '../src/core/logger.ts'
 import AppDocument from './routes/_app.tsx'
 import IndexPage from './routes/index.tsx'
 import XqueryPage from './routes/xquery.tsx'
+import SyndicationPage from './routes/syndication.tsx'
 import { type EvaluateLogMeta, handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
+import { handler as evaluateSyndicationHandler } from './routes/api/syndication/evaluate.ts'
 
 function createWebRequestId(now: number = Date.now()): string {
   return `web.${now.toString(36)}.${crypto.randomUUID()}`
@@ -81,10 +83,19 @@ export const app = new App()
   .use(staticFiles())
   .get('/', () => renderPage(IndexPage))
   .get('/xquery', () => renderPage(XqueryPage))
+  .get('/syndication', () => renderPage(SyndicationPage))
   .post(
     '/api/xquery/evaluate',
     withApiRequestLogging('/api/xquery/evaluate', 'web.api.xquery.evaluate', (request, onLogMeta) =>
       evaluateHandler(request, { onLogMeta }),
+    ),
+  )
+  .post(
+    '/api/syndication/evaluate',
+    withApiRequestLogging(
+      '/api/syndication/evaluate',
+      'web.api.syndication.evaluate',
+      (request, onLogMeta) => evaluateSyndicationHandler(request, { onLogMeta }),
     ),
   )
 

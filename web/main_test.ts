@@ -1,9 +1,20 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals, assertStringIncludes } from '@std/assert'
 import app, { withApiRequestLogging } from './main.ts'
 import { createLogger } from '../src/core/logger.ts'
 
 Deno.test('web main: 应暴露 fresh app 默认导出', () => {
   assertEquals(typeof app.listen, 'function')
+})
+
+Deno.test('web main: 应注册 syndication 页面路由', async () => {
+  const response = await app.handler()(new Request('http://localhost/syndication'))
+
+  assertEquals(response.status, 200)
+  assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
+  const html = await response.text()
+  assertStringIncludes(html, 'Syndication Playground')
+  assertStringIncludes(html, 'id="syn-form"')
+  assertStringIncludes(html, '填充默认模板')
 })
 
 Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', async () => {
@@ -70,6 +81,65 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   assertEquals(typeof successAttributes['web.request_id'], 'string')
   assertEquals(successAttributes['web.target_host'], 'example.com')
   assertEquals(successAttributes['source.parser'], 'xquery')
+  assertEquals(successAttributes['pipeline.warning_count'], 1)
+  assertEquals(successAttributes['pipeline.entry_count'], 2)
+  assertEquals(successAttributes['source.fetch_duration_ms'], 12)
+  assertEquals(successAttributes['source.parse_duration_ms'], 5)
+})
+
+Deno.test('web main: withApiRequestLogging 应记录 syndication 请求关键字段', async () => {
+  const stdout: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'web.api',
+    component: 'web',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+    writeStderr: (line: string) => stdout.push(line),
+  })
+
+  const routeHandler = withApiRequestLogging(
+    '/api/syndication/evaluate',
+    'web.api.syndication.evaluate',
+    (_request, onLogMeta) => {
+      onLogMeta({
+        targetHost: 'example.com',
+        parser: 'rss',
+        warningCount: 1,
+        entryCount: 2,
+        fetchDurationMs: 12,
+        parseDurationMs: 5,
+      })
+      return Promise.resolve(Response.json({ ok: true }))
+    },
+    logger,
+  )
+
+  const response = await routeHandler({
+    req: new Request('http://localhost/api/syndication/evaluate', { method: 'POST' }),
+  })
+
+  assertEquals(response.status, 200)
+  assertEquals(stdout.length, 2)
+
+  const startRecord = JSON.parse(stdout[0]) as Record<string, unknown>
+  const startScope = (startRecord.scope ?? {}) as Record<string, unknown>
+  const startAttributes = (startRecord.attributes ?? {}) as Record<string, unknown>
+  assertEquals(startScope.name, 'web.api.syndication.evaluate')
+  assertEquals(startAttributes['http.route'], '/api/syndication/evaluate')
+  assertEquals(startAttributes['http.request.method'], 'POST')
+  assertEquals(startAttributes.outcome, 'start')
+
+  const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
+  const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
+  const successAttributes = (successRecord.attributes ?? {}) as Record<string, unknown>
+  assertEquals(successScope.name, 'web.api.syndication.evaluate')
+  assertEquals(successAttributes['http.route'], '/api/syndication/evaluate')
+  assertEquals(successAttributes['http.request.method'], 'POST')
+  assertEquals(successAttributes.outcome, 'success')
+  assertEquals(successAttributes['web.target_host'], 'example.com')
+  assertEquals(successAttributes['source.parser'], 'rss')
   assertEquals(successAttributes['pipeline.warning_count'], 1)
   assertEquals(successAttributes['pipeline.entry_count'], 2)
   assertEquals(successAttributes['source.fetch_duration_ms'], 12)

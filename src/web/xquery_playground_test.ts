@@ -22,6 +22,18 @@ Deno.test('xquery_playground: mapping 模式请求应转换为 xquerySchema 形�
   assertEquals(parsed.warnings, [])
 })
 
+Deno.test('xquery_playground: byparr 模式请求应转换为 byparr source', () => {
+  const parsed = parsePlaygroundRequest({
+    runtime: 'byparr',
+    url: 'https://example.com/page.html',
+    entry: { mode: 'mapping', fields: { id: 'string(@data-id)' } },
+  })
+
+  assertEquals(parsed.source.byparr?.url, 'https://example.com/page.html')
+  assertEquals(parsed.source.http, undefined)
+  assertEquals(parsed.source.xquery?.entry, { id: 'string(@data-id)' })
+})
+
 Deno.test('xquery_playground: script 模式 + namespaces 应产生 warning', () => {
   const parsed = parsePlaygroundRequest({
     url: 'https://example.com/page.html',
@@ -78,6 +90,7 @@ Deno.test('xquery_playground: 应将解析后的 request 与 fetcher 委托给 s
     },
   ])
   assertEquals(result.parser, 'xquery')
+  assertEquals(result.rawContent, '<html></html>')
   assertEquals(result.entries[0].mapped.id, '1')
   assertEquals(result.fetchMeta.ok, true)
 })
@@ -134,6 +147,24 @@ Deno.test('xquery_playground: classifyPlaygroundError 应将内网限制映射�
   assertEquals(classified.code, 'playground_url_blocked')
   assertEquals(classified.category, 'validation')
   assertEquals(classified.message, 'Playground 不允许访问内网或本机地址')
+})
+
+Deno.test('xquery_playground: classifyPlaygroundError 应将 __illegal__ 映射为 validation', () => {
+  const classified = classifyPlaygroundError(new Error('__illegal__'))
+
+  assertEquals(classified.status, 400)
+  assertEquals(classified.code, 'playground_request_invalid')
+  assertEquals(classified.category, 'validation')
+  assertEquals(classified.message, 'Playground 请求非法')
+})
+
+Deno.test('xquery_playground: classifyPlaygroundError 应保留带路径的 非法 文案', () => {
+  const classified = classifyPlaygroundError(new Error('xquery.entry.foo 非法'))
+
+  assertEquals(classified.status, 400)
+  assertEquals(classified.code, 'playground_request_invalid')
+  assertEquals(classified.category, 'validation')
+  assertEquals(classified.message, 'xquery.entry.foo 非法')
 })
 
 Deno.test('xquery_playground: classifyPlaygroundError 应将抓取失败映射为 fetch 并清洗文案', () => {

@@ -23,6 +23,7 @@ Deno.test('xquery api: POST 应返回 JSON 结果并上报成功日志元数据'
           warnings: ['script 模式下 namespaces 不生效'],
           fetchMeta: { ok: true, fetchDurationMs: 12, parseDurationMs: 5 },
           parser: 'xquery',
+          rawContent: '<html></html>',
           feed: {},
           entries: [{ mapped: { id: '1' } }],
         }),
@@ -34,6 +35,7 @@ Deno.test('xquery api: POST 应返回 JSON 结果并上报成功日志元数据'
   assertEquals(response.headers.get('content-type'), 'application/json')
   const payload = await readJson(response)
   assertEquals(payload.parser, 'xquery')
+  assertEquals(payload.rawContent, '<html></html>')
   assertEquals(logs, [
     {
       targetHost: 'example.com',

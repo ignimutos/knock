@@ -16,7 +16,7 @@ export function ResultPanel() {
       >
         <h2>错误信息</h2>
         <pre
-          class="result-pre"
+          class="result-pre result-pre-wrap"
           id="xq-error-message"
         />
       </section>
@@ -36,6 +36,18 @@ export function ResultPanel() {
         <h2>调试信息</h2>
         <ul id="xq-debug-list" />
       </section>
+      <details
+        class="panel"
+        id="xq-raw-panel"
+      >
+        <summary>原始响应内容</summary>
+        <pre
+          class="result-pre result-pre-wrap"
+          id="xq-raw-content"
+        >
+          暂无原始响应内容
+        </pre>
+      </details>
       <section class="panel">
         <div class="toolbar xq-result-actions">
           <button

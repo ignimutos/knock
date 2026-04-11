@@ -56,14 +56,19 @@ Dockerfile                  容器镜像构建
 ## Web Playground
 
 - 首页：`/`
-- Playground：`/xquery`
-- API：`/api/xquery/evaluate`
+- XQuery Playground：`/xquery`
+- Syndication Playground：`/syndication`
+- XQuery API：`/api/xquery/evaluate`
+- Syndication API：`/api/syndication/evaluate`
 
 说明：
 
-- Playground 默认 URL 为空，需要手动输入。
+- 两个 playground 默认 URL 都为空，需要手动输入。
+- 两个 playground 都支持 `native / byparr` 抓取方式切换，便于对照不同 transport 的请求路径。
+- XQuery Playground 支持命名空间、feed/entry 结构化映射与脚本模式切换，并可查看原始响应内容与结构化 JSON 结果。
+- Syndication Playground 在 feed / entry 标准字段留空时，会保留 syndication runtime 默认映射；点击“填充默认模板”可一键写入标准字段模板，便于从默认行为切换到显式覆盖。
 - Playground 由服务端发起目标 URL 抓取请求，请仅在可信网络环境使用。
-- `/api/xquery/evaluate` 失败时会返回更明确的错误 `message`，便于区分请求非法、抓取失败与表达式执行失败等场景。
+- `/api/xquery/evaluate` 与 `/api/syndication/evaluate` 失败时都会返回更明确的错误 `message`，便于区分请求非法、抓取失败与解析/评估失败等场景。
 - 界面支持主题切换（跟随系统 / 浅色 / 深色），默认跟随系统并在浏览器本地记住你的选择。
 - 若浏览器不支持系统主题检测能力，会自动回退为浅色。
 

@@ -21,12 +21,14 @@ export default function IndexPage() {
           </a>
         </article>
         <article class="panel">
-          <h2>当前能力</h2>
-          <ul class="panel-list">
-            <li>服务端抓取网页，避免浏览器跨域限制</li>
-            <li>统一查看 JSON 结果，便于复制到配置</li>
-            <li>后续可扩展 feed/entry 映射调试</li>
-          </ul>
+          <h2>Syndication Playground</h2>
+          <p>直接预览 RSS / Atom / JSON Feed 的标准化结果，并调试 feed / entry 字段映射。</p>
+          <a
+            href="/syndication"
+            class="cta-link"
+          >
+            进入 Playground →
+          </a>
         </article>
       </section>
     </AppShell>

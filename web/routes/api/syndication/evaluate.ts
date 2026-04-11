@@ -13,9 +13,9 @@ interface EvaluateResult {
 }
 
 import {
-  classifyPlaygroundError,
-  evaluatePlayground,
-} from '../../../../src/web/xquery_playground.ts'
+  classifySyndicationPlaygroundError,
+  evaluateSyndicationPlayground,
+} from '../../../../src/web/syndication_playground.ts'
 
 export interface EvaluateLogMeta {
   targetHost?: string
@@ -46,7 +46,7 @@ function readTargetHost(payload: unknown): string | undefined {
 }
 
 export async function handler(request: Request, deps: HandlerDeps = {}): Promise<Response> {
-  const runEvaluate = deps.evaluatePlayground ?? evaluatePlayground
+  const runEvaluate = deps.evaluatePlayground ?? evaluateSyndicationPlayground
 
   let payload: unknown
   try {
@@ -81,7 +81,7 @@ export async function handler(request: Request, deps: HandlerDeps = {}): Promise
     })
     return Response.json(result)
   } catch (error) {
-    const classified = classifyPlaygroundError(error)
+    const classified = classifySyndicationPlaygroundError(error)
     deps.onLogMeta?.({
       targetHost,
       errorCode: classified.code,

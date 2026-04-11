@@ -1,11 +1,12 @@
 import { AppShell } from '../components/layout/app_shell.tsx'
-import { XqueryForm } from '../islands/xquery_form.tsx'
+import { SyndicationForm } from '../islands/syndication_form.tsx'
 
-const xqueryPageScript = `(() => {
-  const form = document.getElementById('xq-form')
+const syndicationPageScript = `(() => {
+  const form = document.getElementById('syn-form')
   if (!(form instanceof HTMLFormElement)) return
 
-  const submitButton = document.getElementById('xq-submit')
+  const submitButton = document.getElementById('syn-submit')
+  const fillDefaultsButton = document.getElementById('syn-fill-defaults')
   const runningPanel = document.getElementById('xq-running')
   const errorPanel = document.getElementById('xq-error')
   const errorMessage = document.getElementById('xq-error-message')
@@ -18,11 +19,10 @@ const xqueryPageScript = `(() => {
   const jsonViewer = document.getElementById('xq-json-viewer')
   const expandAllButton = document.getElementById('xq-expand-all')
   const collapseAllButton = document.getElementById('xq-collapse-all')
-  const addNamespaceButton = document.getElementById('xq-add-namespace')
-  const namespaceRows = document.getElementById('xq-namespaces-rows')
   const sideRail = document.querySelector('.xq-side-rail')
 
   if (!(submitButton instanceof HTMLButtonElement) ||
+    !(fillDefaultsButton instanceof HTMLButtonElement) ||
     !(runningPanel instanceof HTMLElement) ||
     !(errorPanel instanceof HTMLElement) ||
     !(errorMessage instanceof HTMLElement) ||
@@ -32,28 +32,31 @@ const xqueryPageScript = `(() => {
     !(debugList instanceof HTMLElement) ||
     !(jsonViewer instanceof HTMLElement) ||
     !(expandAllButton instanceof HTMLButtonElement) ||
-    !(collapseAllButton instanceof HTMLButtonElement) ||
-    !(addNamespaceButton instanceof HTMLButtonElement) ||
-    !(namespaceRows instanceof HTMLElement)
+    !(collapseAllButton instanceof HTMLButtonElement)
   ) return
 
-  let namespaceRowId = 2
-
   const runtimeInputs = Array.from(form.querySelectorAll('input[name="runtime"]'))
-  const feedModeInputs = Array.from(form.querySelectorAll('input[name="feed-mode"]'))
-  const entryModeInputs = Array.from(form.querySelectorAll('input[name="entry-mode"]'))
-  const feedStructuredGroup = form.querySelector('[data-mode-group="feed-structured"]')
-  const feedScriptGroup = form.querySelector('[data-mode-group="feed-script"]')
-  const entryStructuredGroup = form.querySelector('[data-mode-group="entry-structured"]')
-  const entryScriptGroup = form.querySelector('[data-mode-group="entry-script"]')
+
+  const FEED_DEFAULTS = {
+    title: '{{ title }}',
+    link: '{{ link }}',
+    description: '{{ description }}',
+    generator: '{{ generator }}',
+    language: '{{ language }}',
+    published: '{{ published }}',
+  }
+
+  const ENTRY_DEFAULTS = {
+    id: '{{ id }}',
+    title: '{{ title }}',
+    link: '{{ link }}',
+    description: '{{ description }}',
+    content: '{{ content }}',
+    published: '{{ published }}',
+    updated: '{{ updated }}',
+  }
 
   const isModeInput = (value) => value instanceof HTMLInputElement
-
-  const getMode = (inputs, fallback) => {
-    const active = inputs.find((input) => isModeInput(input) && input.checked)
-    if (!isModeInput(active)) return fallback
-    return active.value === 'script' ? 'script' : 'structured'
-  }
 
   const getRuntime = () => {
     const active = runtimeInputs.find((input) => isModeInput(input) && input.checked)
@@ -73,17 +76,6 @@ const xqueryPageScript = `(() => {
       ? 24
       : Math.max(24, Math.round((viewportHeight - railHeight) / 2))
     sideRail.style.setProperty('--xq-rail-top', String(nextTop) + 'px')
-  }
-
-  const syncModeGroups = () => {
-    const feedMode = getMode(feedModeInputs, 'structured')
-    const entryMode = getMode(entryModeInputs, 'structured')
-
-    if (feedStructuredGroup instanceof HTMLElement) feedStructuredGroup.hidden = feedMode !== 'structured'
-    if (feedScriptGroup instanceof HTMLElement) feedScriptGroup.hidden = feedMode !== 'script'
-    if (entryStructuredGroup instanceof HTMLElement) entryStructuredGroup.hidden = entryMode !== 'structured'
-    if (entryScriptGroup instanceof HTMLElement) entryScriptGroup.hidden = entryMode !== 'script'
-    syncRailTop()
   }
 
   const clearList = (element) => {
@@ -299,123 +291,45 @@ const xqueryPageScript = `(() => {
     return fields
   }
 
-  const readNamespaces = () => {
-    const namespaces = {}
-    form.querySelectorAll('[data-ns-row]').forEach((row) => {
-      if (!(row instanceof HTMLElement)) return
-      const id = row.dataset.nsRow
-      if (!id) return
-      const prefixInput = form.querySelector('[name="ns-prefix-' + id + '"]')
-      const uriInput = form.querySelector('[name="ns-uri-' + id + '"]')
-      if (!(prefixInput instanceof HTMLInputElement) || !(uriInput instanceof HTMLInputElement)) return
-      const prefix = prefixInput.value.trim()
-      const uri = uriInput.value.trim()
-      if (prefix && uri) {
-        namespaces[prefix] = uri
-      }
-    })
-    return namespaces
-  }
-
-  const buildSection = (prefix, mode) => {
-    if (mode === 'script') {
-      const scriptInput = form.querySelector('[name="' + prefix + '-script"]')
-      return {
-        mode: 'script',
-        code: scriptInput instanceof HTMLTextAreaElement ? scriptInput.value : '',
-      }
-    }
-
-    return {
-      mode: 'mapping',
-      fields: buildFields(prefix),
-    }
-  }
-
-  const buildPayload = () => {
-    const urlInput = form.querySelector('[name="url"]')
-    const locateInput = form.querySelector('[name="locate"]')
-    const payload = {
-      runtime: getRuntime(),
-      url: urlInput instanceof HTMLInputElement ? urlInput.value.trim() : '',
-      locate: locateInput instanceof HTMLInputElement ? locateInput.value.trim() : '',
-      feed: buildSection('feed', getMode(feedModeInputs, 'structured')),
-      entry: buildSection('entry', getMode(entryModeInputs, 'structured')),
-    }
-
-    const namespaces = readNamespaces()
-    if (Object.keys(namespaces).length > 0) {
-      payload.namespaces = namespaces
-    }
-    if (!payload.locate) {
-      delete payload.locate
-    }
-    return payload
-  }
-
-  const addNamespaceRow = () => {
-    const rowId = namespaceRowId++
-    const row = document.createElement('div')
-    row.className = 'toolbar'
-    row.dataset.nsRow = String(rowId)
-    row.innerHTML = '<input class="input" name="ns-prefix-' + rowId + '" placeholder="prefix" />' +
-      '<input class="input" name="ns-uri-' + rowId + '" placeholder="https://www.w3.org/..." />' +
-      '<button type="button" class="btn btn-secondary" data-ns-remove>删除</button>'
-    namespaceRows.appendChild(row)
-    syncRailTop()
-  }
-
-  namespaceRows.addEventListener('click', (event) => {
-    const target = event.target
-    if (!(target instanceof HTMLElement)) return
-    if (!target.hasAttribute('data-ns-remove')) return
-
-    const row = target.closest('[data-ns-row]')
-    if (!(row instanceof HTMLElement)) return
-    if (namespaceRows.children.length <= 1) {
-      const prefixInput = row.querySelector('input[name^="ns-prefix-"]')
-      const uriInput = row.querySelector('input[name^="ns-uri-"]')
-      if (prefixInput instanceof HTMLInputElement) prefixInput.value = ''
-      if (uriInput instanceof HTMLInputElement) uriInput.value = ''
-      syncRailTop()
-      return
-    }
-    row.remove()
-    syncRailTop()
+  const buildPayload = () => ({
+    runtime: getRuntime(),
+    url: (() => {
+      const urlInput = form.querySelector('[name="url"]')
+      return urlInput instanceof HTMLInputElement ? urlInput.value.trim() : ''
+    })(),
+    feed: buildFields('feed'),
+    entry: buildFields('entry'),
   })
 
-  document.querySelectorAll('.xq-section > summary button, .xq-section > summary label, .xq-section > summary input')
-    .forEach((element) => {
-      element.addEventListener('click', (event) => {
-        event.stopPropagation()
-      })
+  function fillDefaults() {
+    Object.entries(FEED_DEFAULTS).forEach(([key, value]) => {
+      const input = form.querySelector('[name="feed-field-' + key + '"]')
+      if (input instanceof HTMLInputElement) {
+        input.value = value
+      }
     })
+    Object.entries(ENTRY_DEFAULTS).forEach(([key, value]) => {
+      const input = form.querySelector('[name="entry-field-' + key + '"]')
+      if (input instanceof HTMLInputElement) {
+        input.value = value
+      }
+    })
+    syncRailTop()
+  }
 
-  addNamespaceButton.addEventListener('click', addNamespaceRow)
   expandAllButton.addEventListener('click', () => setAllExpanded(true))
   collapseAllButton.addEventListener('click', () => setAllExpanded(false))
+  fillDefaultsButton.addEventListener('click', fillDefaults)
   if (rawPanel instanceof HTMLDetailsElement) {
     rawPanel.addEventListener('toggle', syncRailTop)
   }
   window.addEventListener('resize', syncRailTop)
-
-  feedModeInputs.forEach((input) => {
-    if (isModeInput(input)) {
-      input.addEventListener('change', syncModeGroups)
-    }
-  })
-  entryModeInputs.forEach((input) => {
-    if (isModeInput(input)) {
-      input.addEventListener('change', syncModeGroups)
-    }
-  })
   runtimeInputs.forEach((input) => {
     if (isModeInput(input)) {
       input.addEventListener('change', syncRailTop)
     }
   })
 
-  syncModeGroups()
   renderRawContent()
   syncRailTop()
 
@@ -430,7 +344,7 @@ const xqueryPageScript = `(() => {
     setRunning(true)
 
     try {
-      const response = await fetch('/api/xquery/evaluate', {
+      const response = await fetch('/api/syndication/evaluate', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -461,14 +375,14 @@ const xqueryPageScript = `(() => {
   })
 })()`
 
-export default function XqueryPage() {
+export default function SyndicationPage() {
   return (
     <AppShell
-      title="XQuery Playground"
-      subtitle="输入目标 URL 和表达式，快速预览解析结果。"
+      title="Syndication Playground"
+      subtitle="输入目标 URL，预览规范化结果并调试标准字段映射。"
     >
-      <XqueryForm />
-      <script dangerouslySetInnerHTML={{ __html: xqueryPageScript }} />
+      <SyndicationForm />
+      <script dangerouslySetInnerHTML={{ __html: syndicationPageScript }} />
     </AppShell>
   )
 }

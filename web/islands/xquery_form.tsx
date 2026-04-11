@@ -13,7 +13,7 @@ const ENTRY_FIELDS = [
 
 function SectionModeSwitch(props: { prefix: 'feed' | 'entry' }) {
   return (
-    <div class="toolbar">
+    <div class="segment-control">
       <label>
         <input
           type="radio"
@@ -21,7 +21,7 @@ function SectionModeSwitch(props: { prefix: 'feed' | 'entry' }) {
           value="structured"
           checked
         />
-        结构化
+        <span>结构化</span>
       </label>
       <label>
         <input
@@ -29,7 +29,7 @@ function SectionModeSwitch(props: { prefix: 'feed' | 'entry' }) {
           name={`${props.prefix}-mode`}
           value="script"
         />
-        脚本
+        <span>脚本</span>
       </label>
     </div>
   )
@@ -105,6 +105,31 @@ export function XqueryForm() {
           </div>
 
           <div
+            class="toolbar"
+            style={{ marginTop: '12px' }}
+          >
+            <div class="segment-control">
+              <label>
+                <input
+                  type="radio"
+                  name="runtime"
+                  value="native"
+                  checked
+                />
+                <span>native</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="runtime"
+                  value="byparr"
+                />
+                <span>byparr</span>
+              </label>
+            </div>
+          </div>
+
+          <div
             class="field"
             style={{ marginTop: '12px' }}
           >
@@ -117,70 +142,106 @@ export function XqueryForm() {
             />
           </div>
 
-          <section
-            class="panel"
-            style={{ marginTop: '12px' }}
+          <details
+            class="xq-section"
+            open
           >
-            <h2>命名空间</h2>
-            <div id="xq-namespaces-rows">
-              <div
-                class="toolbar"
-                data-ns-row="1"
+            <summary>
+              <div>
+                <h2>命名空间</h2>
+                <p>为页面中的命名节点声明前缀，便于后续表达式引用。</p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="xq-add-namespace"
               >
-                <input
-                  class="input"
-                  name="ns-prefix-1"
-                  placeholder="prefix"
-                />
-                <input
-                  class="input"
-                  name="ns-uri-1"
-                  placeholder="https://www.w3.org/..."
-                />
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  data-ns-remove
+                新增命名空间
+              </button>
+            </summary>
+            <div
+              class="panel"
+              style={{
+                border: '0',
+                borderTop: '1px solid var(--line)',
+                borderRadius: '0 0 16px 16px',
+              }}
+            >
+              <div id="xq-namespaces-rows">
+                <div
+                  class="toolbar"
+                  data-ns-row="1"
                 >
-                  删除
-                </button>
+                  <input
+                    class="input"
+                    name="ns-prefix-1"
+                    placeholder="prefix"
+                  />
+                  <input
+                    class="input"
+                    name="ns-uri-1"
+                    placeholder="https://www.w3.org/..."
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-ns-remove
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
             </div>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              id="xq-add-namespace"
+          </details>
+
+          <details
+            class="xq-section"
+            open
+          >
+            <summary>
+              <h2>feed 提取</h2>
+              <SectionModeSwitch prefix="feed" />
+            </summary>
+            <div
+              class="panel"
+              style={{
+                border: '0',
+                borderTop: '1px solid var(--line)',
+                borderRadius: '0 0 16px 16px',
+              }}
             >
-              新增命名空间
-            </button>
-          </section>
+              <StructuredFields
+                prefix="feed"
+                fields={FEED_FIELDS}
+              />
+              <ScriptField prefix="feed" />
+            </div>
+          </details>
 
-          <section
-            class="panel"
-            style={{ marginTop: '12px' }}
+          <details
+            class="xq-section"
+            open
           >
-            <h2>feed 提取</h2>
-            <SectionModeSwitch prefix="feed" />
-            <StructuredFields
-              prefix="feed"
-              fields={FEED_FIELDS}
-            />
-            <ScriptField prefix="feed" />
-          </section>
-
-          <section
-            class="panel"
-            style={{ marginTop: '12px' }}
-          >
-            <h2>entry 提取</h2>
-            <SectionModeSwitch prefix="entry" />
-            <StructuredFields
-              prefix="entry"
-              fields={ENTRY_FIELDS}
-              requiredKey="id"
-            />
-            <ScriptField prefix="entry" />
-          </section>
+            <summary>
+              <h2>entry 提取</h2>
+              <SectionModeSwitch prefix="entry" />
+            </summary>
+            <div
+              class="panel"
+              style={{
+                border: '0',
+                borderTop: '1px solid var(--line)',
+                borderRadius: '0 0 16px 16px',
+              }}
+            >
+              <StructuredFields
+                prefix="entry"
+                fields={ENTRY_FIELDS}
+                requiredKey="id"
+              />
+              <ScriptField prefix="entry" />
+            </div>
+          </details>
         </form>
       </div>
       <div class="xq-side-column">
@@ -191,7 +252,7 @@ export function XqueryForm() {
             id="xq-submit"
             form="xq-form"
           >
-            运行 XQuery
+            运行
           </button>
           <span class="badge">预览模式</span>
           <p class="xq-side-note">仅用于临时抓取与结果预览，不会写入正式配置</p>

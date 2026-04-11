@@ -29,6 +29,12 @@ export function AppShell(props: {
             >
               XQuery
             </a>
+            <a
+              href="/syndication"
+              class="nav-link"
+            >
+              Syndication
+            </a>
             <label>
               <span class="sr-only">主题模式</span>
               <select
