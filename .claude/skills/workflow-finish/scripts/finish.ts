@@ -317,7 +317,7 @@ function buildCompletionChoices(context: {
   return [
     {
       id: '1',
-      label: '删除 worktree 和分支并退回主工作区',
+      label: '先返回主工作区，再删除 worktree 和分支',
       worktreePath: context.worktreePath,
       featureBranch: context.featureBranch,
       rootRepoPath: context.rootRepoPath,
