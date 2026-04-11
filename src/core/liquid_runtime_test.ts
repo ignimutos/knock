@@ -343,7 +343,7 @@ Deno.test('liquidRuntime: to_telegram_markdown_v2 不再接受额外参数', () 
   )
 })
 
-Deno.test('liquidRuntime: to_telegram_html 日志字段使用 template namespace', async () => {
+Deno.test('liquidRuntime: to_telegram_html 日志字段使用 template namespace', () => {
   const logs: Array<Record<string, unknown>> = []
   const logger = createLogger({
     enabled: true,
