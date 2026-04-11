@@ -1,0 +1,4 @@
+{
+  "hook_event_name": "Stop",
+  "reason": "接下来会删除当前 worktree 和分支，这属于不可逆操作，需要你确认。"
+}
