@@ -202,6 +202,47 @@ Deno.test('aiRuntime: translate 超长时按段调用并只让每段输出当前
   )
 })
 
+Deno.test('aiRuntime: summarize 默认保持原文主语言并使用默认 200 字约束', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: 'summary' })
+    },
+  })
+
+  const out = await runtime.summarize(runtime.createEntryRuntime('s1', 'e1'), 'hello world')
+
+  assertEquals(out, 'summary')
+  assertEquals(calls.length, 1)
+  assertStringIncludes(String(calls[0].system), '默认保持输入文本的主语言')
+  assertStringIncludes(String(calls[0].system), '最终摘要限制在 200 字以内')
+})
+
+Deno.test('aiRuntime: summarize 显式 language 时直接生成目标语言摘要并应用 length', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: 'summary' })
+    },
+  })
+
+  const out = await runtime.summarize(runtime.createEntryRuntime('s1', 'e1'), 'hello world', {
+    language: 'ja',
+    length: 80,
+  })
+
+  assertEquals(out, 'summary')
+  assertEquals(calls.length, 1)
+  assertStringIncludes(String(calls[0].system), '直接输出 ja 摘要')
+  assertStringIncludes(String(calls[0].system), '最终摘要限制在 80 字以内')
+})
+
 Deno.test('aiRuntime: summarize 超长时应先分段摘要再做 reduce', async () => {
   const stages: Array<{ system: string; prompt: string; maxOutputTokens?: unknown }> = []
   const runtime = createAiRuntime({
@@ -230,6 +271,9 @@ Deno.test('aiRuntime: summarize 超长时应先分段摘要再做 reduce', async
   assertEquals(chunkStages.length > 1, true)
   assertEquals(reduceStage !== undefined, true)
   assertEquals(reduceStage?.prompt.includes('chunk-1'), true)
+  assertStringIncludes(chunkStages[0].system, '默认保持输入文本的主语言')
+  assertEquals(chunkStages[0].system.includes('最终摘要限制在 200 字以内'), false)
+  assertStringIncludes(reduceStage?.system ?? '', '最终摘要限制在 200 字以内')
 })
 
 Deno.test(
