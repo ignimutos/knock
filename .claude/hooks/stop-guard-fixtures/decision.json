@@ -1,0 +1,4 @@
+{
+  "hook_event_name": "Stop",
+  "reason": "这里有两个互斥实现路径：只拦等待式 stop，或顺手扩成通用 stop 守门；需要你选范围。"
+}

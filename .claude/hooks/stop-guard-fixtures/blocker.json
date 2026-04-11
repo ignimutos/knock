@@ -1,0 +1,4 @@
+{
+  "hook_event_name": "Stop",
+  "reason": "缺少访问凭据，当前无法继续请求上游服务。"
+}
