@@ -36,18 +36,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 .claude/hooks/stop-guard.py",
-            "timeout": 20,
-            "statusMessage": "Evaluating stop guard"
-          }
-        ]
-      }
     ]
   }
 }

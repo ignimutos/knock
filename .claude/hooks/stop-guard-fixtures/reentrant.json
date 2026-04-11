@@ -1,4 +1,0 @@
-{
-  "hook_event_name": "Stop",
-  "reason": "灰区判定执行中再次触发 stop 时不应重入模型调用。"
-}
