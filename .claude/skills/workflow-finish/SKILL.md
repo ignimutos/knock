@@ -1,6 +1,7 @@
 ---
 name: workflow-finish
 description: Use when finalizing work in a git worktree and merging validated changes back into the main workspace.
+disable-model-invocation: true
 ---
 
 # workflow-finish

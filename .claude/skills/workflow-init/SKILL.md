@@ -1,6 +1,7 @@
 ---
 name: workflow-init
 description: Use when starting implementation work that should create or enter the correct git worktree for the current task.
+disable-model-invocation: true
 ---
 
 # workflow-init
