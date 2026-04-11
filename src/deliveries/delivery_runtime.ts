@@ -2,6 +2,7 @@ import { getPostRenderValidator } from '../config/capabilities.ts'
 import type { HttpPayload } from '../config/schema.ts'
 import type { ResolvedDeliveryConfig } from '../config/types.ts'
 import type { ContentContext } from '../core/content_runtime.ts'
+import { getLogFields, type Logger } from '../core/logger.ts'
 import type { EmailDeliveryRequest } from './email.ts'
 import type { FileDeliveryRequest } from './file.ts'
 import type { HttpDeliveryRequest } from './http.ts'
@@ -12,6 +13,7 @@ export interface DeliveryRuntime {
 }
 
 export interface DeliveryRuntimeDependencies {
+  logger?: Logger
   contentRuntime: {
     renderContent(template: string, context: ContentContext): Promise<string>
     renderPayload(
@@ -45,6 +47,16 @@ function selectContentTemplate(delivery: ResolvedDeliveryConfig): string {
   return delivery.file?.content ?? '{{ entry.title }}'
 }
 
+function getDeliveryLogFields(
+  delivery: ResolvedDeliveryConfig,
+  templateContext: ContentContext,
+): Record<string, unknown> {
+  return {
+    ...(getLogFields(templateContext) ?? {}),
+    'delivery.id': delivery.id,
+  }
+}
+
 function renderDeliveryContent(
   dependencies: DeliveryRuntimeDependencies,
   delivery: ResolvedDeliveryConfig,
@@ -60,6 +72,27 @@ async function buildHttpDeliveryRequest(
   },
   templateContext: ContentContext,
 ): Promise<HttpDeliveryRequest> {
+  const logFields = getDeliveryLogFields(delivery, templateContext)
+  const renderedPayload = await dependencies.contentRuntime.renderPayload(
+    delivery.push.request.payload,
+    templateContext,
+  )
+
+  dependencies.logger?.info('delivery payload 渲染完成', {
+    module: 'delivery.runtime.render',
+    'delivery.operation': 'render_payload',
+    'delivery.outcome': 'success',
+    ...logFields,
+    'delivery.request_type': delivery.push.request.type,
+  })
+
+  dependencies.logger?.info('delivery 请求构建完成', {
+    module: 'delivery.runtime.build',
+    'delivery.operation': 'build_request',
+    'delivery.outcome': 'success',
+    ...logFields,
+  })
+
   return {
     deliveryId: delivery.id,
     http: {
@@ -71,10 +104,7 @@ async function buildHttpDeliveryRequest(
     },
     request: {
       type: delivery.push.request.type,
-      payload: await dependencies.contentRuntime.renderPayload(
-        delivery.push.request.payload,
-        templateContext,
-      ),
+      payload: renderedPayload,
     },
     response: delivery.push.response ? { ...delivery.push.response } : undefined,
     templateContext,
@@ -198,8 +228,22 @@ export function createDeliveryRuntime(dependencies: DeliveryRuntimeDependencies)
     },
 
     async push(delivery: ResolvedDeliveryConfig, templateContext: ContentContext): Promise<void> {
+      const logFields = getDeliveryLogFields(delivery, templateContext)
+
       if (delivery.file) {
         const renderedContent = await renderDeliveryContent(dependencies, delivery, templateContext)
+        dependencies.logger?.info('delivery 内容渲染完成', {
+          module: 'delivery.runtime.render',
+          'delivery.operation': 'render_content',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
+        dependencies.logger?.info('delivery 请求构建完成', {
+          module: 'delivery.runtime.build',
+          'delivery.operation': 'build_request',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
         await dependencies.fileDelivery.push(
           buildFileDeliveryRequest(
             delivery as ResolvedDeliveryConfig & {
@@ -209,6 +253,12 @@ export function createDeliveryRuntime(dependencies: DeliveryRuntimeDependencies)
             templateContext,
           ),
         )
+        dependencies.logger?.info('delivery 已分发', {
+          module: 'delivery.runtime.dispatch',
+          'delivery.operation': 'dispatch',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
         return
       }
 
@@ -222,19 +272,42 @@ export function createDeliveryRuntime(dependencies: DeliveryRuntimeDependencies)
             templateContext,
           ),
         )
+        dependencies.logger?.info('delivery 已分发', {
+          module: 'delivery.runtime.dispatch',
+          'delivery.operation': 'dispatch',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
         return
       }
 
       if (delivery.email) {
-        await dependencies.emailDelivery.push(
-          await buildEmailDeliveryRequest(
-            dependencies,
-            delivery as ResolvedDeliveryConfig & {
-              email: NonNullable<ResolvedDeliveryConfig['email']>
-            },
-            templateContext,
-          ),
+        const emailRequest = await buildEmailDeliveryRequest(
+          dependencies,
+          delivery as ResolvedDeliveryConfig & {
+            email: NonNullable<ResolvedDeliveryConfig['email']>
+          },
+          templateContext,
         )
+        dependencies.logger?.info('delivery 消息渲染完成', {
+          module: 'delivery.runtime.render',
+          'delivery.operation': 'render_message',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
+        dependencies.logger?.info('delivery 请求构建完成', {
+          module: 'delivery.runtime.build',
+          'delivery.operation': 'build_request',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
+        await dependencies.emailDelivery.push(emailRequest)
+        dependencies.logger?.info('delivery 已分发', {
+          module: 'delivery.runtime.dispatch',
+          'delivery.operation': 'dispatch',
+          'delivery.outcome': 'success',
+          ...logFields,
+        })
         return
       }
 

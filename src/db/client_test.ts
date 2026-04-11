@@ -70,8 +70,8 @@ test('createDbClient: 初始化时应记录结构化日志', () => {
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'db.sqlite' &&
-        attributes.operation === 'init_db' &&
-        attributes.outcome === 'start'
+        attributes['db.operation'] === 'init_db' &&
+        attributes['db.outcome'] === 'start'
       )
     }),
     true,
@@ -82,8 +82,8 @@ test('createDbClient: 初始化时应记录结构化日志', () => {
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'db.sqlite' &&
-        attributes.operation === 'init_db' &&
-        attributes.outcome === 'success'
+        attributes['db.operation'] === 'init_db' &&
+        attributes['db.outcome'] === 'success'
       )
     }),
     true,
@@ -91,7 +91,7 @@ test('createDbClient: 初始化时应记录结构化日志', () => {
   assertEquals(
     output.some(
       (item) =>
-        ((item.attributes ?? {}) as Record<string, unknown>).path ===
+        ((item.attributes ?? {}) as Record<string, unknown>)['db.path'] ===
         join(TEST_RUNTIME, 'knock.db'),
     ),
     true,

@@ -671,31 +671,31 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     ].join('|')
     const cached = callOptions.entryRuntime.cache.get(cacheKey)
     const baseLogFields = {
-      operation: 'generate',
+      'template.ai.operation': 'generate',
       'source.id': callOptions.entryRuntime.sourceId,
       'source.run_id': callOptions.entryRuntime.sourceRunId,
       'pipeline.item_id': callOptions.entryRuntime.entryId,
-      input_length: callOptions.inputText.length,
-      truncated: callOptions.truncated ?? false,
-      'ai.provider': callOptions.invocation.provider.type,
-      'ai.provider_id': callOptions.invocation.provider.id,
-      'ai.model': callOptions.invocation.model.model,
-      'ai.model_ref': callOptions.invocation.model.ref,
-      'ai.prompt_id': callOptions.promptId,
-      'ai.stage': callOptions.stage,
-      'ai.cache': false,
-      'ai.chunk': callOptions.chunkIndex !== undefined,
-      'ai.variant': callOptions.invocation.variantId,
-      'ai.language': callOptions.language,
-      'ai.chunk_index': callOptions.chunkIndex,
-      'ai.chunk_count': callOptions.chunkCount,
+      'template.ai.input_length': callOptions.inputText.length,
+      'template.ai.truncated': callOptions.truncated ?? false,
+      'template.ai.provider': callOptions.invocation.provider.type,
+      'template.ai.provider_id': callOptions.invocation.provider.id,
+      'template.ai.model': callOptions.invocation.model.model,
+      'template.ai.model_ref': callOptions.invocation.model.ref,
+      'template.ai.prompt_id': callOptions.promptId,
+      'template.ai.stage': callOptions.stage,
+      'template.ai.cache': false,
+      'template.ai.chunk': callOptions.chunkIndex !== undefined,
+      'template.ai.variant': callOptions.invocation.variantId,
+      'template.ai.language': callOptions.language,
+      'template.ai.chunk_index': callOptions.chunkIndex,
+      'template.ai.chunk_count': callOptions.chunkCount,
     }
 
     if (cached) {
       logger?.info('AI 缓存命中', {
         ...baseLogFields,
-        outcome: 'cache_hit',
-        'ai.cache': true,
+        'template.ai.outcome': 'cache_hit',
+        'template.ai.cache': true,
       })
       return await cached
     }
@@ -714,22 +714,22 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
         (text) => {
           logger?.info('AI 调用完成', {
             ...baseLogFields,
-            outcome: 'success',
-            output_length: text.length,
-            duration_ms: now() - startedAt,
+            'template.ai.outcome': 'success',
+            'template.ai.output_length': text.length,
+            'template.ai.duration_ms': now() - startedAt,
           })
           return text
         },
         (error) => {
           logger?.error('AI 调用失败', {
             ...baseLogFields,
-            outcome: 'failure',
-            duration_ms: now() - startedAt,
+            'template.ai.outcome': 'failure',
+            'template.ai.duration_ms': now() - startedAt,
             error_name: error instanceof Error ? error.name : 'Error',
             error_message: AI_FAILURE_MESSAGE,
-            'ai.error.status_code': getErrorStatusCode(error),
-            'ai.error.retryable': getErrorRetryable(error),
-            'ai.error.message': getSafeErrorMessage(error),
+            'template.ai.error.status_code': getErrorStatusCode(error),
+            'template.ai.error.retryable': getErrorRetryable(error),
+            'template.ai.error.message': getSafeErrorMessage(error),
           })
           throw error
         },

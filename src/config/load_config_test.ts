@@ -186,8 +186,8 @@ sources:
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'config.load' &&
-        attributes.operation === 'load_config' &&
-        attributes.outcome === 'start'
+        attributes['config.operation'] === 'load_config' &&
+        attributes['config.outcome'] === 'start'
       )
     }),
     true,
@@ -198,8 +198,8 @@ sources:
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'config.load' &&
-        attributes.operation === 'load_config' &&
-        attributes.outcome === 'success'
+        attributes['config.operation'] === 'load_config' &&
+        attributes['config.outcome'] === 'success'
       )
     }),
     true,
@@ -210,8 +210,8 @@ sources:
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'config.validate' &&
-        attributes.operation === 'validate_config' &&
-        attributes.outcome === 'success'
+        attributes['config.operation'] === 'validate_config' &&
+        attributes['config.outcome'] === 'success'
       )
     }),
     true,
@@ -222,8 +222,8 @@ sources:
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'config.resolve' &&
-        attributes.operation === 'resolve_config' &&
-        attributes.outcome === 'success'
+        attributes['config.operation'] === 'resolve_config' &&
+        attributes['config.outcome'] === 'success'
       )
     }),
     true,
@@ -234,8 +234,8 @@ sources:
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'config.load' &&
-        attributes.operation === 'load_config' &&
-        attributes.outcome === 'failure'
+        attributes['config.operation'] === 'load_config' &&
+        attributes['config.outcome'] === 'failure'
       )
     }),
     true,
@@ -243,16 +243,33 @@ sources:
   assertEquals(
     output.some(
       (item) =>
-        typeof ((item.attributes ?? {}) as Record<string, unknown>).config_path === 'string',
+        typeof ((item.attributes ?? {}) as Record<string, unknown>)['config.path'] === 'string',
     ),
     true,
   )
   assertEquals(
     output.some(
       (item) =>
-        typeof ((item.attributes ?? {}) as Record<string, unknown>).runtime_dir === 'string',
+        typeof ((item.attributes ?? {}) as Record<string, unknown>)['config.runtime_dir'] ===
+        'string',
     ),
     true,
+  )
+  assertEquals(
+    output.some((item) => 'operation' in ((item.attributes ?? {}) as Record<string, unknown>)),
+    false,
+  )
+  assertEquals(
+    output.some((item) => 'outcome' in ((item.attributes ?? {}) as Record<string, unknown>)),
+    false,
+  )
+  assertEquals(
+    output.some((item) => 'config_path' in ((item.attributes ?? {}) as Record<string, unknown>)),
+    false,
+  )
+  assertEquals(
+    output.some((item) => 'runtime_dir' in ((item.attributes ?? {}) as Record<string, unknown>)),
+    false,
   )
 })
 

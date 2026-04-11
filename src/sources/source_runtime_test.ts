@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from '@std/assert'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
 import { createHttpClient } from '../core/http_client.ts'
+import { createLogger } from '../core/logger.ts'
 import { fetchAndParseSource } from './source_runtime.ts'
 
 function createTestAiRuntime(
@@ -66,6 +67,22 @@ function createSyndicationSource(http: ResolvedSourceConfig['http']): ResolvedSo
 }
 
 const MINIMAL_RSS_PAYLOAD = '<rss><channel><title>Feed</title></channel></rss>'
+
+function createTestLogger(records: Array<Record<string, unknown>>) {
+  const write = (line: string) => {
+    records.push(JSON.parse(line) as Record<string, unknown>)
+  }
+
+  return createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'test',
+    now: () => new Date('2026-04-11T08:00:00.000Z'),
+    writeStdout: write,
+    writeWarn: write,
+    writeStderr: write,
+  })
+}
 
 Deno.test('source_runtime: syndication source 应完成抓取与解析', async () => {
   const parsed = await fetchAndParseSource({
@@ -559,4 +576,60 @@ Deno.test('source_runtime: syndication parse 链路中的 ai 失败应上抛', a
     Error,
     'AI failed in source runtime',
   )
+})
+
+Deno.test('source_runtime: 应记录最小 fetch/parse runtime 日志且不包含 payload', async () => {
+  const logs: Array<Record<string, unknown>> = []
+
+  const parsed = await fetchAndParseSource({
+    source: createSyndicationSource({
+      url: 'https://example.com/feed.xml',
+    }),
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response(`
+<rss>
+  <channel>
+    <title>Feed</title>
+    <item>
+      <guid>id-1</guid>
+      <title>Hello</title>
+      <description>secret body text</description>
+    </item>
+  </channel>
+</rss>`),
+        ),
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+    logger: createTestLogger(logs).child({ 'source.run_id': 'run-1' }),
+  } as never)
+
+  assertEquals(parsed.entries.length, 1)
+  assertEquals(logs.length, 2)
+
+  const fetchLog = logs.find((line) => line.body === 'source payload 抓取完成')
+  const parseLog = logs.find((line) => line.body === 'source payload 解析完成')
+  const fetchAttributes = (fetchLog?.attributes ?? {}) as Record<string, unknown>
+  const parseAttributes = (parseLog?.attributes ?? {}) as Record<string, unknown>
+
+  assertEquals((fetchLog?.scope as Record<string, unknown>).name, 'source.runtime.fetch')
+  assertEquals(fetchAttributes['source.operation'], 'fetch_payload')
+  assertEquals(fetchAttributes['source.outcome'], 'success')
+  assertEquals(fetchAttributes['source.id'], 's1')
+  assertEquals(fetchAttributes['source.run_id'], 'run-1')
+  assertEquals(typeof fetchAttributes['source.fetch_duration_ms'], 'number')
+  assertEquals('source.payload' in fetchAttributes, false)
+  assertEquals(JSON.stringify(fetchLog).includes('secret body text'), false)
+
+  assertEquals((parseLog?.scope as Record<string, unknown>).name, 'source.runtime.parse')
+  assertEquals(parseAttributes['source.operation'], 'parse_payload')
+  assertEquals(parseAttributes['source.outcome'], 'success')
+  assertEquals(parseAttributes['source.id'], 's1')
+  assertEquals(parseAttributes['source.run_id'], 'run-1')
+  assertEquals(parseAttributes['source.parser'], 'rss')
+  assertEquals(parseAttributes['source.item_count'], 1)
+  assertEquals(typeof parseAttributes['source.parse_duration_ms'], 'number')
+  assertEquals('source.payload' in parseAttributes, false)
+  assertEquals(JSON.stringify(parseLog).includes('secret body text'), false)
 })

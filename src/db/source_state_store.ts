@@ -18,14 +18,15 @@ export interface PersistParsedSourceInput {
 export type DeliverIfNeededResult = 'deduped' | 'delivered'
 
 export interface SourceStateStore {
-  persistParsedSource(input: PersistParsedSourceInput): Promise<void>
+  persistParsedSource(input: PersistParsedSourceInput, sourceRunId?: string): Promise<void>
   deliverIfNeeded(
     sourceId: string,
     itemId: string,
     deliveryId: string,
     push: () => void | Promise<void>,
+    sourceRunId?: string,
   ): Promise<DeliverIfNeededResult>
-  pruneSourceState(sourceId: string, activeDeliveryCount: number): void
+  pruneSourceState(sourceId: string, activeDeliveryCount: number, sourceRunId?: string): void
 }
 
 export interface CreateSourceStateStoreOptions {
@@ -277,18 +278,50 @@ function pruneDeliveries(
   return pruned
 }
 
+function getStoreLogFields(
+  sourceId: string,
+  sourceRunId?: string,
+  fields: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    module: 'db.state.store',
+    'source.id': sourceId,
+    ...(sourceRunId ? { 'source.run_id': sourceRunId } : {}),
+    ...fields,
+  }
+}
+
 export function createSourceStateStore(options: CreateSourceStateStoreOptions): SourceStateStore {
   const { db, sqlite, logger } = options
 
   return {
-    async persistParsedSource(input: PersistParsedSourceInput): Promise<void> {
+    async persistParsedSource(
+      input: PersistParsedSourceInput,
+      sourceRunId?: string,
+    ): Promise<void> {
       const payloadHash = await hashPayload(input.payload)
       if (shouldStoreParsedContent(db, input.sourceId, payloadHash)) {
         storeParsedContent(db, { ...input, payloadHash })
+        logger?.info('source 状态已持久化', {
+          ...getStoreLogFields(input.sourceId, sourceRunId, {
+            'db.operation': 'persist_source_state',
+            'db.outcome': 'stored',
+            'source.parser': input.parser,
+            'source.item_count': input.entries.length,
+          }),
+        })
         return
       }
 
       touchSeenEntries(db, input.sourceId, input.entries)
+      logger?.info('source 状态未变化，仅刷新 last_seen', {
+        ...getStoreLogFields(input.sourceId, sourceRunId, {
+          'db.operation': 'persist_source_state',
+          'db.outcome': 'touched_seen_entries',
+          'source.parser': input.parser,
+          'source.item_count': input.entries.length,
+        }),
+      })
     },
 
     async deliverIfNeeded(
@@ -296,17 +329,34 @@ export function createSourceStateStore(options: CreateSourceStateStoreOptions): 
       itemId: string,
       deliveryId: string,
       push: () => void | Promise<void>,
+      sourceRunId?: string,
     ): Promise<DeliverIfNeededResult> {
       if (isDelivered(db, sourceId, itemId, deliveryId)) {
+        logger?.info('命中已投递记录', {
+          ...getStoreLogFields(sourceId, sourceRunId, {
+            'db.operation': 'dedupe_check',
+            'db.outcome': 'deduped',
+            'pipeline.item_id': itemId,
+            'delivery.id': deliveryId,
+          }),
+        })
         return 'deduped'
       }
 
       await push()
       markDelivered(db, sourceId, itemId, deliveryId)
+      logger?.info('记录 delivered 状态', {
+        ...getStoreLogFields(sourceId, sourceRunId, {
+          'db.operation': 'mark_delivered',
+          'db.outcome': 'success',
+          'pipeline.item_id': itemId,
+          'delivery.id': deliveryId,
+        }),
+      })
       return 'delivered'
     },
 
-    pruneSourceState(sourceId: string, activeDeliveryCount: number): void {
+    pruneSourceState(sourceId: string, activeDeliveryCount: number, sourceRunId?: string): void {
       const deliveriesPruned = pruneDeliveries(db, {
         sourceId,
         maxAge: sqlite.retention.maxAge,
@@ -317,6 +367,16 @@ export function createSourceStateStore(options: CreateSourceStateStoreOptions): 
         sourceId,
         maxAge: sqlite.retention.maxAge,
         maxEntriesPerSource: sqlite.retention.maxEntriesPerSource,
+      })
+
+      logger?.info('source 状态清理完成', {
+        ...getStoreLogFields(sourceId, sourceRunId, {
+          'db.operation': 'prune_source_state',
+          'db.outcome': deliveriesPruned || entriesPruned ? 'pruned' : 'unchanged',
+          'db.pruned_entries': entriesPruned,
+          'db.pruned_deliveries': deliveriesPruned,
+          'delivery.active_count': activeDeliveryCount,
+        }),
       })
 
       vacuumDatabaseIfNeeded(db, sqlite.retention.vacuum, deliveriesPruned || entriesPruned, logger)

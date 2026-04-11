@@ -561,15 +561,15 @@ function logTelegramHtmlEvent(
   if (!logger) return
 
   const fields = {
-    changed: result.metrics.changed,
-    filter_name: 'to_telegram_html',
-    normalized_tag_count: result.metrics.normalizedTagCount,
-    operation: 'sanitize_telegram_html',
-    reason: result.metrics.reason,
-    removed_attribute_count: result.metrics.removedAttributeCount,
-    removed_link_count: result.metrics.removedLinkCount,
-    semantic_loss_tag_count: result.metrics.semanticLossTagCount,
-    stripped_tag_count: result.metrics.strippedTagCount,
+    'template.changed': result.metrics.changed,
+    'template.filter_name': 'to_telegram_html',
+    'template.normalized_tag_count': result.metrics.normalizedTagCount,
+    'template.operation': 'sanitize_telegram_html',
+    'template.reason': result.metrics.reason,
+    'template.removed_attribute_count': result.metrics.removedAttributeCount,
+    'template.removed_link_count': result.metrics.removedLinkCount,
+    'template.semantic_loss_tag_count': result.metrics.semanticLossTagCount,
+    'template.stripped_tag_count': result.metrics.strippedTagCount,
   }
 
   if (result.metrics.reason === 'unchanged') {
@@ -594,10 +594,10 @@ function renderTelegramHtml(value: unknown, logger?: Logger): string {
     return result.html
   } catch (error) {
     logger?.error('Telegram HTML 渲染失败', {
-      changed: true,
-      filter_name: 'to_telegram_html',
-      operation: 'sanitize_telegram_html',
-      reason: 'render_failed',
+      'template.changed': true,
+      'template.filter_name': 'to_telegram_html',
+      'template.operation': 'sanitize_telegram_html',
+      'template.reason': 'render_failed',
       error_name: error instanceof Error ? error.name : 'Error',
       error_message: error instanceof Error ? error.message : String(error),
     })

@@ -157,7 +157,7 @@ deliveries:
         # 成功判定表达式（可选）
         predicate: "{{ ok }}"
         # 失败时错误消息模板（可选）
-        message: "webhook failed: {{ status }} {{ body }}"
+        message: "webhook failed: {{ status }}"
 
   # SMTP 邮件投递示例
   release_email:

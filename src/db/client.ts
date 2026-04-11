@@ -41,8 +41,8 @@ export function vacuumDatabaseIfNeeded(
   } catch (error) {
     logger?.warn('VACUUM 执行失败，跳过本次压缩', {
       module: 'db.sqlite',
-      operation: 'vacuum',
-      outcome: 'failure',
+      'db.operation': 'vacuum',
+      'db.outcome': 'failure',
       error_name: error instanceof Error ? error.name : 'Error',
       error_message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
@@ -60,9 +60,9 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
 
   logger?.info('开始初始化 sqlite', {
     module: 'db.sqlite',
-    operation: 'init_db',
-    outcome: 'start',
-    path: databasePath,
+    'db.operation': 'init_db',
+    'db.outcome': 'start',
+    'db.path': databasePath,
   })
 
   Deno.mkdirSync(dirname(databasePath), { recursive: true })
@@ -76,9 +76,9 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
 
   logger?.info('sqlite 初始化完成', {
     module: 'db.sqlite',
-    operation: 'init_db',
-    outcome: 'success',
-    path: databasePath,
+    'db.operation': 'init_db',
+    'db.outcome': 'success',
+    'db.path': databasePath,
   })
 
   return db

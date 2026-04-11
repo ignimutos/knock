@@ -128,6 +128,7 @@
   - `delivery.*`
   - `web.*`
 - 新增业务字段时 MUST 先落到最贴近职责归属的域下，再继续细分层级。
+- AI 相关字段 MUST 继续跟随所属业务域，而不是单独新增顶层 `ai.*`；例如模板链路用 `template.ai.*`，source 链路用 `source.ai.*`，delivery 链路用 `delivery.ai.*`。
 - 业务字段 SHOULD 优先使用稳定名词层级；只有动作语义不可避免时才使用动作段。
 - 没有明确批准前，MUST NOT 新增第 10 个业务域根前缀。
 
@@ -180,6 +181,7 @@
 - token、password、secret、authorization、cookie、chat id、webhook secret、带凭据 URL、签名查询参数等敏感值 MUST 脱敏或省略。
 - MUST NOT 记录可直接复用的原始凭据。
 - MUST NOT 记录未经脱敏的请求体、响应体、模板渲染结果、消息正文、entry 全量内容或其他高泄漏风险原文。
+- 若配置存在类似 `push.response.message` 的错误消息模板，它 MAY 决定对外抛出的错误文本，但这些模板渲染结果 MUST NOT 被原样复制进结构化日志。
 - 需要诊断时，SHOULD 优先记录长度、计数、布尔状态、有限枚举、摘要值或已证明安全的截断预览。
 - 脱敏 MUST 在任何展示层格式化之前完成。
 

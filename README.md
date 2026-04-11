@@ -412,7 +412,7 @@ deliveries:
               - '${WEBHOOK_TAG}'
       response:
         predicate: '{{ ok }}'
-        message: 'webhook failed: {{ status }} {{ body }}'
+        message: 'webhook failed: {{ status }}'
 
 sources:
   deno:
@@ -655,7 +655,7 @@ sqlite:
 
 ## `logging` 配置
 
-Knock 输出的是**结构化 JSON 日志**。
+Knock 默认输出**结构化 JSON 日志**，控制台也支持可选 `pretty` 展示。
 
 ### `logging.level`
 
@@ -694,7 +694,7 @@ logging:
       type: console
 ```
 
-默认 `json` 会输出 OTel / OTLP 风格字段，例如：
+默认 `json` 会输出 OTel 风格的结构化字段（当前不是 OTLP JSON），例如：
 
 - `timeUnixNano`
 - `observedTimeUnixNano`
@@ -715,6 +715,7 @@ logging:
 - 业务上下文字段会进入 `attributes`
 - `trace_id` / `span_id` / `trace_flags` 仅用于真实 trace 关联；缺失时会直接省略
 - daemon 链路定位优先通过 `source.id`、`source.run_id`、`pipeline.item_id`、`delivery.id`、`web.request_id` 等业务字段完成
+- AI 相关字段按 owner-scoped namespace 记录，例如 `template.ai.provider`、`template.ai.model_ref`；未来 source / delivery 链路中的 AI 字段也应继续跟随所属业务域
 - `pretty` 只是一层展示格式：可着色、拍平部分高频字段、隐藏低频字段，但不会改变底层 JSON 语义
 - `fatal` 已支持配置，但只应用于真正无法继续的进程级/核心运行面场景
 
@@ -832,7 +833,7 @@ deliveries:
           text: '{{ entry.title }} => {{ entry.link }}'
       response:
         predicate: '{{ ok }}'
-        message: 'webhook failed: {{ status }} {{ body }}'
+        message: 'webhook failed: {{ status }}'
 ```
 
 #### `push.http.method`
@@ -949,7 +950,7 @@ request:
 
 #### `push.response.message`
 
-当判定失败时抛出的错误消息模板。
+当判定失败时抛出的错误消息模板。该模板 MAY 决定对外抛出的错误文本，但其渲染结果不会原样写入结构化日志；日志里只保留安全失败摘要。
 
 ### 3) SMTP 邮件投递：`deliveries.<id>.email`
 
@@ -1771,7 +1772,7 @@ deliveries:
           text: '{{ entry.title }} => {{ entry.link }}'
       response:
         predicate: '{{ ok }}'
-        message: 'webhook failed: {{ status }} {{ body }}'
+        message: 'webhook failed: {{ status }}'
 
 sources:
   deno:
@@ -1966,7 +1967,7 @@ filter: '{{ title | match_regex: "release", "i" }}'
 ```yml
 response:
   predicate: '{{ ok }}'
-  message: 'webhook failed: {{ status }} {{ body }}'
+  message: 'webhook failed: {{ status }}'
 ```
 
 自己定义判断逻辑和报错消息。

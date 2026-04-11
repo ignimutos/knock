@@ -42,8 +42,8 @@ export function withApiRequestLogging(
     let logMeta: EvaluateLogMeta = {}
 
     routeLogger.debug('API 请求开始', {
-      operation: 'request',
-      outcome: 'start',
+      'web.operation': 'request',
+      'web.outcome': 'start',
       method: ctx.req.method,
       'web.request_id': requestId,
     })
@@ -53,10 +53,10 @@ export function withApiRequestLogging(
     })
     const level = response.ok ? 'info' : 'error'
     routeLogger[level](response.ok ? 'API 请求完成' : 'API 请求失败', {
-      operation: 'request',
-      outcome: response.ok ? 'success' : 'failure',
+      'web.operation': 'request',
+      'web.outcome': response.ok ? 'success' : 'failure',
       method: ctx.req.method,
-      duration_ms: Date.now() - startedAt,
+      'web.duration_ms': Date.now() - startedAt,
       http_status: response.ok ? undefined : response.status,
       'web.request_id': requestId,
       ...(logMeta.targetHost ? { 'web.target_host': logMeta.targetHost } : {}),
@@ -71,8 +71,8 @@ export function withApiRequestLogging(
       ...(logMeta.parseDurationMs !== undefined
         ? { 'source.parse_duration_ms': logMeta.parseDurationMs }
         : {}),
-      ...(logMeta.errorCode ? { 'app.error_code': logMeta.errorCode } : {}),
-      ...(logMeta.errorCategory ? { 'app.error_category': logMeta.errorCategory } : {}),
+      ...(logMeta.errorCode ? { 'web.error_code': logMeta.errorCode } : {}),
+      ...(logMeta.errorCategory ? { 'web.error_category': logMeta.errorCategory } : {}),
       ...(logMeta.errorMessage ? { error_message: logMeta.errorMessage } : {}),
     })
     return response

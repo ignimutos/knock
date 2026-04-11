@@ -88,6 +88,7 @@ description: Use when structured logging design still needs judgment after readi
 
 8. 决定自定义业务 namespace
    - 先找最接近职责归属的业务域，再继续往下细分。
+   - AI 相关字段默认也跟随 owner，而不是独立成顶层 `ai.*`；例如模板链路优先 `template.ai.*`，source 链路优先 `source.ai.*`。
    - 若一个值横跨多个步骤，优先按“谁拥有这个语义并负责解释它”来放置，而不是按“最早在哪里拿到它”来放置。
    - 若两个字段只有自由文本区别、没有稳定枚举意义，优先保留一个结构化字段加 `body`，而不是制造两套近义字段。
 

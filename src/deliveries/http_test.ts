@@ -319,9 +319,19 @@ Deno.test(
 )
 
 Deno.test(
-  'httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链',
+  'httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链且日志不泄露模板结果',
   async () => {
     const aiCalls: Array<Record<string, unknown>> = []
+    const logs: string[] = []
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'delivery.http',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => logs.push(line),
+      writeWarn: (line: string) => logs.push(line),
+      writeStderr: (line: string) => logs.push(line),
+    })
     const aiRuntime = createAiRuntime({
       ai: {
         providers: [
@@ -364,6 +374,7 @@ Deno.test(
     })
     const contentRuntime = createContentRuntime({ aiRuntime })
     const delivery = createHttpDelivery({
+      logger,
       httpClient: createHttpClient({
         fetcher: () =>
           Promise.resolve(
@@ -403,8 +414,55 @@ Deno.test(
     )
 
     assertEquals(aiCalls.length, 1)
+
+    const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+    const failureLog = output.find((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'delivery.http' &&
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'failure'
+      )
+    })
+    const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(Boolean(failureLog), true)
+    assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: status=500')
+    assertEquals(JSON.stringify(failureLog).includes('AI 摘要'), false)
+    assertEquals(JSON.stringify(failureLog).includes('需要摘要的正文'), false)
   },
 )
+
+Deno.test('httpDelivery: 成功响应时不应渲染 failure message 模板', async () => {
+  const renderedTemplates: string[] = []
+  const delivery = createHttpDelivery({
+    httpClient: createHttpClient({
+      fetcher: () => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    }),
+    renderContent: (template, _context) => {
+      renderedTemplates.push(template)
+      if (template === '{{ ok }}') return Promise.resolve('true')
+      return Promise.resolve(`rendered:${template}`)
+    },
+  })
+
+  await delivery.push({
+    deliveryId: 'webhook',
+    http: {
+      method: 'POST',
+      url: 'https://example.com/webhook',
+    },
+    request: {
+      type: 'body',
+    },
+    response: {
+      predicate: '{{ ok }}',
+      message: '{{ body }}',
+    },
+  })
+
+  assertEquals(renderedTemplates, ['{{ ok }}'])
+})
 
 Deno.test('httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', async () => {
   const logs: string[] = []
@@ -467,16 +525,14 @@ Deno.test('httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', as
     const attributes = (item.attributes ?? {}) as Record<string, unknown>
     return (
       scope.name === 'delivery.http' &&
-      attributes.operation === 'push' &&
-      attributes.outcome === 'failure'
+      attributes['delivery.operation'] === 'push' &&
+      attributes['delivery.outcome'] === 'failure'
     )
   })
   const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
   assertEquals(Boolean(failureLog), true)
   assertEquals(failureAttributes['http.response.status_code'], 500)
-  assertEquals(
-    failureAttributes.response_body,
-    JSON.stringify({ ok: false, description: "Bad Request: can't parse entities" }),
-  )
+  assertEquals('response_body' in failureAttributes, false)
+  assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: status=500')
   assertEquals(closeCalls, 1)
 })

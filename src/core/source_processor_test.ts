@@ -48,6 +48,7 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
   const filterCalls: string[] = []
   const aiRuntimeCalls: Array<{ sourceId: string; entryId: string }> = []
   const pushedContextAiEntryIds: string[] = []
+  const storeRunIds: string[] = []
 
   const source = createSource()
   const processor = createSourceProcessor({
@@ -59,8 +60,9 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
       },
     },
     sourceRuntime: {
-      fetchAndParse: () =>
-        Promise.resolve({
+      fetchAndParse: (_source, runtimeLogger) => {
+        runtimeLogger?.info('source runtime probe', {})
+        return Promise.resolve({
           parser: 'rss',
           payload: '<rss />',
           feedMapped: { title: 'Rust Feed' },
@@ -74,7 +76,8 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
             fetchDurationMs: 11,
             parseDurationMs: 17,
           },
-        }),
+        })
+      },
     },
     contentRuntime: {
       buildContext: (entry, feed, currentSource, aiEntryRuntime) =>
@@ -101,17 +104,20 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
       },
     },
     sourceStateStore: {
-      persistParsedSource: (input) => {
-        persisted.push(input as unknown as Record<string, unknown>)
+      persistParsedSource: (input, sourceRunId) => {
+        persisted.push({ ...(input as unknown as Record<string, unknown>), sourceRunId })
+        storeRunIds.push(String(sourceRunId ?? ''))
         return Promise.resolve()
       },
-      deliverIfNeeded: async (_sourceId, itemId, _targetId, push) => {
+      deliverIfNeeded: async (_sourceId, itemId, _targetId, push, sourceRunId) => {
+        storeRunIds.push(String(sourceRunId ?? ''))
         if (itemId === 'deduped') return 'deduped'
         await push()
         return 'delivered'
       },
-      pruneSourceState: (sourceId, activeTargetCount) => {
-        pruned.push({ sourceId, activeTargetCount })
+      pruneSourceState: (sourceId, activeTargetCount, sourceRunId) => {
+        pruned.push({ sourceId, activeTargetCount, sourceRunId })
+        storeRunIds.push(String(sourceRunId ?? ''))
       },
     },
     aiRuntime: {
@@ -143,15 +149,19 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
   assertEquals(pushedContextAiEntryIds, ['delivered'])
   assertEquals(persisted.length, 1)
   assertEquals(persisted[0].sourceId, 'rust')
-  assertEquals(pruned, [{ sourceId: 'rust', activeTargetCount: 1 }])
+  assertEquals(persisted[0].sourceRunId, 'run-1')
+  assertEquals(pruned, [{ sourceId: 'rust', activeTargetCount: 1, sourceRunId: 'run-1' }])
+  assertEquals(storeRunIds, ['run-1', 'run-1', 'run-1', 'run-1'])
   assertEquals(
     logs.some((line) => {
       const scope = (line.scope ?? {}) as Record<string, unknown>
       const attributes = (line.attributes ?? {}) as Record<string, unknown>
       return (
-        line.body === '跳过无效 entry' &&
-        scope.name === 'source.parse.rss' &&
-        attributes.reason === 'entry.id_empty'
+        line.severityText === 'INFO' &&
+        line.body === 'source runtime probe' &&
+        scope.name === 'source.runtime' &&
+        attributes['source.id'] === 'rust' &&
+        attributes['source.run_id'] === 'run-1'
       )
     }),
     true,
@@ -161,10 +171,83 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
       const scope = (line.scope ?? {}) as Record<string, unknown>
       const attributes = (line.attributes ?? {}) as Record<string, unknown>
       return (
-        line.severityText === 'DEBUG' &&
+        line.severityText === 'INFO' &&
+        line.body === 'source 开始执行' &&
+        scope.name === 'scheduler.source' &&
+        attributes['scheduler.operation'] === 'run_source' &&
+        attributes['scheduler.outcome'] === 'start' &&
+        attributes['source.id'] === 'rust' &&
+        attributes['source.run_id'] === 'run-1' &&
+        'operation' in attributes === false &&
+        'outcome' in attributes === false
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'INFO' &&
+        line.body === '抓取成功' &&
+        scope.name === 'source.fetch' &&
+        attributes['source.operation'] === 'fetch' &&
+        attributes['source.outcome'] === 'success' &&
+        attributes['source.id'] === 'rust' &&
+        attributes['source.run_id'] === 'run-1' &&
+        attributes['source.fetch_duration_ms'] === 11 &&
+        attributes['source.payload_bytes'] === 7 &&
+        'operation' in attributes === false &&
+        'outcome' in attributes === false
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'INFO' &&
+        line.body === '解析完成' &&
+        scope.name === 'source.parse.rss' &&
+        attributes['source.operation'] === 'parse' &&
+        attributes['source.outcome'] === 'success' &&
+        attributes['source.id'] === 'rust' &&
+        attributes['source.run_id'] === 'run-1' &&
+        attributes['source.item_count'] === 4 &&
+        attributes['source.parse_duration_ms'] === 17 &&
+        'operation' in attributes === false &&
+        'outcome' in attributes === false
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.body === '跳过无效 entry' &&
+        scope.name === 'source.parse.rss' &&
+        attributes['source.reason'] === 'entry.id_empty' &&
+        attributes['source.id'] === 'rust' &&
+        attributes['source.run_id'] === 'run-1'
+      )
+    }),
+    true,
+  )
+  assertEquals(
+    logs.some((line) => {
+      const scope = (line.scope ?? {}) as Record<string, unknown>
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      return (
+        line.severityText === 'INFO' &&
         line.body === 'filter 结果' &&
         scope.name === 'pipeline.filter' &&
-        attributes.outcome === 'filtered' &&
+        attributes['pipeline.operation'] === 'filter' &&
+        attributes['pipeline.outcome'] === 'filtered' &&
         attributes['pipeline.item_id'] === 'filtered'
       )
     }),
@@ -175,10 +258,11 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
       const scope = (line.scope ?? {}) as Record<string, unknown>
       const attributes = (line.attributes ?? {}) as Record<string, unknown>
       return (
-        line.severityText === 'DEBUG' &&
+        line.severityText === 'INFO' &&
         line.body === '命中去重' &&
         scope.name === 'delivery.store' &&
-        attributes.operation === 'is_delivered' &&
+        attributes['delivery.operation'] === 'is_delivered' &&
+        attributes['delivery.outcome'] === 'deduped' &&
         attributes['pipeline.item_id'] === 'deduped'
       )
     }),
@@ -189,10 +273,11 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
       const scope = (line.scope ?? {}) as Record<string, unknown>
       const attributes = (line.attributes ?? {}) as Record<string, unknown>
       return (
-        line.severityText === 'DEBUG' &&
+        line.severityText === 'INFO' &&
         line.body === '记录 delivered' &&
         scope.name === 'delivery.store' &&
-        attributes.operation === 'mark_delivered' &&
+        attributes['delivery.operation'] === 'mark_delivered' &&
+        attributes['delivery.outcome'] === 'success' &&
         attributes['pipeline.item_id'] === 'delivered'
       )
     }),
@@ -206,10 +291,12 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
         line.severityText === 'INFO' &&
         line.body === 'source 执行完成' &&
         scope.name === 'scheduler.source' &&
-        attributes.item_count === 4 &&
-        attributes.passed_count === 2 &&
-        attributes.deduped_count === 1 &&
-        attributes.pushed_count === 1
+        attributes['scheduler.operation'] === 'run_source' &&
+        attributes['scheduler.outcome'] === 'success' &&
+        attributes['source.item_count'] === 4 &&
+        attributes['pipeline.passed_count'] === 2 &&
+        attributes['delivery.deduped_count'] === 1 &&
+        attributes['delivery.pushed_count'] === 1
       )
     }),
     true,

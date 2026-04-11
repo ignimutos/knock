@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertMatch, assertStringIncludes } from '@std/assert'
+import { assert, assertEquals, assertMatch, assertRejects, assertStringIncludes } from '@std/assert'
 import { emptyDir, ensureDir } from '@std/fs'
 import { join } from '@std/path'
 import { withOwnedRuntime } from '../test_runtime.ts'
@@ -211,7 +211,7 @@ test('fileDelivery: 触发 rotation 时应以 debug 记录检查、触发、清�
       return (
         item.severityText === 'DEBUG' &&
         scope.name === 'delivery.file' &&
-        attributes.operation === 'rotation_check'
+        attributes['delivery.operation'] === 'rotation_check'
       )
     }),
     true,
@@ -223,8 +223,8 @@ test('fileDelivery: 触发 rotation 时应以 debug 记录检查、触发、清�
       return (
         item.severityText === 'DEBUG' &&
         scope.name === 'delivery.file' &&
-        attributes.operation === 'rotate_file' &&
-        attributes.outcome === 'success'
+        attributes['delivery.operation'] === 'rotate_file' &&
+        attributes['delivery.outcome'] === 'success'
       )
     }),
     true,
@@ -236,21 +236,23 @@ test('fileDelivery: 触发 rotation 时应以 debug 记录检查、触发、清�
       return (
         item.severityText === 'DEBUG' &&
         scope.name === 'delivery.file' &&
-        attributes.operation === 'prune_backups' &&
-        attributes.outcome === 'success'
+        attributes['delivery.operation'] === 'prune_backups' &&
+        attributes['delivery.outcome'] === 'success'
       )
     }),
     true,
   )
   assertEquals(
     output.some(
-      (item) => ((item.attributes ?? {}) as Record<string, unknown>).rotation_enabled === true,
+      (item) =>
+        ((item.attributes ?? {}) as Record<string, unknown>)['delivery.rotation_enabled'] === true,
     ),
     true,
   )
   assertEquals(
     output.some(
-      (item) => ((item.attributes ?? {}) as Record<string, unknown>).rotation_reason === 'size',
+      (item) =>
+        ((item.attributes ?? {}) as Record<string, unknown>)['delivery.rotation_reason'] === 'size',
     ),
     true,
   )
@@ -258,7 +260,8 @@ test('fileDelivery: 触发 rotation 时应以 debug 记录检查、触发、清�
     output.some(
       (item) =>
         item.severityText === 'DEBUG' &&
-        typeof ((item.attributes ?? {}) as Record<string, unknown>).rotated_path === 'string',
+        typeof ((item.attributes ?? {}) as Record<string, unknown>)['delivery.rotated_path'] ===
+          'string',
     ),
     true,
   )
@@ -269,10 +272,109 @@ test('fileDelivery: 触发 rotation 时应以 debug 记录检查、触发、清�
       return (
         item.severityText === 'INFO' &&
         scope.name === 'delivery.file' &&
-        attributes.operation === 'push' &&
-        attributes.outcome === 'success'
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'success'
       )
     }),
     true,
   )
+})
+
+test('fileDelivery: rotation 失败时也应记录 failure 日志并抛错', async () => {
+  await emptyDir(TEST_RUNTIME)
+  await ensureDir(TEST_RUNTIME)
+
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'delivery.file',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+  const pusher = createFileDelivery({ runtimeDir: TEST_RUNTIME, logger })
+  const rename = Deno.rename
+  try {
+    await pusher.push({
+      path: 'rotate-failure.md',
+      content: 'v1',
+      rotation: { enabled: true, size: '1b', backups: 1 },
+    })
+    Deno.rename = (() => Promise.reject(new Error('rename failed'))) as typeof Deno.rename
+
+    const error = await assertRejects(
+      () =>
+        pusher.push({
+          path: 'rotate-failure.md',
+          content: 'v2',
+          rotation: { enabled: true, size: '1b', backups: 1 },
+        }),
+      Error,
+    )
+
+    const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+    const failureLog = output.find((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        item.severityText === 'ERROR' &&
+        scope.name === 'delivery.file' &&
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'failure'
+      )
+    })
+    const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(Boolean(failureLog), true)
+    assertEquals(failureAttributes['exception.message'], error.message)
+    assertEquals(failureAttributes['delivery.rotation_enabled'], true)
+    assertEquals(failureAttributes['delivery.path'], join(TEST_RUNTIME, 'rotate-failure.md'))
+  } finally {
+    Deno.rename = rename
+  }
+})
+
+test('fileDelivery: 写入失败时应记录 failure 日志并抛错', async () => {
+  await emptyDir(TEST_RUNTIME)
+  await ensureDir(TEST_RUNTIME)
+
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'delivery.file',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+  const pusher = createFileDelivery({ runtimeDir: TEST_RUNTIME, logger })
+  const targetPath = join(TEST_RUNTIME, 'write-failure')
+  await ensureDir(targetPath)
+
+  const error = await assertRejects(
+    () =>
+      pusher.push({
+        path: targetPath,
+        content: 'hello failure',
+      }),
+    Error,
+  )
+
+  const output = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+  const failureLog = output.find((item) => {
+    const scope = (item.scope ?? {}) as Record<string, unknown>
+    const attributes = (item.attributes ?? {}) as Record<string, unknown>
+    return (
+      item.severityText === 'ERROR' &&
+      scope.name === 'delivery.file' &&
+      attributes['delivery.operation'] === 'push' &&
+      attributes['delivery.outcome'] === 'failure'
+    )
+  })
+  const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(Boolean(failureLog), true)
+  assertEquals(failureAttributes['delivery.path'], targetPath)
+  assertEquals(failureAttributes['exception.message'], error.message)
 })

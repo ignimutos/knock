@@ -199,7 +199,12 @@ sources:
     assertEquals(
       logs.some((line) => {
         const attributes = getAttributes(line)
-        return attributes.operation === 'enter_daemon' && attributes.has_schedule === true
+        return (
+          getScopeName(line) === 'app.startup' &&
+          attributes['app.operation'] === 'enter_daemon' &&
+          attributes['app.outcome'] === 'success' &&
+          attributes['app.has_schedule'] === true
+        )
       }),
       true,
     )
@@ -286,7 +291,10 @@ sources:
   assertEquals(
     logs.some((line) => {
       const attributes = getAttributes(line)
-      return getScopeName(line) === 'delivery.store' && attributes.operation === 'mark_delivered'
+      return (
+        getScopeName(line) === 'delivery.store' &&
+        attributes['delivery.operation'] === 'mark_delivered'
+      )
     }),
     false,
   )
@@ -295,8 +303,8 @@ sources:
       const attributes = getAttributes(line)
       return (
         getScopeName(line) === 'delivery.http' &&
-        attributes.operation === 'push' &&
-        attributes.outcome === 'failure'
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'failure'
       )
     }),
     true,
@@ -377,6 +385,7 @@ sources:
   }> = []
   let sourceClientCloseCalls = 0
   let deliveryClientCloseCalls = 0
+  const { logs, restore } = captureLogs()
 
   const sourceProxyClient = {
     close: () => {
@@ -446,6 +455,19 @@ sources:
     { proxy: { url: sourceProxyUrl } },
     { proxy: { url: deliveryProxyUrl } },
   ])
+  assertEquals(
+    logs.some((line) => {
+      const scope = getScopeName(line)
+      const attributes = getAttributes(line)
+      return (
+        scope === 'scheduler.source' &&
+        line.body === 'source 执行失败' &&
+        attributes['exception.message'] === 'HTTP 推送失败: status=500'
+      )
+    }),
+    true,
+  )
+  assertEquals(JSON.stringify(logs).includes('delivery failed'), false)
   assertEquals(sourceFetches, [
     {
       sourceToken: 'source-token',
@@ -462,6 +484,7 @@ sources:
   ])
   assertEquals(sourceClientCloseCalls, 1)
   assertEquals(deliveryClientCloseCalls, 1)
+  restore()
 })
 
 test('app: immediate 模式下文件模板主链路应可使用 ai_summarize', async () => {
@@ -628,11 +651,23 @@ sources:
     assertStringIncludes(output, 'Hello Rust')
 
     assertEquals(
-      logs.some((line) => getAttributes(line).operation === 'startup'),
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'app.startup' &&
+          attributes['app.operation'] === 'startup' &&
+          attributes['app.outcome'] === 'success' &&
+          attributes['source.count'] === 1 &&
+          attributes['source.enabled_count'] === 1 &&
+          attributes['source.disabled_count'] === 0 &&
+          attributes['delivery.count'] === 1 &&
+          attributes['scheduler.scheduled_source_count'] === 1
+        )
+      }),
       true,
     )
     assertEquals(
-      logs.some((line) => getAttributes(line).operation === 'enter_daemon'),
+      logs.some((line) => getAttributes(line)['app.operation'] === 'enter_daemon'),
       false,
     )
     assertEquals(
@@ -640,8 +675,52 @@ sources:
         const attributes = getAttributes(line)
         return (
           getScopeName(line) === 'db.sqlite' &&
-          attributes.operation === 'init_db' &&
-          attributes.outcome === 'success'
+          attributes['db.operation'] === 'init_db' &&
+          attributes['db.outcome'] === 'success'
+        )
+      }),
+      true,
+    )
+    assertEquals(
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'source.runtime.fetch' &&
+          attributes['source.run_id'] ===
+            'source.rust.' + String(attributes['source.run_id']).split('source.rust.')[1]
+        )
+      }),
+      true,
+    )
+    assertEquals(
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'delivery.runtime.render' &&
+          attributes['delivery.operation'] === 'render_content' &&
+          attributes['delivery.id'] === 'rust__local__0'
+        )
+      }),
+      true,
+    )
+    assertEquals(
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'delivery.runtime.build' &&
+          attributes['delivery.operation'] === 'build_request' &&
+          attributes['delivery.id'] === 'rust__local__0'
+        )
+      }),
+      true,
+    )
+    assertEquals(
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'delivery.runtime.dispatch' &&
+          attributes['delivery.operation'] === 'dispatch' &&
+          attributes['delivery.id'] === 'rust__local__0'
         )
       }),
       true,
@@ -705,7 +784,24 @@ sources:
     assertEquals(
       logs.some((line) => {
         const attributes = getAttributes(line)
-        return attributes.operation === 'enter_daemon' && attributes.has_schedule === true
+        return (
+          getScopeName(line) === 'scheduler.source' &&
+          attributes['scheduler.operation'] === 'register_schedule' &&
+          attributes['scheduler.outcome'] === 'success' &&
+          attributes['scheduler.schedule'] === '*/5 * * * *'
+        )
+      }),
+      true,
+    )
+    assertEquals(
+      logs.some((line) => {
+        const attributes = getAttributes(line)
+        return (
+          getScopeName(line) === 'app.startup' &&
+          attributes['app.operation'] === 'enter_daemon' &&
+          attributes['app.outcome'] === 'success' &&
+          attributes['app.has_schedule'] === true
+        )
       }),
       true,
     )
@@ -761,15 +857,19 @@ sources:
     assertEquals(fetchCalls, 0)
     assertEquals(await exists(join(testRuntime, 'outputs', 'source.md')), false)
     assertEquals(
-      logs.some((line) => getAttributes(line).reason === 'source_disabled'),
+      logs.some((line) => getAttributes(line)['scheduler.reason'] === 'source_disabled'),
       false,
     )
     assertEquals(
-      logs.some((line) => getAttributes(line).operation === 'register_schedule'),
+      logs.some((line) => getAttributes(line)['scheduler.operation'] === 'run_source'),
       false,
     )
     assertEquals(
-      logs.some((line) => getAttributes(line).operation === 'enter_daemon'),
+      logs.some((line) => getAttributes(line)['scheduler.operation'] === 'register_schedule'),
+      false,
+    )
+    assertEquals(
+      logs.some((line) => getAttributes(line)['app.operation'] === 'enter_daemon'),
       false,
     )
   } finally {
@@ -852,7 +952,10 @@ sources:
   assertEquals(
     logs.some((line) => {
       const attributes = getAttributes(line)
-      return getScopeName(line) === 'delivery.store' && attributes.operation === 'mark_delivered'
+      return (
+        getScopeName(line) === 'delivery.store' &&
+        attributes['delivery.operation'] === 'mark_delivered'
+      )
     }),
     false,
   )
@@ -861,8 +964,8 @@ sources:
       const attributes = getAttributes(line)
       return (
         getScopeName(line) === 'delivery.email' &&
-        attributes.operation === 'push' &&
-        attributes.outcome === 'failure'
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'failure'
       )
     }),
     true,
@@ -960,8 +1063,8 @@ sources:
       const attributes = getAttributes(line)
       return (
         getScopeName(line) === 'delivery.http' &&
-        attributes.operation === 'push' &&
-        attributes.outcome === 'success' &&
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'success' &&
         attributes['delivery.id'] === 'rust__webhook__0'
       )
     }),

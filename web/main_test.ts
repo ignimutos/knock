@@ -64,8 +64,11 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   assertEquals(startAttributes['http.route'], '/api/xquery/evaluate')
   assertEquals(startAttributes['http.request.method'], 'POST')
   assertEquals(startRecord.severityText, 'DEBUG')
-  assertEquals(startAttributes.outcome, 'start')
+  assertEquals(startAttributes['web.operation'], 'request')
+  assertEquals(startAttributes['web.outcome'], 'start')
+  assertEquals('outcome' in startAttributes, false)
   assertEquals(typeof startAttributes['web.request_id'], 'string')
+  const startRequestId = String(startAttributes['web.request_id'])
 
   const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
   const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
@@ -77,8 +80,12 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   assertEquals(successScope.name, 'web.api.xquery.evaluate')
   assertEquals(successAttributes['http.route'], '/api/xquery/evaluate')
   assertEquals(successAttributes['http.request.method'], 'POST')
-  assertEquals(successAttributes.outcome, 'success')
+  assertEquals(successAttributes['web.operation'], 'request')
+  assertEquals(successAttributes['web.outcome'], 'success')
+  assertEquals(typeof successAttributes['web.duration_ms'], 'number')
+  assertEquals('outcome' in successAttributes, false)
   assertEquals(typeof successAttributes['web.request_id'], 'string')
+  assertEquals(String(successAttributes['web.request_id']), startRequestId)
   assertEquals(successAttributes['web.target_host'], 'example.com')
   assertEquals(successAttributes['source.parser'], 'xquery')
   assertEquals(successAttributes['pipeline.warning_count'], 1)
@@ -129,7 +136,9 @@ Deno.test('web main: withApiRequestLogging 应记录 syndication 请求关键字
   assertEquals(startScope.name, 'web.api.syndication.evaluate')
   assertEquals(startAttributes['http.route'], '/api/syndication/evaluate')
   assertEquals(startAttributes['http.request.method'], 'POST')
-  assertEquals(startAttributes.outcome, 'start')
+  assertEquals(startAttributes['web.operation'], 'request')
+  assertEquals(startAttributes['web.outcome'], 'start')
+  assertEquals('outcome' in startAttributes, false)
 
   const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
   const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
@@ -137,7 +146,10 @@ Deno.test('web main: withApiRequestLogging 应记录 syndication 请求关键字
   assertEquals(successScope.name, 'web.api.syndication.evaluate')
   assertEquals(successAttributes['http.route'], '/api/syndication/evaluate')
   assertEquals(successAttributes['http.request.method'], 'POST')
-  assertEquals(successAttributes.outcome, 'success')
+  assertEquals(successAttributes['web.operation'], 'request')
+  assertEquals(successAttributes['web.outcome'], 'success')
+  assertEquals(typeof successAttributes['web.duration_ms'], 'number')
+  assertEquals('outcome' in successAttributes, false)
   assertEquals(successAttributes['web.target_host'], 'example.com')
   assertEquals(successAttributes['source.parser'], 'rss')
   assertEquals(successAttributes['pipeline.warning_count'], 1)
@@ -199,12 +211,15 @@ Deno.test('web main: withApiRequestLogging 应记录失败请求关键字段', a
   assertEquals(failureScope.name, 'web.api.xquery.evaluate')
   assertEquals(failureAttributes['http.route'], '/api/xquery/evaluate')
   assertEquals(failureAttributes['http.request.method'], 'POST')
-  assertEquals(failureAttributes.outcome, 'failure')
+  assertEquals(failureAttributes['web.operation'], 'request')
+  assertEquals(failureAttributes['web.outcome'], 'failure')
+  assertEquals(typeof failureAttributes['web.duration_ms'], 'number')
+  assertEquals('outcome' in failureAttributes, false)
   assertEquals(typeof failureAttributes['web.request_id'], 'string')
   assertEquals(failureAttributes['http.response.status_code'], 502)
   assertEquals(failureAttributes['web.target_host'], 'example.com')
-  assertEquals(failureAttributes['app.error_code'], 'playground_fetch_failed')
-  assertEquals(failureAttributes['app.error_category'], 'fetch')
+  assertEquals(failureAttributes['web.error_code'], 'playground_fetch_failed')
+  assertEquals(failureAttributes['web.error_category'], 'fetch')
   assertEquals(
     failureAttributes['exception.message'],
     '[source] 抓取失败 source=playground status=404',

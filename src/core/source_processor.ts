@@ -12,7 +12,7 @@ import { attachLogFields, createRunId, type Logger } from './logger.ts'
 import type { Scheduler } from './scheduler.ts'
 
 export interface SourceRuntime {
-  fetchAndParse(source: ResolvedSourceConfig): Promise<FetchedParsedSourceResult>
+  fetchAndParse(source: ResolvedSourceConfig, logger?: Logger): Promise<FetchedParsedSourceResult>
 }
 
 export interface SourceProcessorContentRuntime {
@@ -87,12 +87,12 @@ function logParseSuccess(
 ): void {
   logger.info('解析完成', {
     module: `source.parse.${parsed.parser}`,
-    operation: 'parse',
-    outcome: 'success',
+    'source.operation': 'parse',
+    'source.outcome': 'success',
     'source.id': sourceId,
     'source.run_id': runId,
-    item_count: parsed.entries.length,
-    duration_ms: durationMs,
+    'source.item_count': parsed.entries.length,
+    'source.parse_duration_ms': durationMs,
   })
 }
 
@@ -108,22 +108,30 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
 
       await options.scheduler.runSource(source.id, async () => {
         sourceRunLogger.info('source 开始执行', {
-          operation: 'run_source',
-          outcome: 'start',
+          'scheduler.operation': 'run_source',
+          'scheduler.outcome': 'start',
         })
 
         try {
-          const parsed = await options.sourceRuntime.fetchAndParse(source)
+          const parsed = await options.sourceRuntime.fetchAndParse(
+            source,
+            options.logger.child({
+              module: 'source.runtime',
+              'source.id': source.id,
+              'source.run_id': runId,
+            }),
+          )
 
           createFetchLogger(options.logger, source.id, runId).info('抓取成功', {
-            operation: 'fetch',
-            outcome: 'success',
-            duration_ms: parsed.timing.fetchDurationMs,
-            payload_bytes: parsed.payload.length,
+            'source.operation': 'fetch',
+            'source.outcome': 'success',
+            'source.fetch_duration_ms': parsed.timing.fetchDurationMs,
+            'source.payload_bytes': parsed.payload.length,
           })
 
           await options.sourceStateStore.persistParsedSource(
             toPersistParsedSourceInput(source.id, parsed),
+            runId,
           )
           logParseSuccess(options.logger, source.id, runId, parsed, parsed.timing.parseDurationMs)
 
@@ -137,11 +145,11 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
             if (shouldSkipParsedEntry(entry)) {
               options.logger.warn('跳过无效 entry', {
                 module: `source.parse.${parsed.parser}`,
-                operation: 'validate_entry',
-                outcome: 'skipped',
+                'source.operation': 'validate_entry',
+                'source.outcome': 'skipped',
                 'source.id': source.id,
                 'source.run_id': runId,
-                reason: 'entry.id_empty',
+                'source.reason': 'entry.id_empty',
               })
               continue
             }
@@ -162,12 +170,12 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
               source.filter,
               templateContext,
             )
-            options.logger.debug('filter 结果', {
+            options.logger.info('filter 结果', {
               module: 'pipeline.filter',
-              operation: 'filter',
-              outcome: passed ? 'passed' : 'filtered',
+              'pipeline.operation': 'filter',
+              'pipeline.outcome': passed ? 'passed' : 'filtered',
               ...itemLogFields,
-              duration_ms: now() - filterStartedAt,
+              'pipeline.duration_ms': now() - filterStartedAt,
             })
 
             if (!passed) continue
@@ -187,48 +195,61 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
                 async () => {
                   await options.deliveryRuntime.push(delivery, deliveryContext)
                 },
+                runId,
               )
 
               if (deliveryResult === 'deduped') {
                 dedupedCount += 1
-                options.logger.debug('命中去重', {
+                options.logger.info('命中去重', {
                   module: 'delivery.store',
-                  operation: 'is_delivered',
-                  outcome: 'deduped',
+                  'delivery.operation': 'is_delivered',
+                  'delivery.outcome': 'deduped',
                   ...deliveryLogFields,
                 })
                 continue
               }
 
-              options.logger.debug('记录 delivered', {
+              options.logger.info('记录 delivered', {
                 module: 'delivery.store',
-                operation: 'mark_delivered',
-                outcome: 'success',
+                'delivery.operation': 'mark_delivered',
+                'delivery.outcome': 'success',
                 ...deliveryLogFields,
               })
               pushedCount += 1
             }
           }
 
-          options.sourceStateStore.pruneSourceState(source.id, source.deliveries.length)
+          options.sourceStateStore.pruneSourceState(source.id, source.deliveries.length, runId)
 
           sourceRunLogger.info('source 执行完成', {
-            operation: 'run_source',
-            outcome: 'success',
-            item_count: parsed.entries.length,
-            passed_count: passedCount,
-            deduped_count: dedupedCount,
-            pushed_count: pushedCount,
-            duration_ms: now() - startedAt,
+            'scheduler.operation': 'run_source',
+            'scheduler.outcome': 'success',
+            'source.item_count': parsed.entries.length,
+            'pipeline.passed_count': passedCount,
+            'delivery.deduped_count': dedupedCount,
+            'delivery.pushed_count': pushedCount,
+            'scheduler.duration_ms': now() - startedAt,
           })
         } catch (error) {
+          const safeLogMessage =
+            error instanceof Error && 'safeLogMessage' in error
+              ? ((error as Error & { safeLogMessage?: string }).safeLogMessage ?? error.message)
+              : error instanceof Error
+                ? error.message
+                : String(error)
+          const safeStack =
+            error instanceof Error && 'safeLogMessage' in error
+              ? undefined
+              : error instanceof Error
+                ? error.stack
+                : undefined
           sourceRunLogger.error('source 执行失败', {
-            operation: 'run_source',
-            outcome: 'failure',
-            duration_ms: now() - startedAt,
+            'scheduler.operation': 'run_source',
+            'scheduler.outcome': 'failure',
+            'scheduler.duration_ms': now() - startedAt,
             error_name: error instanceof Error ? error.name : 'Error',
-            error_message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
+            error_message: safeLogMessage,
+            stack: safeStack,
           })
           throw error
         }

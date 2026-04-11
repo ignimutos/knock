@@ -123,8 +123,7 @@ function toSnakeCase(key: string): string {
 }
 
 function normalizeValue(value: unknown): unknown {
-  if (value === undefined) return undefined
-  if (value === null) return ''
+  if (value === undefined || value === null) return undefined
   if (typeof value === 'string') return value.replace(/\s+/g, ' ').trim()
   return value
 }
@@ -220,8 +219,7 @@ function sanitizeUrl(value: string): string {
 }
 
 function sanitizeValue(fieldKey: string, value: unknown): unknown {
-  if (value === undefined) return undefined
-  if (value === null) return ''
+  if (value === undefined || value === null) return undefined
 
   if (SENSITIVE_FIELD_KEYS.has(fieldKey)) return '****'
 
@@ -233,7 +231,7 @@ function sanitizeValue(fieldKey: string, value: unknown): unknown {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeValue(fieldKey, item))
+    return value.map((item) => (item === null ? '' : sanitizeValue(fieldKey, item)))
   }
 
   if (typeof value === 'object') {

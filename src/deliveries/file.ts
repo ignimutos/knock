@@ -141,57 +141,70 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
   return {
     async push(req: FileDeliveryRequest): Promise<void> {
       const targetPath = resolveRuntimePath(options.runtimeDir, req.path)
-      await Deno.mkdir(dirname(targetPath), { recursive: true })
 
       const logFields = {
         ...(req.templateContext ? (getLogFields(req.templateContext) ?? {}) : {}),
-        path: targetPath,
+        'delivery.path': targetPath,
       }
 
       const rotation = req.rotation
-      if (rotation?.enabled) {
-        const decision = await resolveRotationDecision(targetPath, rotation)
-        options.logger?.debug('检查文件轮转', {
-          operation: 'rotation_check',
-          outcome: decision.shouldRotate ? 'triggered' : 'skipped',
-          ...logFields,
-          rotation_enabled: true,
-          rotation_reason: decision.reason,
-        })
-
-        if (decision.shouldRotate) {
-          const rotatedPath = buildRotatedPath(targetPath, new Date())
-          await Deno.rename(targetPath, rotatedPath)
-          options.logger?.debug('执行文件轮转', {
-            operation: 'rotate_file',
-            outcome: 'success',
+      try {
+        await Deno.mkdir(dirname(targetPath), { recursive: true })
+        if (rotation?.enabled) {
+          const decision = await resolveRotationDecision(targetPath, rotation)
+          options.logger?.debug('检查文件轮转', {
+            'delivery.operation': 'rotation_check',
+            'delivery.outcome': decision.shouldRotate ? 'triggered' : 'skipped',
             ...logFields,
-            rotated_path: rotatedPath,
-            rotation_enabled: true,
-            rotation_reason: decision.reason,
+            'delivery.rotation_enabled': true,
+            'delivery.rotation_reason': decision.reason,
           })
-          if (typeof rotation.backups === 'number') {
-            await pruneBackups(targetPath, rotation.backups)
-            options.logger?.debug('清理轮转备份', {
-              operation: 'prune_backups',
-              outcome: 'success',
+
+          if (decision.shouldRotate) {
+            const rotatedPath = buildRotatedPath(targetPath, new Date())
+            await Deno.rename(targetPath, rotatedPath)
+            options.logger?.debug('执行文件轮转', {
+              'delivery.operation': 'rotate_file',
+              'delivery.outcome': 'success',
               ...logFields,
-              rotation_enabled: true,
-              rotation_reason: decision.reason,
+              'delivery.rotated_path': rotatedPath,
+              'delivery.rotation_enabled': true,
+              'delivery.rotation_reason': decision.reason,
             })
+            if (typeof rotation.backups === 'number') {
+              await pruneBackups(targetPath, rotation.backups)
+              options.logger?.debug('清理轮转备份', {
+                'delivery.operation': 'prune_backups',
+                'delivery.outcome': 'success',
+                ...logFields,
+                'delivery.rotation_enabled': true,
+                'delivery.rotation_reason': decision.reason,
+              })
+            }
           }
         }
-      }
 
-      await Deno.writeTextFile(targetPath, `${req.content}\n`, {
-        append: true,
-      })
-      options.logger?.info('写入文件成功', {
-        operation: 'push',
-        outcome: 'success',
-        ...logFields,
-        rotation_enabled: rotation?.enabled ?? false,
-      })
+        await Deno.writeTextFile(targetPath, `${req.content}\n`, {
+          append: true,
+        })
+        options.logger?.info('写入文件成功', {
+          'delivery.operation': 'push',
+          'delivery.outcome': 'success',
+          ...logFields,
+          'delivery.rotation_enabled': rotation?.enabled ?? false,
+        })
+      } catch (error) {
+        options.logger?.error('写入文件失败', {
+          'delivery.operation': 'push',
+          'delivery.outcome': 'failure',
+          ...logFields,
+          'delivery.rotation_enabled': rotation?.enabled ?? false,
+          error_name: error instanceof Error ? error.name : 'Error',
+          error_message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        })
+        throw error
+      }
     },
   }
 }

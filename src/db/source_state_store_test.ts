@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertExists } from '@std/assert'
 import { join } from '@std/path'
+import { createLogger } from '../core/logger.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { createDbClient } from './client.ts'
 import { createSourceStateStore } from './source_state_store.ts'
@@ -27,6 +28,22 @@ function createSqliteConfig(databaseName: string, vacuum: 'off' | 'afterPrune' =
       vacuum,
     },
   }
+}
+
+function createTestLogger(records: Array<Record<string, unknown>>) {
+  const write = (line: string) => {
+    records.push(JSON.parse(line) as Record<string, unknown>)
+  }
+
+  return createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'test',
+    now: () => new Date('2026-04-11T08:00:00.000Z'),
+    writeStdout: write,
+    writeWarn: write,
+    writeStderr: write,
+  })
 }
 
 test('sourceStateStore: persistParsedSource 应在 payload 未变化时仅刷新 last_seen_at', async () => {
@@ -292,6 +309,114 @@ test('sourceStateStore: pruneSourceState 在未清理任何数据时不应触发
   store.pruneSourceState('s1', 1)
 
   assertEquals(executedSql.includes('VACUUM'), false)
+
+  db.$client.close()
+})
+
+test('sourceStateStore: 应记录 persist dedupe prune 事件且不包含 payload', async () => {
+  const logs: Array<Record<string, unknown>> = []
+  const sqlite = createSqliteConfig('observability.db')
+  const db = createDbClient({ sqlite })
+  const store = createSourceStateStore({
+    db,
+    sqlite,
+    logger: createTestLogger(logs),
+  })
+  const sourceRunId = 'run-1'
+
+  await store.persistParsedSource(
+    {
+      sourceId: 'rust',
+      parser: 'rss',
+      payload:
+        '<rss><channel><item><guid>entry-1</guid><description>secret payload</description></item></channel></rss>',
+      feedMapped: { title: 'Rust Feed' },
+      entries: [{ mapped: { id: 'entry-1', title: 'Hello' } }],
+    },
+    sourceRunId,
+  )
+
+  const firstPersistLog = logs.find((line) => line.body === 'source 状态已持久化')
+  const firstPersistAttributes = (firstPersistLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals((firstPersistLog?.scope as Record<string, unknown>).name, 'db.state.store')
+  assertEquals(firstPersistAttributes['db.operation'], 'persist_source_state')
+  assertEquals(firstPersistAttributes['db.outcome'], 'stored')
+  assertEquals(firstPersistAttributes['source.id'], 'rust')
+  assertEquals(firstPersistAttributes['source.run_id'], sourceRunId)
+  assertEquals(firstPersistAttributes['source.parser'], 'rss')
+  assertEquals(firstPersistAttributes['source.item_count'], 1)
+  assertEquals(JSON.stringify(firstPersistLog).includes('secret payload'), false)
+
+  await store.persistParsedSource(
+    {
+      sourceId: 'rust',
+      parser: 'rss',
+      payload:
+        '<rss><channel><item><guid>entry-1</guid><description>secret payload</description></item></channel></rss>',
+      feedMapped: { title: 'Rust Feed' },
+      entries: [{ mapped: { id: 'entry-1', title: 'Hello' } }],
+    },
+    sourceRunId,
+  )
+
+  const refreshLog = logs.find((line) => line.body === 'source 状态未变化，仅刷新 last_seen')
+  const refreshAttributes = (refreshLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(refreshAttributes['db.operation'], 'persist_source_state')
+  assertEquals(refreshAttributes['db.outcome'], 'touched_seen_entries')
+  assertEquals(refreshAttributes['source.id'], 'rust')
+  assertEquals(refreshAttributes['source.run_id'], sourceRunId)
+  assertEquals(JSON.stringify(refreshLog).includes('secret payload'), false)
+
+  assertEquals(
+    await store.deliverIfNeeded('rust', 'entry-1', 'archive', () => Promise.resolve(), sourceRunId),
+    'delivered',
+  )
+  assertEquals(
+    await store.deliverIfNeeded('rust', 'entry-1', 'archive', () => Promise.resolve(), sourceRunId),
+    'deduped',
+  )
+
+  const deliveredLog = logs.find((line) => line.body === '记录 delivered 状态')
+  const dedupedLog = logs.find((line) => line.body === '命中已投递记录')
+  const deliveredAttributes = (deliveredLog?.attributes ?? {}) as Record<string, unknown>
+  const dedupedAttributes = (dedupedLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(deliveredAttributes['db.operation'], 'mark_delivered')
+  assertEquals(deliveredAttributes['db.outcome'], 'success')
+  assertEquals(deliveredAttributes['source.id'], 'rust')
+  assertEquals(deliveredAttributes['source.run_id'], sourceRunId)
+  assertEquals(deliveredAttributes['pipeline.item_id'], 'entry-1')
+  assertEquals(deliveredAttributes['delivery.id'], 'archive')
+  assertEquals(dedupedAttributes['db.operation'], 'dedupe_check')
+  assertEquals(dedupedAttributes['db.outcome'], 'deduped')
+  assertEquals(dedupedAttributes['source.id'], 'rust')
+  assertEquals(dedupedAttributes['source.run_id'], sourceRunId)
+  assertEquals(dedupedAttributes['pipeline.item_id'], 'entry-1')
+  assertEquals(dedupedAttributes['delivery.id'], 'archive')
+
+  const expired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+  db.$client
+    .prepare(
+      `INSERT INTO entries(source_id, entry_id, entry_text, first_seen_at, last_seen_at, updated_at)
+       VALUES(?, ?, ?, ?, ?, ?)`,
+    )
+    .run('rust', 'old', '{"id":"old"}', expired, expired, expired)
+  db.$client
+    .prepare(
+      `INSERT INTO deliveries(source_id, item_id, target_id, status, created_at)
+       VALUES(?, ?, ?, 'delivered', ?)`,
+    )
+    .run('rust', 'old', 'archive', expired)
+
+  store.pruneSourceState('rust', 1, sourceRunId)
+
+  const pruneLog = logs.find((line) => line.body === 'source 状态清理完成')
+  const pruneAttributes = (pruneLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(pruneAttributes['db.operation'], 'prune_source_state')
+  assertEquals(pruneAttributes['db.outcome'], 'pruned')
+  assertEquals(pruneAttributes['source.id'], 'rust')
+  assertEquals(pruneAttributes['source.run_id'], sourceRunId)
+  assertEquals(pruneAttributes['db.pruned_entries'], true)
+  assertEquals(pruneAttributes['db.pruned_deliveries'], true)
 
   db.$client.close()
 })

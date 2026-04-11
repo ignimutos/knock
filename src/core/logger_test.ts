@@ -534,6 +534,89 @@ Deno.test('logger: child 应保留 resource 并把 HTTP 语义字段写入标准
   assertEquals(attributes['http.route'], '/api/xquery/evaluate')
 })
 
+Deno.test('logger: null 字段应直接省略而不是序列化为空字符串', () => {
+  const stdout: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'app.startup',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+  })
+
+  logger.info('省略缺失字段', {
+    'config.path': null,
+    'delivery.reason': undefined,
+    'source.id': 'rust',
+  })
+
+  assertEquals(stdout.length, 1)
+  const record = parseRecord(stdout[0])
+  const attributes = getAttributes(record)
+
+  assertEquals('config.path' in attributes, false)
+  assertEquals('delivery.reason' in attributes, false)
+  assertEquals(attributes['source.id'], 'rust')
+})
+
+Deno.test('logger: nested object 内部的 null 与 undefined 字段应被省略', () => {
+  const stdout: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'app.startup',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+  })
+
+  logger.info('省略嵌套对象缺失字段', {
+    'config.snapshot': {
+      sourceId: 'rust',
+      optionalNull: null,
+      optionalUndefined: undefined,
+      nested: {
+        keep: 'ok',
+        dropNull: null,
+        dropUndefined: undefined,
+      },
+    },
+  })
+
+  assertEquals(stdout.length, 1)
+  const record = parseRecord(stdout[0])
+  const attributes = getAttributes(record)
+  const snapshot = attributes['config.snapshot'] as Record<string, unknown>
+  const nested = snapshot.nested as Record<string, unknown>
+
+  assertEquals(snapshot.source_id, 'rust')
+  assertEquals('optional_null' in snapshot, false)
+  assertEquals('optional_undefined' in snapshot, false)
+  assertEquals(nested.keep, 'ok')
+  assertEquals('drop_null' in nested, false)
+  assertEquals('drop_undefined' in nested, false)
+})
+
+Deno.test('logger: array 元素应保留旧标量语义', () => {
+  const stdout: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'app.startup',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+  })
+
+  logger.info('数组标量旧语义', {
+    'pipeline.values': [null, undefined, '  rust  ', 1],
+  })
+
+  assertEquals(stdout.length, 1)
+  const record = parseRecord(stdout[0])
+  const attributes = getAttributes(record)
+
+  assertEquals(attributes['pipeline.values'], ['', null, 'rust', 1])
+})
+
 Deno.test('logger: 敏感字段与敏感内容应在 OTel attributes 中继续脱敏', () => {
   const stderr: string[] = []
 

@@ -44,8 +44,8 @@ export function createEmailDelivery(options: EmailDeliveryFactoryOptions = {}): 
       }
 
       options.logger?.info('SMTP 邮件发送开始', {
-        operation: 'push',
-        outcome: 'start',
+        'delivery.operation': 'push',
+        'delivery.outcome': 'start',
         ...logFields,
       })
 
@@ -64,17 +64,17 @@ export function createEmailDelivery(options: EmailDeliveryFactoryOptions = {}): 
         })
 
         options.logger?.info('SMTP 邮件发送成功', {
-          operation: 'push',
-          outcome: 'success',
+          'delivery.operation': 'push',
+          'delivery.outcome': 'success',
           ...logFields,
-          recipient_count:
+          'delivery.recipient_count':
             req.message.to.length + (req.message.cc?.length ?? 0) + (req.message.bcc?.length ?? 0),
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         options.logger?.error('SMTP 邮件发送失败', {
-          operation: 'push',
-          outcome: 'failure',
+          'delivery.operation': 'push',
+          'delivery.outcome': 'failure',
           ...logFields,
           error_name: error instanceof Error ? error.name : 'Error',
           error_message: message,

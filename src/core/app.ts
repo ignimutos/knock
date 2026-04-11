@@ -113,7 +113,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     timezone: config.timezone,
     timestampFormat: config.timestampFormat,
     baseFields: {
-      runtime_dir: config.runtimeDir,
+      'app.runtime_dir': config.runtimeDir,
     },
   })
 
@@ -150,6 +150,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     createTransport: emailTransportFactory,
   })
   const deliveryRuntime = createDeliveryRuntime({
+    logger: logger.child({ module: 'delivery.runtime' }),
     contentRuntime,
     fileDelivery,
     httpDelivery,
@@ -159,7 +160,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     logger,
     scheduler,
     sourceRuntime: {
-      fetchAndParse: (source) =>
+      fetchAndParse: (source, sourceRuntimeLogger) =>
         fetchAndParseSource({
           source,
           httpClient,
@@ -168,6 +169,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
             timestampFormat: config.timestampFormat,
           },
           aiRuntime,
+          logger: sourceRuntimeLogger,
         }),
     },
     contentRuntime,
@@ -181,13 +183,13 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 
   logger.info('启动完成', {
     module: 'app.startup',
-    operation: 'startup',
-    outcome: 'success',
-    source_count: config.sources.length,
-    enabled_source_count: enabledSources.length,
-    disabled_source_count: config.sources.length - enabledSources.length,
-    delivery_count: config.deliveries.length,
-    scheduled_source_count: scheduledSources.length,
+    'app.operation': 'startup',
+    'app.outcome': 'success',
+    'source.count': config.sources.length,
+    'source.enabled_count': enabledSources.length,
+    'source.disabled_count': config.sources.length - enabledSources.length,
+    'delivery.count': config.deliveries.length,
+    'scheduler.scheduled_source_count': scheduledSources.length,
   })
 
   if (shouldRunImmediate) {
@@ -203,10 +205,10 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     if (!source.enabled) {
       logger.info('source 已禁用，跳过执行', {
         module: 'scheduler.source',
-        operation: 'run_source',
-        outcome: 'skipped',
+        'scheduler.operation': 'run_source',
+        'scheduler.outcome': 'skipped',
         'source.id': source.id,
-        reason: 'source_disabled',
+        'scheduler.reason': 'source_disabled',
       })
       continue
     }
@@ -215,10 +217,10 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 
     logger.info('注册调度任务', {
       module: 'scheduler.source',
-      operation: 'register_schedule',
-      outcome: 'success',
+      'scheduler.operation': 'register_schedule',
+      'scheduler.outcome': 'success',
       'source.id': source.id,
-      schedule: source.schedule,
+      'scheduler.schedule': source.schedule,
     })
 
     scheduledJobs.push(
@@ -232,9 +234,9 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 
   logger.info('进入长期运行模式', {
     module: 'app.startup',
-    operation: 'enter_daemon',
-    outcome: 'success',
-    has_schedule: hasScheduledSources,
+    'app.operation': 'enter_daemon',
+    'app.outcome': 'success',
+    'app.has_schedule': hasScheduledSources,
   })
 
   if (shouldKeepAlive) {
@@ -242,8 +244,8 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
       setInterval(() => {}, 2_147_483_647)
       logger.info('无调度任务，启用空闲保活定时器', {
         module: 'app.startup',
-        operation: 'keepalive_idle_timer',
-        outcome: 'enabled',
+        'app.operation': 'keepalive_idle_timer',
+        'app.outcome': 'enabled',
       })
     }
     await (keepAliveSignal ?? new Promise(() => {}))

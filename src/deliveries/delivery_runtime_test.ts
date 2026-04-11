@@ -1,7 +1,24 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { attachAiEntryRuntime, createAiRuntime } from '../core/ai_runtime.ts'
 import { createContentRuntime } from '../core/content_runtime.ts'
+import { attachLogFields, createLogger } from '../core/logger.ts'
 import { createDeliveryRuntime } from './delivery_runtime.ts'
+
+function createTestLogger(records: Array<Record<string, unknown>>) {
+  const write = (line: string) => {
+    records.push(JSON.parse(line) as Record<string, unknown>)
+  }
+
+  return createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'test',
+    now: () => new Date('2026-04-11T08:00:00.000Z'),
+    writeStdout: write,
+    writeWarn: write,
+    writeStderr: write,
+  })
+}
 
 Deno.test('deliveryRuntime: file 投递应选择并渲染 file content 模板后分发', async () => {
   const renderedTemplates: Array<{ template: string; context: Record<string, unknown> }> = []
@@ -510,3 +527,186 @@ Deno.test('deliveryRuntime: 未配置目标时应报错', async () => {
     'delivery 未配置投递目标: broken',
   )
 })
+
+Deno.test('deliveryRuntime: 应记录 build/render/dispatch 阶段日志并透传上下文字段', async () => {
+  const logs: Array<Record<string, unknown>> = []
+  const calls: unknown[] = []
+  const runtime = createDeliveryRuntime({
+    logger: createTestLogger(logs),
+    contentRuntime: {
+      renderContent: () => Promise.resolve('unused'),
+      renderPayload: (_payload: unknown, context: Record<string, unknown>) =>
+        Promise.resolve({
+          text: String((context.entry as { title?: string }).title ?? ''),
+        }),
+    },
+    fileDelivery: { push: () => Promise.resolve() },
+    httpDelivery: {
+      push: (req: unknown) => {
+        calls.push(req)
+        return Promise.resolve()
+      },
+    },
+    emailDelivery: { push: () => Promise.resolve() },
+  } as never)
+
+  const templateContext = attachLogFields(
+    {
+      entry: { title: 'Hello HTTP', body: 'secret body' },
+      source: { id: 'source-1' },
+      delivery: { ignored: true },
+    },
+    {
+      'source.id': 'source-1',
+    },
+  )
+
+  await runtime.push(
+    {
+      id: 'webhook',
+      push: {
+        http: {
+          method: 'POST',
+          url: 'https://example.com/webhook',
+          headers: { Authorization: 'Bearer token' },
+        },
+        request: {
+          type: 'body',
+          payload: {
+            text: '{{ entry.title }}',
+          },
+        },
+      },
+    },
+    templateContext,
+  )
+
+  assertEquals(calls.length, 1)
+  assertEquals(logs.length, 3)
+
+  const buildLog = logs.find((line) => line.body === 'delivery 请求构建完成')
+  const renderLog = logs.find((line) => line.body === 'delivery payload 渲染完成')
+  const dispatchLog = logs.find((line) => line.body === 'delivery 已分发')
+  const buildAttributes = (buildLog?.attributes ?? {}) as Record<string, unknown>
+  const renderAttributes = (renderLog?.attributes ?? {}) as Record<string, unknown>
+  const dispatchAttributes = (dispatchLog?.attributes ?? {}) as Record<string, unknown>
+
+  assertEquals((buildLog?.scope as Record<string, unknown>).name, 'delivery.runtime.build')
+  assertEquals(buildAttributes['delivery.operation'], 'build_request')
+  assertEquals(buildAttributes['delivery.outcome'], 'success')
+  assertEquals(buildAttributes['delivery.id'], 'webhook')
+  assertEquals(buildAttributes['source.id'], 'source-1')
+  assertEquals('body' in buildAttributes, false)
+  assertEquals(JSON.stringify(buildLog).includes('secret body'), false)
+
+  assertEquals((renderLog?.scope as Record<string, unknown>).name, 'delivery.runtime.render')
+  assertEquals(renderAttributes['delivery.operation'], 'render_payload')
+  assertEquals(renderAttributes['delivery.outcome'], 'success')
+  assertEquals(renderAttributes['delivery.id'], 'webhook')
+  assertEquals(renderAttributes['source.id'], 'source-1')
+  assertEquals(renderAttributes['delivery.request_type'], 'body')
+  assertEquals(JSON.stringify(renderLog).includes('secret body'), false)
+
+  assertEquals((dispatchLog?.scope as Record<string, unknown>).name, 'delivery.runtime.dispatch')
+  assertEquals(dispatchAttributes['delivery.operation'], 'dispatch')
+  assertEquals(dispatchAttributes['delivery.outcome'], 'success')
+  assertEquals(dispatchAttributes['delivery.id'], 'webhook')
+  assertEquals(dispatchAttributes['source.id'], 'source-1')
+  assertEquals(JSON.stringify(dispatchLog).includes('secret body'), false)
+})
+
+Deno.test(
+  'deliveryRuntime: file 与 email 分支也应记录 build/render/dispatch 且透传 run_id',
+  async () => {
+    const logs: Array<Record<string, unknown>> = []
+    const fileCalls: unknown[] = []
+    const emailCalls: unknown[] = []
+    const runtime = createDeliveryRuntime({
+      logger: createTestLogger(logs),
+      contentRuntime: {
+        renderContent: (template: string, context: Record<string, unknown>) =>
+          Promise.resolve(
+            `rendered:${template}:${String((context.entry as { id?: string }).id ?? '')}`,
+          ),
+        renderPayload: (payload: unknown) => Promise.resolve(payload),
+      },
+      fileDelivery: {
+        push: (req: unknown) => {
+          fileCalls.push(req)
+          return Promise.resolve()
+        },
+      },
+      httpDelivery: { push: () => Promise.resolve() },
+      emailDelivery: {
+        push: (req: unknown) => {
+          emailCalls.push(req)
+          return Promise.resolve()
+        },
+      },
+    } as never)
+
+    const templateContext = attachLogFields(
+      {
+        entry: { id: 'entry-1', title: 'Hello', body: 'secret body' },
+        source: { id: 'source-1' },
+      },
+      {
+        'source.id': 'source-1',
+        'source.run_id': 'run-1',
+        'pipeline.item_id': 'entry-1',
+      },
+    )
+
+    await runtime.push(
+      {
+        id: 'archive',
+        file: {
+          path: '/tmp/feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+      templateContext,
+    )
+
+    await runtime.push(
+      {
+        id: 'release_email',
+        email: {
+          smtp: {
+            host: 'smtp.example.com',
+            port: 587,
+            security: 'starttls',
+          },
+          message: {
+            from: 'bot@example.com',
+            to: ['team@example.com'],
+            subject: '{{ entry.title }}',
+            text: '{{ entry.title }}',
+          },
+        },
+      },
+      templateContext,
+    )
+
+    assertEquals(fileCalls.length, 1)
+    assertEquals(emailCalls.length, 1)
+
+    const renderLogs = logs.filter(
+      (line) => line.body === 'delivery 内容渲染完成' || line.body === 'delivery 消息渲染完成',
+    )
+    const buildLogs = logs.filter((line) => line.body === 'delivery 请求构建完成')
+    const dispatchLogs = logs.filter((line) => line.body === 'delivery 已分发')
+
+    assertEquals(renderLogs.length, 2)
+    assertEquals(buildLogs.length >= 2, true)
+    assertEquals(dispatchLogs.length >= 2, true)
+
+    for (const line of [...renderLogs, ...buildLogs, ...dispatchLogs]) {
+      const attributes = (line.attributes ?? {}) as Record<string, unknown>
+      assertEquals(attributes['source.id'], 'source-1')
+      assertEquals(attributes['source.run_id'], 'run-1')
+      assertEquals(attributes['pipeline.item_id'], 'entry-1')
+      assertEquals(JSON.stringify(line).includes('secret body'), false)
+    }
+  },
+)

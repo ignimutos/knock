@@ -98,10 +98,10 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<AppCo
     : await findConfigFile(runtimeDir)
   options.logger?.info('开始加载配置', {
     module: 'config.load',
-    operation: 'load_config',
-    outcome: 'start',
-    config_path: configPath,
-    runtime_dir: runtimeDir,
+    'config.operation': 'load_config',
+    'config.outcome': 'start',
+    'config.path': configPath,
+    'config.runtime_dir': runtimeDir,
   })
 
   try {
@@ -114,44 +114,44 @@ export async function loadConfig(options: LoadConfigOptions = {}): Promise<AppCo
 
     options.logger?.info('开始校验配置', {
       module: 'config.validate',
-      operation: 'validate_config',
-      outcome: 'start',
-      config_path: configPath,
-      runtime_dir: runtimeDir,
+      'config.operation': 'validate_config',
+      'config.outcome': 'start',
+      'config.path': configPath,
+      'config.runtime_dir': runtimeDir,
     })
     const validatedInput = validateConfig(input)
     options.logger?.info('配置校验通过', {
       module: 'config.validate',
-      operation: 'validate_config',
-      outcome: 'success',
-      config_path: configPath,
-      runtime_dir: runtimeDir,
+      'config.operation': 'validate_config',
+      'config.outcome': 'success',
+      'config.path': configPath,
+      'config.runtime_dir': runtimeDir,
     })
 
     const resolved = resolveConfig(validatedInput)
     options.logger?.info('配置解析完成', {
       module: 'config.resolve',
-      operation: 'resolve_config',
-      outcome: 'success',
-      config_path: configPath,
-      runtime_dir: runtimeDir,
+      'config.operation': 'resolve_config',
+      'config.outcome': 'success',
+      'config.path': configPath,
+      'config.runtime_dir': runtimeDir,
     })
     options.logger?.info('配置加载完成', {
       module: 'config.load',
-      operation: 'load_config',
-      outcome: 'success',
-      config_path: configPath,
-      runtime_dir: runtimeDir,
+      'config.operation': 'load_config',
+      'config.outcome': 'success',
+      'config.path': configPath,
+      'config.runtime_dir': runtimeDir,
     })
     return resolved
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     options.logger?.error('配置加载失败', {
       module: 'config.load',
-      operation: 'load_config',
-      outcome: 'failure',
-      config_path: configPath,
-      runtime_dir: runtimeDir,
+      'config.operation': 'load_config',
+      'config.outcome': 'failure',
+      'config.path': configPath,
+      'config.runtime_dir': runtimeDir,
       error_name: error instanceof Error ? error.name : 'Error',
       error_message: msg,
       stack: error instanceof Error ? error.stack : undefined,

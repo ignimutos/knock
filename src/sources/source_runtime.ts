@@ -3,9 +3,10 @@ import type {
   UnifiedEntryFields,
   UnifiedFeedFields,
 } from '../config/types.ts'
+import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { AiRuntime } from '../core/ai_runtime.ts'
 import type { HttpClient } from '../core/http_client.ts'
-import { parseDurationMs } from '../config/runtime_semantics.ts'
+import type { Logger } from '../core/logger.ts'
 import { parseSyndicationSource } from './syndication.ts'
 import { parseXquerySource } from './xquery.ts'
 
@@ -27,6 +28,7 @@ export interface FetchAndParseSourceInput {
     timestampFormat: string
   }
   aiRuntime?: AiRuntime
+  logger?: Logger
 }
 
 export interface SourceRuntimeTiming {
@@ -173,9 +175,27 @@ export async function fetchAndParseSource(
   const payload = await fetchSourcePayload(input.source, input.httpClient)
   const fetchDurationMs = Date.now() - fetchStartedAt
 
+  input.logger?.info('source payload 抓取完成', {
+    module: 'source.runtime.fetch',
+    'source.operation': 'fetch_payload',
+    'source.outcome': 'success',
+    'source.id': input.source.id,
+    'source.fetch_duration_ms': fetchDurationMs,
+  })
+
   const parseStartedAt = Date.now()
   const parsed = await parseSourcePayload(input.source, payload, input.timeOptions, input.aiRuntime)
   const parseDurationMs = Date.now() - parseStartedAt
+
+  input.logger?.info('source payload 解析完成', {
+    module: 'source.runtime.parse',
+    'source.operation': 'parse_payload',
+    'source.outcome': 'success',
+    'source.id': input.source.id,
+    'source.parser': parsed.parser,
+    'source.item_count': parsed.entries.length,
+    'source.parse_duration_ms': parseDurationMs,
+  })
 
   return {
     payload,

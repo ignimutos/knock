@@ -143,8 +143,8 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
       }
 
       options.logger?.info('HTTP 推送开始', {
-        operation: 'push',
-        outcome: 'start',
+        'delivery.operation': 'push',
+        'delivery.outcome': 'start',
         ...logFields,
       })
 
@@ -160,27 +160,28 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
       const passed = predicate
         ? (await renderTemplate(predicate, responseContext)).trim() === 'true'
         : response.ok
-      const message = messageTemplate
-        ? await renderTemplate(messageTemplate, responseContext)
-        : `HTTP 推送失败: status=${response.status}`
+      const safeMessage = `HTTP 推送失败: status=${response.status}`
 
       if (!passed) {
+        const message = messageTemplate
+          ? await renderTemplate(messageTemplate, responseContext)
+          : safeMessage
         options.logger?.error('HTTP 推送失败', {
-          operation: 'push',
-          outcome: 'failure',
+          'delivery.operation': 'push',
+          'delivery.outcome': 'failure',
           ...logFields,
           http_status: response.status,
-          response_body:
-            typeof normalized.body === 'string' ? normalized.body : JSON.stringify(normalized.body),
           error_name: 'HttpDeliveryError',
-          error_message: message,
+          error_message: safeMessage,
         })
-        throw new Error(message)
+        const error = new Error(message) as Error & { safeLogMessage?: string }
+        error.safeLogMessage = safeMessage
+        throw error
       }
 
       options.logger?.info('HTTP 推送成功', {
-        operation: 'push',
-        outcome: 'success',
+        'delivery.operation': 'push',
+        'delivery.outcome': 'success',
         ...logFields,
         http_status: response.status,
       })

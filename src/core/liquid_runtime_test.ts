@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert'
 import { attachAiEntryRuntime, createAiRuntime } from './ai_runtime.ts'
 import { createLiquidRuntime, renderLiquid, renderLiquidSync } from './liquid_runtime.ts'
+import { createLogger } from './logger.ts'
 
 Deno.test('liquidRuntime: async 渲染可用', async () => {
   const out = await renderLiquid('{{ item.title }}', {
@@ -340,6 +341,42 @@ Deno.test('liquidRuntime: to_telegram_markdown_v2 不再接受额外参数', () 
       }),
     Error,
   )
+})
+
+Deno.test('liquidRuntime: to_telegram_html 日志字段使用 template namespace', async () => {
+  const logs: Array<Record<string, unknown>> = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'app.startup',
+    now: () => new Date('2026-04-10T08:00:00.000Z'),
+    writeStdout: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    writeWarn: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+    writeStderr: (line: string) => logs.push(JSON.parse(line) as Record<string, unknown>),
+  })
+  const runtime = createLiquidRuntime({
+    logger: logger.child({ module: 'content.render' }),
+  })
+
+  const out = runtime.renderSync('{{ item.content | to_telegram_html }}', {
+    item: { content: '<a href="/docs/releases">Releases</a>' },
+  })
+
+  assertEquals(out, 'Releases')
+  assertEquals(logs.length, 1)
+  assertEquals(logs[0].severityText, 'INFO')
+  assertEquals(
+    (logs[0].attributes as Record<string, unknown>)['template.filter_name'],
+    'to_telegram_html',
+  )
+  assertEquals(
+    (logs[0].attributes as Record<string, unknown>)['template.operation'],
+    'sanitize_telegram_html',
+  )
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.reason'], 'auto_corrected')
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.changed'], true)
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.removed_link_count'], 1)
+  assertEquals('operation' in (logs[0].attributes as Record<string, unknown>), false)
 })
 
 Deno.test('liquidRuntime: ai_translate 支持异步渲染并走 entry 级 runtime', async () => {

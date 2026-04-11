@@ -232,10 +232,17 @@ Deno.test('contentRuntime: 业务 runtime 在 to_telegram_html 正常路径输�
   assertEquals(logs[0].severityText, 'DEBUG')
   assertEquals((logs[0].scope as Record<string, unknown>).name, 'content.render')
   assertStringIncludes(String(logs[0].body ?? ''), 'Telegram HTML')
-  assertEquals((logs[0].attributes as Record<string, unknown>).filter_name, 'to_telegram_html')
-  assertEquals((logs[0].attributes as Record<string, unknown>).operation, 'sanitize_telegram_html')
-  assertEquals((logs[0].attributes as Record<string, unknown>).reason, 'unchanged')
-  assertEquals((logs[0].attributes as Record<string, unknown>).changed, false)
+  assertEquals(
+    (logs[0].attributes as Record<string, unknown>)['template.filter_name'],
+    'to_telegram_html',
+  )
+  assertEquals(
+    (logs[0].attributes as Record<string, unknown>)['template.operation'],
+    'sanitize_telegram_html',
+  )
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.reason'], 'unchanged')
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.changed'], false)
+  assertEquals('operation' in (logs[0].attributes as Record<string, unknown>), false)
 })
 
 Deno.test('contentRuntime: 业务 runtime 在 to_telegram_html 自动修正时输出 info 日志', async () => {
@@ -263,12 +270,19 @@ Deno.test('contentRuntime: 业务 runtime 在 to_telegram_html 自动修正时�
   assertEquals(logs.length, 1)
   assertEquals(logs[0].severityText, 'INFO')
   assertEquals((logs[0].scope as Record<string, unknown>).name, 'content.render')
-  assertEquals((logs[0].attributes as Record<string, unknown>).filter_name, 'to_telegram_html')
-  assertEquals((logs[0].attributes as Record<string, unknown>).operation, 'sanitize_telegram_html')
-  assertEquals((logs[0].attributes as Record<string, unknown>).reason, 'auto_corrected')
-  assertEquals((logs[0].attributes as Record<string, unknown>).changed, true)
-  assertEquals((logs[0].attributes as Record<string, unknown>).removed_link_count, 1)
-  assertEquals((logs[0].attributes as Record<string, unknown>).stripped_tag_count, 1)
+  assertEquals(
+    (logs[0].attributes as Record<string, unknown>)['template.filter_name'],
+    'to_telegram_html',
+  )
+  assertEquals(
+    (logs[0].attributes as Record<string, unknown>)['template.operation'],
+    'sanitize_telegram_html',
+  )
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.reason'], 'auto_corrected')
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.changed'], true)
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.removed_link_count'], 1)
+  assertEquals((logs[0].attributes as Record<string, unknown>)['template.stripped_tag_count'], 1)
+  assertEquals('operation' in (logs[0].attributes as Record<string, unknown>), false)
 })
 
 Deno.test(
@@ -298,14 +312,21 @@ Deno.test(
     assertEquals(logs.length, 1)
     assertEquals(logs[0].severityText, 'INFO')
     assertEquals((logs[0].scope as Record<string, unknown>).name, 'content.render')
-    assertEquals((logs[0].attributes as Record<string, unknown>).filter_name, 'to_telegram_html')
     assertEquals(
-      (logs[0].attributes as Record<string, unknown>).operation,
+      (logs[0].attributes as Record<string, unknown>)['template.filter_name'],
+      'to_telegram_html',
+    )
+    assertEquals(
+      (logs[0].attributes as Record<string, unknown>)['template.operation'],
       'sanitize_telegram_html',
     )
-    assertEquals((logs[0].attributes as Record<string, unknown>).reason, 'auto_corrected')
-    assertEquals((logs[0].attributes as Record<string, unknown>).changed, true)
-    assertEquals((logs[0].attributes as Record<string, unknown>).removed_link_count, 1)
+    assertEquals(
+      (logs[0].attributes as Record<string, unknown>)['template.reason'],
+      'auto_corrected',
+    )
+    assertEquals((logs[0].attributes as Record<string, unknown>)['template.changed'], true)
+    assertEquals((logs[0].attributes as Record<string, unknown>)['template.removed_link_count'], 1)
+    assertEquals('operation' in (logs[0].attributes as Record<string, unknown>), false)
   },
 )
 

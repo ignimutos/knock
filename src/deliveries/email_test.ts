@@ -111,8 +111,8 @@ Deno.test('emailDelivery: transporter 失败时应记录失败日志并抛错', 
       const attributes = (item.attributes ?? {}) as Record<string, unknown>
       return (
         scope.name === 'delivery.email' &&
-        attributes.operation === 'push' &&
-        attributes.outcome === 'failure'
+        attributes['delivery.operation'] === 'push' &&
+        attributes['delivery.outcome'] === 'failure'
       )
     }),
     true,
