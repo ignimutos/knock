@@ -54,6 +54,7 @@ Deno.test('deliveryRuntime: file 投递应选择并渲染 file content 模板后
         enabled: true,
         size: '10m',
       },
+      templateContext,
     },
   ])
 })
@@ -400,6 +401,7 @@ Deno.test('deliveryRuntime: email 投递应渲染 message 字段并分发到 ema
   assertEquals(calls, [
     {
       deliveryId: 'release_email',
+      templateContext,
       smtp: {
         host: 'smtp.example.com',
         port: 587,

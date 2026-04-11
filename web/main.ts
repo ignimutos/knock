@@ -7,6 +7,10 @@ import IndexPage from './routes/index.tsx'
 import XqueryPage from './routes/xquery.tsx'
 import { type EvaluateLogMeta, handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
 
+function createWebRequestId(now: number = Date.now()): string {
+  return `web.${now.toString(36)}.${crypto.randomUUID()}`
+}
+
 function renderPage(Component: () => JSX.Element): Response {
   const html = `<!doctype html>${renderToString(AppDocument({ Component } as never))}`
   return new Response(html, {
@@ -32,12 +36,14 @@ export function withApiRequestLogging(
   const routeLogger = logger.child({ module, route })
   return async (ctx: { req: Request }) => {
     const startedAt = Date.now()
+    const requestId = createWebRequestId(startedAt)
     let logMeta: EvaluateLogMeta = {}
 
     routeLogger.debug('API 请求开始', {
       operation: 'request',
       outcome: 'start',
       method: ctx.req.method,
+      'web.request_id': requestId,
     })
 
     const response = await handler(ctx.req, (meta) => {
@@ -50,7 +56,22 @@ export function withApiRequestLogging(
       method: ctx.req.method,
       duration_ms: Date.now() - startedAt,
       http_status: response.ok ? undefined : response.status,
-      ...logMeta,
+      'web.request_id': requestId,
+      ...(logMeta.targetHost ? { 'web.target_host': logMeta.targetHost } : {}),
+      ...(logMeta.parser ? { 'source.parser': logMeta.parser } : {}),
+      ...(logMeta.warningCount !== undefined
+        ? { 'pipeline.warning_count': logMeta.warningCount }
+        : {}),
+      ...(logMeta.entryCount !== undefined ? { 'pipeline.entry_count': logMeta.entryCount } : {}),
+      ...(logMeta.fetchDurationMs !== undefined
+        ? { 'source.fetch_duration_ms': logMeta.fetchDurationMs }
+        : {}),
+      ...(logMeta.parseDurationMs !== undefined
+        ? { 'source.parse_duration_ms': logMeta.parseDurationMs }
+        : {}),
+      ...(logMeta.errorCode ? { 'app.error_code': logMeta.errorCode } : {}),
+      ...(logMeta.errorCategory ? { 'app.error_category': logMeta.errorCategory } : {}),
+      ...(logMeta.errorMessage ? { error_message: logMeta.errorMessage } : {}),
     })
     return response
   }

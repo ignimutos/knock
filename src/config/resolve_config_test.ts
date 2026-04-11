@@ -54,6 +54,18 @@ Deno.test('resolveConfig: logging.format=pretty 应进入 resolved 层', () => {
   assertEquals(resolved.logging.format, 'pretty')
 })
 
+Deno.test('resolveConfig: logging.level=fatal 应进入 resolved 层', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    logging: {
+      level: 'fatal',
+    },
+  }
+
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.logging.level, 'fatal')
+})
+
 Deno.test('resolveConfig: 默认值与路径解析仍应成立', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',

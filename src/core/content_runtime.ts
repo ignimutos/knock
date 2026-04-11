@@ -9,7 +9,7 @@ import { parseWithFirstIssue } from '../zod_utils.ts'
 import type { AiEntryRuntime, AiRuntime } from './ai_runtime.ts'
 import { attachAiEntryRuntime } from './ai_runtime.ts'
 import { createLiquidRuntime } from './liquid_runtime.ts'
-import type { Logger } from './logger.ts'
+import { attachLogFields, getLogFields, type Logger } from './logger.ts'
 
 export type ContentContext = Record<string, unknown>
 
@@ -43,12 +43,19 @@ function buildTemplateContext(
   aiEntryRuntime?: AiEntryRuntime,
 ): ContentContext {
   return attachAiEntryRuntime(
-    {
-      ...entry,
-      entry,
-      feed,
-      source,
-    },
+    attachLogFields(
+      {
+        ...entry,
+        entry,
+        feed,
+        source,
+      },
+      {
+        'source.id': source.id,
+        ...(aiEntryRuntime?.sourceRunId ? { 'source.run_id': aiEntryRuntime.sourceRunId } : {}),
+        ...(aiEntryRuntime?.entryId ? { 'pipeline.item_id': aiEntryRuntime.entryId } : {}),
+      },
+    ),
     aiEntryRuntime,
   )
 }
@@ -82,12 +89,12 @@ async function renderPayloadWithLiquid(
 }
 
 export function createContentRuntime(options: CreateContentRuntimeOptions = {}): ContentRuntime {
-  const liquidRuntime = createLiquidRuntime({
-    aiRuntime: options.aiRuntime,
-    logger: options.logger,
-  })
   const renderLiquid = (template: string, context: ContentContext): Promise<string> => {
-    return liquidRuntime.render(template, context)
+    const contextLogger = options.logger?.child(getLogFields(context) ?? {})
+    return createLiquidRuntime({
+      aiRuntime: options.aiRuntime,
+      logger: contextLogger,
+    }).render(template, context)
   }
 
   return {

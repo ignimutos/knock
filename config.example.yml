@@ -323,9 +323,10 @@ sources:
 
 # 日志配置（可选；默认: 内置默认值）
 logging:
-  # 日志级别（可选；默认: info）
+  # 日志级别（可选；默认: info；支持: trace | debug | info | warn | error | fatal）
   level: info
   # 日志格式（可选；默认: json；支持: json | pretty）
+  # pretty 只影响控制台展示，不改变底层 JSON 契约。
   format: json
   # 日志输出 sinks 配置（可选；默认: 内置默认值）
   sinks:

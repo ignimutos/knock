@@ -1,11 +1,12 @@
 import nodemailer from 'nodemailer'
 import type { EmailConfig } from '../config/schema.ts'
-import type { Logger } from '../core/logger.ts'
+import { getLogFields, type Logger } from '../core/logger.ts'
 
 export interface EmailDeliveryRequest {
   deliveryId: string
   smtp: EmailConfig['smtp']
   message: EmailConfig['message']
+  templateContext?: Record<string, unknown>
 }
 
 export interface EmailDeliveryFactoryOptions {
@@ -37,10 +38,15 @@ export function createEmailDelivery(options: EmailDeliveryFactoryOptions = {}): 
 
   return {
     async push(req: EmailDeliveryRequest): Promise<void> {
+      const logFields = {
+        ...(req.templateContext ? (getLogFields(req.templateContext) ?? {}) : {}),
+        'delivery.id': req.deliveryId,
+      }
+
       options.logger?.info('SMTP 邮件发送开始', {
         operation: 'push',
         outcome: 'start',
-        delivery_id: req.deliveryId,
+        ...logFields,
       })
 
       try {
@@ -60,7 +66,7 @@ export function createEmailDelivery(options: EmailDeliveryFactoryOptions = {}): 
         options.logger?.info('SMTP 邮件发送成功', {
           operation: 'push',
           outcome: 'success',
-          delivery_id: req.deliveryId,
+          ...logFields,
           recipient_count:
             req.message.to.length + (req.message.cc?.length ?? 0) + (req.message.bcc?.length ?? 0),
         })
@@ -69,7 +75,7 @@ export function createEmailDelivery(options: EmailDeliveryFactoryOptions = {}): 
         options.logger?.error('SMTP 邮件发送失败', {
           operation: 'push',
           outcome: 'failure',
-          delivery_id: req.deliveryId,
+          ...logFields,
           error_name: error instanceof Error ? error.name : 'Error',
           error_message: message,
         })

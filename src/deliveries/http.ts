@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { attachAiEntryRuntime, getAiEntryRuntime } from '../core/ai_runtime.ts'
 import { renderContent } from '../core/content_runtime.ts'
-import type { Logger } from '../core/logger.ts'
+import { getLogFields, type Logger } from '../core/logger.ts'
 import type { HttpClient } from '../core/http_client.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import type {
@@ -137,10 +137,15 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
     async push(req: HttpDeliveryRequest): Promise<void> {
       const { url, init } = buildRequestInit(req)
 
+      const logFields = {
+        ...(req.templateContext ? (getLogFields(req.templateContext) ?? {}) : {}),
+        'delivery.id': req.deliveryId,
+      }
+
       options.logger?.info('HTTP 推送开始', {
         operation: 'push',
         outcome: 'start',
-        delivery_id: req.deliveryId,
+        ...logFields,
       })
 
       const response = await options.httpClient.request({
@@ -163,7 +168,7 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
         options.logger?.error('HTTP 推送失败', {
           operation: 'push',
           outcome: 'failure',
-          delivery_id: req.deliveryId,
+          ...logFields,
           http_status: response.status,
           response_body:
             typeof normalized.body === 'string' ? normalized.body : JSON.stringify(normalized.body),
@@ -176,7 +181,7 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
       options.logger?.info('HTTP 推送成功', {
         operation: 'push',
         outcome: 'success',
-        delivery_id: req.deliveryId,
+        ...logFields,
         http_status: response.status,
       })
     },

@@ -8,7 +8,7 @@ import type { DeliveryRuntime } from '../deliveries/delivery_runtime.ts'
 import type { FetchedParsedSourceResult, ParsedSourceResult } from '../sources/source_runtime.ts'
 import type { AiRuntime } from './ai_runtime.ts'
 import type { ContentContext } from './content_runtime.ts'
-import { createRunId, type Logger } from './logger.ts'
+import { attachLogFields, createRunId, type Logger } from './logger.ts'
 import type { Scheduler } from './scheduler.ts'
 
 export interface SourceRuntime {
@@ -65,16 +65,16 @@ function toPersistParsedSourceInput(
 function createFetchLogger(logger: Logger, sourceId: string, runId: string): Logger {
   return logger.child({
     module: 'source.fetch',
-    source_id: sourceId,
-    run_id: runId,
+    'source.id': sourceId,
+    'source.run_id': runId,
   })
 }
 
 function createSourceRunLogger(logger: Logger, sourceId: string, runId: string): Logger {
   return logger.child({
     module: 'scheduler.source',
-    source_id: sourceId,
-    run_id: runId,
+    'source.id': sourceId,
+    'source.run_id': runId,
   })
 }
 
@@ -89,8 +89,8 @@ function logParseSuccess(
     module: `source.parse.${parsed.parser}`,
     operation: 'parse',
     outcome: 'success',
-    source_id: sourceId,
-    run_id: runId,
+    'source.id': sourceId,
+    'source.run_id': runId,
     item_count: parsed.entries.length,
     duration_ms: durationMs,
   })
@@ -139,19 +139,22 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
                 module: `source.parse.${parsed.parser}`,
                 operation: 'validate_entry',
                 outcome: 'skipped',
-                source_id: source.id,
-                run_id: runId,
+                'source.id': source.id,
+                'source.run_id': runId,
                 reason: 'entry.id_empty',
               })
               continue
             }
 
-            const aiEntryRuntime = options.aiRuntime?.createEntryRuntime(source.id, entryId)
-            const templateContext = options.contentRuntime.buildContext(
-              entry,
-              parsed.feedMapped,
-              source,
-              aiEntryRuntime,
+            const itemLogFields = {
+              'source.id': source.id,
+              'source.run_id': runId,
+              'pipeline.item_id': entryId,
+            }
+            const aiEntryRuntime = options.aiRuntime?.createEntryRuntime(source.id, entryId, runId)
+            const templateContext = attachLogFields(
+              options.contentRuntime.buildContext(entry, parsed.feedMapped, source, aiEntryRuntime),
+              itemLogFields,
             )
 
             const filterStartedAt = now()
@@ -163,9 +166,7 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
               module: 'pipeline.filter',
               operation: 'filter',
               outcome: passed ? 'passed' : 'filtered',
-              source_id: source.id,
-              run_id: runId,
-              item_id: entryId,
+              ...itemLogFields,
               duration_ms: now() - filterStartedAt,
             })
 
@@ -174,12 +175,17 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
 
             for (const delivery of source.deliveries) {
               const deliveryId = options.deliveryRuntime.getDeliveryId(delivery)
+              const deliveryLogFields = {
+                ...itemLogFields,
+                'delivery.id': deliveryId,
+              }
+              const deliveryContext = attachLogFields(templateContext, deliveryLogFields)
               const deliveryResult = await options.sourceStateStore.deliverIfNeeded(
                 source.id,
                 entryId,
                 deliveryId,
                 async () => {
-                  await options.deliveryRuntime.push(delivery, templateContext)
+                  await options.deliveryRuntime.push(delivery, deliveryContext)
                 },
               )
 
@@ -189,10 +195,7 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
                   module: 'delivery.store',
                   operation: 'is_delivered',
                   outcome: 'deduped',
-                  source_id: source.id,
-                  run_id: runId,
-                  item_id: entryId,
-                  delivery_id: deliveryId,
+                  ...deliveryLogFields,
                 })
                 continue
               }
@@ -201,10 +204,7 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
                 module: 'delivery.store',
                 operation: 'mark_delivered',
                 outcome: 'success',
-                source_id: source.id,
-                run_id: runId,
-                item_id: entryId,
-                delivery_id: deliveryId,
+                ...deliveryLogFields,
               })
               pushedCount += 1
             }

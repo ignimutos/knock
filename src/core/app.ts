@@ -205,7 +205,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
         module: 'scheduler.source',
         operation: 'run_source',
         outcome: 'skipped',
-        source_id: source.id,
+        'source.id': source.id,
         reason: 'source_disabled',
       })
       continue
@@ -217,7 +217,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
       module: 'scheduler.source',
       operation: 'register_schedule',
       outcome: 'success',
-      source_id: source.id,
+      'source.id': source.id,
       schedule: source.schedule,
     })
 

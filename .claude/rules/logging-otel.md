@@ -11,6 +11,7 @@
 - `resource.attributes` 表示资源级上下文：对同一运行实体的大量日志都稳定成立、且不应随单次事件变化的事实。
 - `attributes` 表示事件级上下文：仅对当前这条日志成立，或会随请求、任务、重试、来源、投递等事件变化的事实。
 - trace 字段只表示这条日志与当前 trace/span 的真实因果关联；没有真实关联时 MUST NOT 伪造、缓存复用或写入占位值。
+- 当前仓库非 OTLP JSON 输出在顶层 trace 字段命名上 MUST 使用 `trace_id` / `span_id` / `trace_flags`；MUST NOT 混用 `traceId` / `spanId` / `traceFlags` 作为并行 shape。
 - `scope` 只表示产生日志的 instrumentation scope；`scope.name` MUST 表示日志生产者身份，而不是业务实例、请求实例、运行结果或自由文本。
 
 ## 严重级别模型
@@ -86,6 +87,14 @@
 - 事件结果、原因、计数、耗时、批次、重试、过滤、降级等事件级字段
 - source、pipeline、template、delivery、web 请求、数据库操作等与当前事件直接相关的信息
 - 需要做筛选、聚合、告警、统计的机器字段
+
+本轮仓库级约定：
+
+- source 关联主键 SHOULD 使用 `source.id` 与 `source.run_id`
+- 单条消息/entry 关联主键 SHOULD 使用 `pipeline.item_id`
+- 单个投递目标 SHOULD 使用 `delivery.id`
+- web 请求关联主键 SHOULD 使用 `web.request_id`
+- 这些业务关联字段 MUST NOT 借位写进 trace 字段
 
 ### trace 字段
 

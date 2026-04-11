@@ -69,5 +69,5 @@ Deno.test('scheduler: 重入跳过时应记录结构化日志', async () => {
   assertEquals(attributes.operation, 'run_source')
   assertEquals(attributes.outcome, 'skipped')
   assertEquals(attributes.reason, 'reentry_inflight')
-  assertEquals(attributes.source_id, 's1')
+  assertEquals(attributes['source.id'], 's1')
 })

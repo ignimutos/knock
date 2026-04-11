@@ -2,7 +2,7 @@ import { basename, dirname, extname, join } from '@std/path'
 import { z } from 'zod'
 import { parseDurationMs, resolveRuntimePath } from '../config/runtime_semantics.ts'
 import type { FileRotationConfig } from '../config/schema.ts'
-import type { Logger } from '../core/logger.ts'
+import { getLogFields, type Logger } from '../core/logger.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 
 export interface FileDeliveryFactoryOptions {
@@ -14,6 +14,7 @@ export interface FileDeliveryRequest {
   path: string
   content: string
   rotation?: FileRotationConfig
+  templateContext?: Record<string, unknown>
 }
 
 export interface FileDelivery {
@@ -142,13 +143,18 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
       const targetPath = resolveRuntimePath(options.runtimeDir, req.path)
       await Deno.mkdir(dirname(targetPath), { recursive: true })
 
+      const logFields = {
+        ...(req.templateContext ? (getLogFields(req.templateContext) ?? {}) : {}),
+        path: targetPath,
+      }
+
       const rotation = req.rotation
       if (rotation?.enabled) {
         const decision = await resolveRotationDecision(targetPath, rotation)
         options.logger?.debug('检查文件轮转', {
           operation: 'rotation_check',
           outcome: decision.shouldRotate ? 'triggered' : 'skipped',
-          path: targetPath,
+          ...logFields,
           rotation_enabled: true,
           rotation_reason: decision.reason,
         })
@@ -159,7 +165,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
           options.logger?.debug('执行文件轮转', {
             operation: 'rotate_file',
             outcome: 'success',
-            path: targetPath,
+            ...logFields,
             rotated_path: rotatedPath,
             rotation_enabled: true,
             rotation_reason: decision.reason,
@@ -169,7 +175,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
             options.logger?.debug('清理轮转备份', {
               operation: 'prune_backups',
               outcome: 'success',
-              path: targetPath,
+              ...logFields,
               rotation_enabled: true,
               rotation_reason: decision.reason,
             })
@@ -180,10 +186,10 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
       await Deno.writeTextFile(targetPath, `${req.content}\n`, {
         append: true,
       })
-      options.logger?.debug('写入文件成功', {
+      options.logger?.info('写入文件成功', {
         operation: 'push',
         outcome: 'success',
-        path: targetPath,
+        ...logFields,
         rotation_enabled: rotation?.enabled ?? false,
       })
     },

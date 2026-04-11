@@ -16,7 +16,7 @@ export function createScheduler(logger?: Logger): Scheduler {
         logger?.warn('跳过重入执行', {
           operation: 'run_source',
           outcome: 'skipped',
-          source_id: sourceId,
+          'source.id': sourceId,
           reason: 'reentry_inflight',
         })
         return

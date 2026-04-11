@@ -19,7 +19,9 @@ export interface DeliveryRuntimeDependencies {
       context: ContentContext,
     ): Promise<HttpPayload | undefined>
   }
-  fileDelivery: { push(req: FileDeliveryRequest): Promise<void> }
+  fileDelivery: {
+    push(req: FileDeliveryRequest & { templateContext?: ContentContext }): Promise<void>
+  }
   httpDelivery: { push(req: HttpDeliveryRequest): Promise<void> }
   emailDelivery: { push(req: EmailDeliveryRequest): Promise<void> }
 }
@@ -29,11 +31,13 @@ function buildFileDeliveryRequest(
     file: NonNullable<ResolvedDeliveryConfig['file']>
   },
   content: string,
-): FileDeliveryRequest {
+  templateContext: ContentContext,
+): FileDeliveryRequest & { templateContext?: ContentContext } {
   return {
     path: delivery.file.path,
     content,
     rotation: delivery.file.rotation,
+    templateContext,
   }
 }
 
@@ -126,6 +130,7 @@ async function buildEmailDeliveryRequest(
 
   return {
     deliveryId: delivery.id,
+    templateContext,
     smtp: {
       ...delivery.email.smtp,
       auth: delivery.email.smtp.auth ? { ...delivery.email.smtp.auth } : undefined,
@@ -201,6 +206,7 @@ export function createDeliveryRuntime(dependencies: DeliveryRuntimeDependencies)
               file: NonNullable<ResolvedDeliveryConfig['file']>
             },
             renderedContent,
+            templateContext,
           ),
         )
         return

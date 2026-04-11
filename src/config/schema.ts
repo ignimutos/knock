@@ -266,7 +266,7 @@ export const loggingConsoleSchema = z
 
 export const loggingSchema = z
   .object({
-    level: createEnumSchema(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
+    level: createEnumSchema(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
     format: createEnumSchema(['json', 'pretty']).default('json'),
     sinks: z
       .object({

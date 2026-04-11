@@ -41,11 +41,12 @@ export type AiPromptStage =
 export interface AiEntryRuntime {
   sourceId: string
   entryId: string
+  sourceRunId?: string
   cache: Map<string, Promise<string>>
 }
 
 export interface AiRuntime {
-  createEntryRuntime(sourceId: string, entryId: string): AiEntryRuntime
+  createEntryRuntime(sourceId: string, entryId: string, sourceRunId?: string): AiEntryRuntime
   translate(
     entryRuntime: AiEntryRuntime,
     value: unknown,
@@ -635,8 +636,9 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     const cached = callOptions.entryRuntime.cache.get(cacheKey)
     const baseLogFields = {
       operation: 'generate',
-      source_id: callOptions.entryRuntime.sourceId,
-      item_id: callOptions.entryRuntime.entryId,
+      'source.id': callOptions.entryRuntime.sourceId,
+      'source.run_id': callOptions.entryRuntime.sourceRunId,
+      'pipeline.item_id': callOptions.entryRuntime.entryId,
       input_length: callOptions.inputText.length,
       truncated: callOptions.truncated ?? false,
       'ai.provider': callOptions.invocation.provider.type,
@@ -895,10 +897,11 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
   }
 
   return {
-    createEntryRuntime(sourceId: string, entryId: string): AiEntryRuntime {
+    createEntryRuntime(sourceId: string, entryId: string, sourceRunId?: string): AiEntryRuntime {
       return {
         sourceId,
         entryId,
+        sourceRunId,
         cache: new Map<string, Promise<string>>(),
       }
     },

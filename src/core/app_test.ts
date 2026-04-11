@@ -962,7 +962,7 @@ sources:
         getScopeName(line) === 'delivery.http' &&
         attributes.operation === 'push' &&
         attributes.outcome === 'success' &&
-        attributes.delivery_id === 'rust__webhook__0'
+        attributes['delivery.id'] === 'rust__webhook__0'
       )
     }),
     true,

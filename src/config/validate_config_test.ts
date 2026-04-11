@@ -43,6 +43,18 @@ Deno.test('validateConfig: logging.format 支持 pretty', () => {
   assertEquals(validated.logging.format, 'pretty')
 })
 
+Deno.test('validateConfig: logging.level 支持 fatal', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    logging: {
+      level: 'fatal',
+    },
+  }
+
+  const validated = validateConfig(input)
+  assertEquals(validated.logging.level, 'fatal')
+})
+
 Deno.test('validateConfig: 新 push.http + push.request + source.http.url shape 应通过', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',

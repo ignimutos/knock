@@ -661,6 +661,7 @@ Knock 输出的是**结构化 JSON 日志**。
 - `info`
 - `warn`
 - `error`
+- `fatal`
 
 默认值：`info`
 
@@ -695,8 +696,9 @@ logging:
 - `severityText`
 - `severityNumber`
 - `body`
-- `traceId`
-- `spanId`
+- `trace_id`
+- `span_id`
+- `trace_flags`
 - `attributes`
 - `resource.attributes`
 - `scope.name`
@@ -706,7 +708,10 @@ logging:
 - `resource.attributes` 用于资源级上下文
 - `scope.name` 用于标识日志生产者
 - 业务上下文字段会进入 `attributes`
-- `traceId` / `spanId` 仅用于真实 trace 关联
+- `trace_id` / `span_id` / `trace_flags` 仅用于真实 trace 关联；缺失时会直接省略
+- daemon 链路定位优先通过 `source.id`、`source.run_id`、`pipeline.item_id`、`delivery.id`、`web.request_id` 等业务字段完成
+- `pretty` 只是一层展示格式：可着色、拍平部分高频字段、隐藏低频字段，但不会改变底层 JSON 语义
+- `fatal` 已支持配置，但只应用于真正无法继续的进程级/核心运行面场景
 
 另外，日志会对 token、chat id、URL 中的敏感片段做脱敏。
 

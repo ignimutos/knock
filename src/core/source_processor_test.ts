@@ -165,7 +165,7 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
         line.body === 'filter 结果' &&
         scope.name === 'pipeline.filter' &&
         attributes.outcome === 'filtered' &&
-        attributes.item_id === 'filtered'
+        attributes['pipeline.item_id'] === 'filtered'
       )
     }),
     true,
@@ -179,7 +179,7 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
         line.body === '命中去重' &&
         scope.name === 'delivery.store' &&
         attributes.operation === 'is_delivered' &&
-        attributes.item_id === 'deduped'
+        attributes['pipeline.item_id'] === 'deduped'
       )
     }),
     true,
@@ -193,7 +193,7 @@ Deno.test('sourceProcessor: runOnce 应接管单 source 执行主循环并保留
         line.body === '记录 delivered' &&
         scope.name === 'delivery.store' &&
         attributes.operation === 'mark_delivered' &&
-        attributes.item_id === 'delivered'
+        attributes['pipeline.item_id'] === 'delivered'
       )
     }),
     true,

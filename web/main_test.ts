@@ -54,6 +54,7 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   assertEquals(startAttributes['http.request.method'], 'POST')
   assertEquals(startRecord.severityText, 'DEBUG')
   assertEquals(startAttributes.outcome, 'start')
+  assertEquals(typeof startAttributes['web.request_id'], 'string')
 
   const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
   const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
@@ -66,12 +67,13 @@ Deno.test('web main: withApiRequestLogging 应记录成功请求关键字段', a
   assertEquals(successAttributes['http.route'], '/api/xquery/evaluate')
   assertEquals(successAttributes['http.request.method'], 'POST')
   assertEquals(successAttributes.outcome, 'success')
-  assertEquals(successAttributes.target_host, 'example.com')
-  assertEquals(successAttributes.parser, 'xquery')
-  assertEquals(successAttributes.warning_count, 1)
-  assertEquals(successAttributes.entry_count, 2)
-  assertEquals(successAttributes.fetch_duration_ms, 12)
-  assertEquals(successAttributes.parse_duration_ms, 5)
+  assertEquals(typeof successAttributes['web.request_id'], 'string')
+  assertEquals(successAttributes['web.target_host'], 'example.com')
+  assertEquals(successAttributes['source.parser'], 'xquery')
+  assertEquals(successAttributes['pipeline.warning_count'], 1)
+  assertEquals(successAttributes['pipeline.entry_count'], 2)
+  assertEquals(successAttributes['source.fetch_duration_ms'], 12)
+  assertEquals(successAttributes['source.parse_duration_ms'], 5)
 })
 
 Deno.test('web main: withApiRequestLogging 应记录失败请求关键字段', async () => {
@@ -128,10 +130,11 @@ Deno.test('web main: withApiRequestLogging 应记录失败请求关键字段', a
   assertEquals(failureAttributes['http.route'], '/api/xquery/evaluate')
   assertEquals(failureAttributes['http.request.method'], 'POST')
   assertEquals(failureAttributes.outcome, 'failure')
+  assertEquals(typeof failureAttributes['web.request_id'], 'string')
   assertEquals(failureAttributes['http.response.status_code'], 502)
-  assertEquals(failureAttributes.target_host, 'example.com')
-  assertEquals(failureAttributes.error_code, 'playground_fetch_failed')
-  assertEquals(failureAttributes.error_category, 'fetch')
+  assertEquals(failureAttributes['web.target_host'], 'example.com')
+  assertEquals(failureAttributes['app.error_code'], 'playground_fetch_failed')
+  assertEquals(failureAttributes['app.error_category'], 'fetch')
   assertEquals(
     failureAttributes['exception.message'],
     '[source] 抓取失败 source=playground status=404',

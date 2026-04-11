@@ -15,6 +15,7 @@ description: Use when structured logging design still needs judgment after readi
 - 先读 `.claude/rules/logging-otel.md` 与 `.claude/rules/logging-console.md`。
 - 若现有规则已经直接回答问题，直接使用它们。
 - 若发现规则缺口，SHOULD 优先更新现有 rule 文档；只有当文件明显臃肿或职责边界已不清晰时，才考虑拆出新文档。
+- 当前仓库已明确采用 breaking cleanup：旧扁平关联字段（如 `source_id` / `run_id` / `item_id` / `delivery_id`）不应作为长期目标继续扩散；评审时 SHOULD 优先收敛到 namespaced attributes。
 
 ## 何时使用
 

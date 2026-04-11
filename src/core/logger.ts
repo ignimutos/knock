@@ -7,12 +7,39 @@ import type { LogFormat, LogLevel } from '../config/types.ts'
 
 export type LogFields = Record<string, unknown>
 
+const LOG_FIELDS_SYMBOL = Symbol('knock.log.fields')
+
+export function getLogFields(context: Record<PropertyKey, unknown>): LogFields | undefined {
+  const fields = context[LOG_FIELDS_SYMBOL]
+  if (!fields || typeof fields !== 'object') return undefined
+  return fields as LogFields
+}
+
+export function attachLogFields<T extends Record<string, unknown>>(
+  context: T,
+  fields?: LogFields,
+): T {
+  const nextFields = {
+    ...(getLogFields(context as Record<PropertyKey, unknown>) ?? {}),
+    ...(fields ?? {}),
+  }
+  if (Object.keys(nextFields).length === 0) return context
+  Object.defineProperty(context, LOG_FIELDS_SYMBOL, {
+    value: nextFields,
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  })
+  return context
+}
+
 export interface Logger {
   trace(message: string, fields?: LogFields): void
   debug(message: string, fields?: LogFields): void
   info(message: string, fields?: LogFields): void
   warn(message: string, fields?: LogFields): void
   error(message: string, fields?: LogFields): void
+  fatal(message: string, fields?: LogFields): void
   child(fields: LogFields): Logger
 }
 
@@ -39,8 +66,9 @@ interface OTelLogRecord {
   severityText: string
   severityNumber: number
   body: string
-  traceId: string
-  spanId: string
+  trace_id?: string
+  span_id?: string
+  trace_flags?: string
   resource: {
     attributes: Record<string, unknown>
   }
@@ -56,6 +84,7 @@ const LEVEL_WEIGHT: Record<LogLevel, number> = {
   info: 30,
   warn: 40,
   error: 50,
+  fatal: 60,
 }
 
 const SEVERITY_NUMBER: Record<LogLevel, number> = {
@@ -64,6 +93,7 @@ const SEVERITY_NUMBER: Record<LogLevel, number> = {
   info: 9,
   warn: 13,
   error: 17,
+  fatal: 21,
 }
 
 const LOGGER_FILE_MARKER = '/src/core/logger.ts'
@@ -242,6 +272,40 @@ function extractStringField(
   return undefined
 }
 
+function isLowerHex(value: string, length: number): boolean {
+  return new RegExp(`^[0-9a-f]{${length}}$`).test(value)
+}
+
+function isAllZeroHex(value: string): boolean {
+  return /^0+$/.test(value)
+}
+
+function normalizeTraceContext(fields: Record<string, unknown>): {
+  trace_id?: string
+  span_id?: string
+  trace_flags?: string
+} {
+  const trace_id = extractStringField(fields, 'trace_id', 'traceId')
+  const span_id = extractStringField(fields, 'span_id', 'spanId')
+  const trace_flags = extractStringField(fields, 'trace_flags', 'traceFlags')
+
+  const validTraceId =
+    trace_id && isLowerHex(trace_id, 32) && !isAllZeroHex(trace_id) ? trace_id : undefined
+  const validSpanId =
+    span_id && isLowerHex(span_id, 16) && !isAllZeroHex(span_id) ? span_id : undefined
+  const validTraceFlags = trace_flags && isLowerHex(trace_flags, 2) ? trace_flags : undefined
+
+  if (validSpanId && !validTraceId) {
+    return {}
+  }
+
+  return {
+    ...(validTraceId ? { trace_id: validTraceId } : {}),
+    ...(validSpanId ? { span_id: validSpanId } : {}),
+    ...(validTraceFlags ? { trace_flags: validTraceFlags } : {}),
+  }
+}
+
 function remapAttributeKey(key: string): string {
   switch (key) {
     case 'method':
@@ -273,6 +337,7 @@ function normalizeAttributeFields(fields: Record<string, unknown>): Record<strin
       normalizedKey === 'module' ||
       normalizedKey === 'trace_id' ||
       normalizedKey === 'span_id' ||
+      normalizedKey === 'trace_flags' ||
       normalizedKey === 'service' ||
       normalizedKey === 'env' ||
       normalizedKey === 'component'
@@ -303,8 +368,9 @@ function formatPretty(
     message: [record.body],
     rawMessage: record.body,
     properties: {
-      traceId: record.traceId,
-      spanId: record.spanId,
+      ...(record.trace_id ? { trace_id: record.trace_id } : {}),
+      ...(record.span_id ? { span_id: record.span_id } : {}),
+      ...(record.trace_flags ? { trace_flags: record.trace_flags } : {}),
       resource: record.resource.attributes,
       attributes: record.attributes,
     },
@@ -423,8 +489,11 @@ function buildLogRecord(input: {
   timestamp: Date
   resourceAttributes: Record<string, unknown>
   attributes: Record<string, unknown>
-  traceId: string
-  spanId: string
+  traceContext: {
+    trace_id?: string
+    span_id?: string
+    trace_flags?: string
+  }
 }): OTelLogRecord {
   return {
     timeUnixNano: toUnixNano(input.timestamp),
@@ -432,8 +501,7 @@ function buildLogRecord(input: {
     severityText: input.level.toUpperCase(),
     severityNumber: SEVERITY_NUMBER[input.level],
     body: redactText(input.message),
-    traceId: input.traceId,
-    spanId: input.spanId,
+    ...input.traceContext,
     resource: {
       attributes: sanitizeFields(input.resourceAttributes),
     },
@@ -476,7 +544,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
   const prettyFormatter =
     format === 'pretty'
       ? getPrettyFormatter({
-          colors: false,
+          colors: true,
           timestamp: 'none',
           properties: true,
           categorySeparator: '·',
@@ -495,8 +563,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     const timestamp = now()
     const mergedFields = { ...baseFields, ...fields }
     const module = typeof mergedFields.module === 'string' ? mergedFields.module : options.module
-    const traceId = extractStringField(mergedFields, 'traceId', 'trace_id') ?? ''
-    const spanId = extractStringField(mergedFields, 'spanId', 'span_id') ?? ''
+    const traceContext = normalizeTraceContext(mergedFields)
 
     const attributes = {
       ...getCodeAttributes(),
@@ -510,8 +577,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
       timestamp,
       resourceAttributes,
       attributes,
-      traceId,
-      spanId,
+      traceContext,
     })
 
     const line =
@@ -519,7 +585,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
         ? formatPretty(record, { timestamp, timezone, timestampFormat, prettyFormatter })
         : JSON.stringify(record)
 
-    if (level === 'error') {
+    if (level === 'fatal' || level === 'error') {
       writeStderr(line)
       return
     }
@@ -538,6 +604,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     info: (message: string, fields?: LogFields) => emitLog('info', message, fields),
     warn: (message: string, fields?: LogFields) => emitLog('warn', message, fields),
     error: (message: string, fields?: LogFields) => emitLog('error', message, fields),
+    fatal: (message: string, fields?: LogFields) => emitLog('fatal', message, fields),
     child: (fields: LogFields) => {
       const nextFields = { ...fields }
       const moduleOverride = typeof nextFields.module === 'string' ? nextFields.module : undefined
