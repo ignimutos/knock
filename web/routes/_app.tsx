@@ -207,7 +207,7 @@ a { color: inherit; text-decoration: none; }
   border-radius: 20px;
   background: var(--shell-bg);
   box-shadow: var(--shell-shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 .shell-header {
   display: flex;
@@ -371,12 +371,14 @@ a { color: inherit; text-decoration: none; }
 }
 .xq-side-column {
   display: grid;
+  align-self: stretch;
 }
 .xq-side-rail {
   position: sticky;
   top: var(--xq-rail-top, 24px);
   display: grid;
   gap: 16px;
+  align-self: start;
   align-content: start;
   background: var(--panel-strong);
   box-shadow: 0 18px 32px rgba(20, 31, 57, 0.08);
