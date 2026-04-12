@@ -2,6 +2,7 @@ import { Cron } from 'croner'
 import { z } from 'zod'
 import { loadConfig } from '../config/load_config.ts'
 import { createDbClient } from '../db/client.ts'
+import { createSourceStateQuery } from '../db/source_state_query.ts'
 import { createSourceStateStore } from '../db/source_state_store.ts'
 import { createDeliveryRuntime } from '../deliveries/delivery_runtime.ts'
 import { createEmailDelivery } from '../deliveries/email.ts'
@@ -135,6 +136,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     sqlite: config.sqlite,
     logger: logger.child({ module: 'db.sqlite' }),
   })
+  const sourceStateQuery = createSourceStateQuery({ db })
   const scheduler = createScheduler(logger.child({ module: 'scheduler.source' }))
   const fileDelivery = createFileDelivery({
     runtimeDir: config.runtimeDir,
@@ -160,7 +162,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     logger,
     scheduler,
     sourceRuntime: {
-      fetchAndParse: (source, sourceRuntimeLogger) =>
+      fetchAndParse: (source, sourceRuntimeLogger, runtimeOptions) =>
         fetchAndParseSource({
           source,
           httpClient,
@@ -170,6 +172,14 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
           },
           aiRuntime,
           logger: sourceRuntimeLogger,
+          summaryOptions: source.summary
+            ? {
+                scheduledAt: runtimeOptions?.scheduledAt ?? new Date().toISOString(),
+                language: config.language,
+                stateQuery: sourceStateQuery,
+                contentRuntime,
+              }
+            : undefined,
         }),
     },
     contentRuntime,
@@ -194,7 +204,9 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 
   if (shouldRunImmediate) {
     for (const source of enabledSources) {
-      await sourceProcessor.runOnce(source)
+      await sourceProcessor.runOnce(source, {
+        scheduledAt: new Date().toISOString(),
+      })
     }
     return { mode: 'daemon' }
   }
@@ -225,7 +237,11 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 
     scheduledJobs.push(
       new Cron(source.schedule, { protect: true }, () => {
-        void sourceProcessor.runOnce(source).catch(() => {})
+        void sourceProcessor
+          .runOnce(source, {
+            scheduledAt: new Date().toISOString(),
+          })
+          .catch(() => {})
       }),
     )
   }

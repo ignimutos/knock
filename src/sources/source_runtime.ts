@@ -5,8 +5,11 @@ import type {
 } from '../config/types.ts'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { AiRuntime } from '../core/ai_runtime.ts'
+import type { ContentRuntime } from '../core/content_runtime.ts'
 import type { HttpClient } from '../core/http_client.ts'
 import type { Logger } from '../core/logger.ts'
+import type { SourceStateQuery } from '../db/source_state_query.ts'
+import { buildSummarySource } from './summary.ts'
 import { parseSyndicationSource } from './syndication.ts'
 import { parseXquerySource } from './xquery.ts'
 
@@ -17,7 +20,7 @@ export interface ParsedSourceEntry {
 export interface ParsedSourceResult {
   feedMapped: UnifiedFeedFields | Record<string, string>
   entries: ParsedSourceEntry[]
-  parser: 'rss' | 'atom' | 'json' | 'xquery' | 'none'
+  parser: 'rss' | 'atom' | 'json' | 'xquery' | 'none' | 'summary'
 }
 
 export interface FetchAndParseSourceInput {
@@ -29,6 +32,12 @@ export interface FetchAndParseSourceInput {
   }
   aiRuntime?: AiRuntime
   logger?: Logger
+  summaryOptions?: {
+    scheduledAt: string
+    language: string
+    stateQuery: SourceStateQuery
+    contentRuntime: ContentRuntime
+  }
 }
 
 export interface SourceRuntimeTiming {
@@ -39,6 +48,7 @@ export interface SourceRuntimeTiming {
 export interface FetchedParsedSourceResult extends ParsedSourceResult {
   payload: string
   timing: SourceRuntimeTiming
+  observedAt?: string
 }
 
 function toByparrProxyHeaders(proxyUrl?: string): HeadersInit | undefined {
@@ -108,6 +118,16 @@ async function fetchByparrPayload(
   return payload.solution.response
 }
 
+function getRequiredSummaryOptions(
+  input: FetchAndParseSourceInput,
+): NonNullable<FetchAndParseSourceInput['summaryOptions']> {
+  const summaryOptions = input.summaryOptions
+  if (!summaryOptions) {
+    throw new Error(`[summary] 缺少 stateQuery 依赖 source=${input.source.id}`)
+  }
+  return summaryOptions
+}
+
 async function fetchSourcePayload(
   source: ResolvedSourceConfig,
   httpClient: HttpClient,
@@ -171,6 +191,17 @@ async function parseSourcePayload(
 export async function fetchAndParseSource(
   input: FetchAndParseSourceInput,
 ): Promise<FetchedParsedSourceResult> {
+  if (input.source.summary) {
+    const summaryOptions = getRequiredSummaryOptions(input)
+    return await buildSummarySource({
+      source: input.source,
+      scheduledAt: summaryOptions.scheduledAt,
+      language: summaryOptions.language,
+      stateQuery: summaryOptions.stateQuery,
+      contentRuntime: summaryOptions.contentRuntime,
+    })
+  }
+
   const fetchStartedAt = Date.now()
   const payload = await fetchSourcePayload(input.source, input.httpClient)
   const fetchDurationMs = Date.now() - fetchStartedAt

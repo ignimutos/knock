@@ -465,6 +465,31 @@ sources:
         published: '{{ published }}'
         updated: '{{ updated }}'
 
+  daily_summary:
+    schedule: '0 0 8 * * *'
+    deliveries:
+      local:
+        content: |
+          # {{ title }}
+
+          {{ description }}
+
+          {{ content }}
+
+          ---
+    summary:
+      sources:
+        - deno
+      feed:
+        title: '{{ sources.deno.feed.title }} Daily Summary'
+        description: '{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}'
+      entry:
+        id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}'
+        title: '{{ sources.deno.feed.title }} Daily Summary'
+        description: |
+          窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}
+          条目数：{{ sources.deno.entries | size }}
+
   website_news:
     http:
       url: https://example.com/news
@@ -1269,6 +1294,49 @@ http:
 
 > [!IMPORTANT]
 > 每个 source 必须在 `http` 和 `byparr` 中二选一。
+
+### `summary`
+
+`summary` source 不抓外部输入；它只读取 SQLite 里已经保存的 source state，并按自己的 `schedule` 生成一个汇总结果。
+
+约束：
+
+- `summary` source 必须配置 `schedule`
+- `summary` 与 `http` / `byparr` / `syndication` / `xquery` 互斥，不能同时配置
+- 窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint
+- 窗口内上游 entries 按 `last_seen_at` 选取，范围是 `(previousCheckpoint, scheduledAt]`
+- 首次运行没有 checkpoint 时，当前实现只产出默认 feed，不产出 summary entry
+
+最小示例：
+
+```yml
+sources:
+  daily_summary:
+    schedule: '0 0 8 * * *'
+    deliveries:
+      local: {}
+    summary:
+      sources:
+        - deno
+      feed:
+        title: '{{ sources.deno.feed.title }} Daily Summary'
+      entry:
+        id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}'
+        title: '{{ sources.deno.feed.title }} Daily Summary'
+        description: |
+          窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}
+          条目数：{{ sources.deno.entries | size }}
+```
+
+第一版模板上下文至少包含：
+
+- `source.runtime.window.previousCheckpoint`
+- `source.runtime.window.scheduledAt`
+- `sources.<id>.name`
+- `sources.<id>.feed`
+- `sources.<id>.entries`
+
+其中 `sources.<id>.entries` 为窗口内命中的上游 entry 列表，`sources.<id>.feed` 为该上游 source 最近保存的 feed 映射结果；当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串，并不是上游 config 里的 `source.name`。
 
 ### `syndication`
 

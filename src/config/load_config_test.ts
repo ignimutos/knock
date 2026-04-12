@@ -148,7 +148,7 @@ sources:
   const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
   assertEquals(
     config.sources[0].deliveries.map((delivery) => delivery.id),
-    ['feed__second__0', 'feed__first__1'],
+    ['feed__second', 'feed__first'],
   )
   assertEquals(
     config.sources[0].deliveries.map((delivery) => delivery.file?.content),
@@ -353,6 +353,67 @@ sources: {}
     Deno.env.delete('KNOCK_TEST_SMTP_HOST')
     Deno.env.delete('KNOCK_TEST_SMTP_USER')
     Deno.env.delete('KNOCK_TEST_SMTP_PASS')
+  }
+})
+
+test('loadConfig: summary.feed 与 summary.entry 中允许环境变量展开，与 capability 保持一致', async () => {
+  await emptyDir(TEST_RUNTIME)
+  await ensureDir(TEST_RUNTIME)
+
+  Deno.env.set('KNOCK_TEST_SUMMARY_TITLE', 'Daily Summary From Env')
+  Deno.env.set('KNOCK_TEST_SUMMARY_DESC_PREFIX', '窗口')
+  Deno.env.set('KNOCK_TEST_SUMMARY_ENTRY_TITLE', 'Deno Daily')
+  Deno.env.set('KNOCK_TEST_SUMMARY_ENTRY_ID_PREFIX', 'summary-window')
+
+  try {
+    await Deno.writeTextFile(
+      join(TEST_RUNTIME, 'config.yml'),
+      `
+deliveries:
+  local:
+    file:
+      path: outputs/summary.md
+      content: '{{ entry.title }}'
+
+sources:
+  deno:
+    http:
+      url: https://github.com/denoland/deno/releases.atom
+    deliveries:
+      local: {}
+  daily_summary:
+    schedule: '0 0 8 * * *'
+    deliveries:
+      local: {}
+    summary:
+      sources:
+        - deno
+      feed:
+        title: ${'${KNOCK_TEST_SUMMARY_TITLE}'}
+        description: '${'${KNOCK_TEST_SUMMARY_DESC_PREFIX}'}: {{ source.runtime.window.scheduledAt }}'
+      entry:
+        id: '${'${KNOCK_TEST_SUMMARY_ENTRY_ID_PREFIX}'}:{{ source.runtime.window.scheduledAt }}'
+        title: '${'${KNOCK_TEST_SUMMARY_ENTRY_TITLE}'} {{ sources.deno.name }}'
+
+`,
+    )
+
+    const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+    const summarySource = config.sources.find((source) => source.id === 'daily_summary')
+
+    assertEquals(summarySource?.summary?.feed, {
+      title: 'Daily Summary From Env',
+      description: '窗口: {{ source.runtime.window.scheduledAt }}',
+    })
+    assertEquals(summarySource?.summary?.entry, {
+      id: 'summary-window:{{ source.runtime.window.scheduledAt }}',
+      title: 'Deno Daily {{ sources.deno.name }}',
+    })
+  } finally {
+    Deno.env.delete('KNOCK_TEST_SUMMARY_TITLE')
+    Deno.env.delete('KNOCK_TEST_SUMMARY_DESC_PREFIX')
+    Deno.env.delete('KNOCK_TEST_SUMMARY_ENTRY_TITLE')
+    Deno.env.delete('KNOCK_TEST_SUMMARY_ENTRY_ID_PREFIX')
   }
 })
 

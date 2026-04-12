@@ -259,6 +259,41 @@ sources:
         # 更新时间
         updated: "{{ updated }}"
 
+  # Summary 数据源示例（基于已保存 source state 做窗口汇总）
+  daily_summary:
+    # summary source 必须配置 schedule；它不会抓外部输入
+    schedule: "0 0 8 * * *"
+    deliveries:
+      local:
+        content: |
+          # {{ title }}
+
+          {{ description }}
+
+          {{ content }}
+
+          ---
+    summary:
+      # 参与汇总的上游 source ID 列表（必填）
+      sources:
+        - deno
+      # feed 字段模板（可选）
+      feed:
+        title: "{{ sources.deno.feed.title }} Daily Summary"
+        description: "{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}"
+      # entry 字段模板（可选）
+      entry:
+        id: "{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}"
+        # 当前实现里 sources.<id>.name 来自最近保存的 feed.title；若缺失则为空串
+        title: "{{ sources.deno.feed.title }} Daily Summary"
+        description: |
+          窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}
+          条目数：{{ sources.deno.entries | size }}
+        content: |
+          {% for item in sources.deno.entries %}
+          - {{ item.title }}{% if item.link != blank %} ({{ item.link }}){% endif %}
+          {% endfor %}
+
   # XQuery 数据源示例（普通 HTML / XML 页面）
   website_news:
     http:

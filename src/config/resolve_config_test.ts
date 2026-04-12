@@ -38,7 +38,11 @@ Deno.test('resolveConfig: source.deliveries keyed map 顺序应保留到 resolve
   assertEquals(resolved.sources[0].deliveries.length, 2)
   assertEquals(
     resolved.sources[0].deliveries.map((item) => item.id),
-    ['feed__second__0', 'feed__first__1'],
+    ['feed__second', 'feed__first'],
+  )
+  assertEquals(
+    resolved.sources[0].deliveries.map((item) => item.deliveryId),
+    ['second', 'first'],
   )
   assertEquals(
     resolved.sources[0].deliveries.map((item) => item.file?.content),
@@ -73,7 +77,9 @@ Deno.test('resolveConfig: file override 应只改 content', () => {
 
   const resolved = resolveConfig(validateConfig(input))
   assertEquals(resolved.deliveries[0].file?.content, 'default')
-  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__local__0')
+  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__local')
+  assertEquals(resolved.sources[0].deliveries[0].sourceId, 'feed')
+  assertEquals(resolved.sources[0].deliveries[0].deliveryId, 'local')
   assertEquals(resolved.sources[0].deliveries[0].file?.path, '/tmp/runtime/a.md')
   assertEquals(resolved.sources[0].deliveries[0].file?.content, 'custom')
 })
@@ -252,7 +258,7 @@ Deno.test('resolveConfig: push override 应 deep merge payload 且数组整体�
   }
 
   const resolved = resolveConfig(validateConfig(input))
-  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__telegram__0')
+  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__telegram')
   assertEquals(resolved.sources[0].deliveries[0].push?.http.url, 'https://example.com/hook')
   assertEquals(resolved.sources[0].deliveries[0].push?.request.payload, {
     tags: ['c'],
@@ -354,6 +360,50 @@ Deno.test('resolveConfig: source.byparr 应进入 resolved 层并保持字段', 
   assertEquals(resolved.sources[0].byparr?.url, 'https://example.com/news')
   assertEquals(resolved.sources[0].byparr?.maxTimeout, '90s')
   assertEquals(resolved.sources[0].byparr?.proxy, 'http://user:pass@127.0.0.1:8080')
+})
+
+Deno.test('resolveConfig: summary source 应解析 summary shape 并清空抓取分支', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    sources: {
+      upstream: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+      },
+      digest: {
+        schedule: '0 * * * *',
+        summary: {
+          sources: ['upstream'],
+          feed: {
+            title: '{{ feed.title }}',
+          },
+          entry: {
+            id: '{{ entry.id }}',
+            title: '{{ entry.title }}',
+          },
+        },
+      },
+    },
+  }
+
+  const resolved = resolveConfig(validateConfig(input))
+  const summarySource = resolved.sources.find((source) => source.id === 'digest')
+
+  assertEquals(summarySource?.summary, {
+    sources: ['upstream'],
+    feed: {
+      title: '{{ feed.title }}',
+    },
+    entry: {
+      id: '{{ entry.id }}',
+      title: '{{ entry.title }}',
+    },
+  })
+  assertEquals(summarySource?.http, undefined)
+  assertEquals(summarySource?.byparr, undefined)
+  assertEquals(summarySource?.syndication, undefined)
+  assertEquals(summarySource?.xquery, undefined)
 })
 
 Deno.test('resolveConfig: 缺省全局块时应收口为空数组、默认日志配置与默认 sqlite 配置', () => {
@@ -508,9 +558,9 @@ Deno.test('resolveConfig: source.deliveries keyed map 应展开为声明顺序�
   assertEquals(resolved.deliveries.length, 2)
   assertEquals(resolved.sources.length, 1)
   assertEquals(resolved.sources[0].deliveries.length, 2)
-  assertEquals(resolved.sources[0].deliveries[0].id, 's1__archive__0')
+  assertEquals(resolved.sources[0].deliveries[0].id, 's1__archive')
   assertEquals(resolved.sources[0].deliveries[0].file?.content, '{{ entry.title }}')
-  assertEquals(resolved.sources[0].deliveries[1].id, 's1__webhook__1')
+  assertEquals(resolved.sources[0].deliveries[1].id, 's1__webhook')
   assertEquals(resolved.sources[0].deliveries[1].push?.http.url, 'https://example.com/hook')
 })
 
@@ -617,7 +667,7 @@ Deno.test('resolveConfig: email override 应 deep merge message 且数组整体�
 
   const resolved = resolveConfig(validateConfig(input))
   assertEquals(resolved.deliveries[0].email?.smtp.security, 'implicit')
-  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__release_email__0')
+  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__release_email')
   assertEquals(resolved.sources[0].deliveries[0].email?.message, {
     from: '{{ source.id }}@example.com',
     to: ['override@example.com'],

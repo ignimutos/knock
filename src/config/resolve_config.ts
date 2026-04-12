@@ -51,6 +51,18 @@ function cloneSourceByparrConfig(input?: SourceByparrConfig): SourceByparrConfig
   return { ...input }
 }
 
+function cloneSourceSummaryConfig(
+  input?: SourceConfigInput['summary'],
+): SourceConfigInput['summary'] | undefined {
+  if (!input) return undefined
+
+  return {
+    sources: [...input.sources],
+    feed: input.feed ? { ...input.feed } : undefined,
+    entry: input.entry ? { ...input.entry } : undefined,
+  }
+}
+
 function clonePushConfig(input?: PushConfig): PushConfig | undefined {
   if (!input) return undefined
 
@@ -143,6 +155,7 @@ function normalizeSources(
     id,
     http: cloneSourceHttpConfig(source.http),
     byparr: cloneSourceByparrConfig(source.byparr),
+    summary: cloneSourceSummaryConfig(source.summary),
   }))
 }
 
@@ -169,11 +182,14 @@ function deepMergeValue(base: unknown, override: unknown): unknown {
 }
 
 function resolveFileDelivery(
+  sourceId: string,
   delivery: DeliveryConfig,
   override: SourceFileDeliveryOverride,
 ): ResolvedDeliveryConfig {
   return {
-    id: delivery.id,
+    id: `${sourceId}__${delivery.id}`,
+    sourceId,
+    deliveryId: delivery.id,
     file: delivery.file
       ? {
           ...delivery.file,
@@ -186,13 +202,16 @@ function resolveFileDelivery(
 }
 
 function resolvePushDelivery(
+  sourceId: string,
   delivery: DeliveryConfig,
   override: SourcePushDeliveryOverride,
 ): ResolvedDeliveryConfig {
   const push = clonePushConfig(delivery.push)
 
   return {
-    id: delivery.id,
+    id: `${sourceId}__${delivery.id}`,
+    sourceId,
+    deliveryId: delivery.id,
     file: undefined,
     push: push
       ? {
@@ -211,13 +230,16 @@ function resolvePushDelivery(
 }
 
 function resolveEmailDelivery(
+  sourceId: string,
   delivery: DeliveryConfig,
   override: SourceEmailDeliveryOverride,
 ): ResolvedDeliveryConfig {
   const email = cloneEmailConfig(delivery.email)
 
   return {
-    id: delivery.id,
+    id: `${sourceId}__${delivery.id}`,
+    sourceId,
+    deliveryId: delivery.id,
     file: undefined,
     push: undefined,
     email: email
@@ -230,23 +252,26 @@ function resolveEmailDelivery(
 }
 
 function applySourceDeliveryOverride(
+  sourceId: string,
   delivery: DeliveryConfig,
   override: SourceFileDeliveryOverride | SourcePushDeliveryOverride | SourceEmailDeliveryOverride,
 ): ResolvedDeliveryConfig {
   if (delivery.file) {
-    return resolveFileDelivery(delivery, override as SourceFileDeliveryOverride)
+    return resolveFileDelivery(sourceId, delivery, override as SourceFileDeliveryOverride)
   }
 
   if (delivery.push) {
-    return resolvePushDelivery(delivery, override as SourcePushDeliveryOverride)
+    return resolvePushDelivery(sourceId, delivery, override as SourcePushDeliveryOverride)
   }
 
   if (delivery.email) {
-    return resolveEmailDelivery(delivery, override as SourceEmailDeliveryOverride)
+    return resolveEmailDelivery(sourceId, delivery, override as SourceEmailDeliveryOverride)
   }
 
   return {
-    id: delivery.id,
+    id: `${sourceId}__${delivery.id}`,
+    sourceId,
+    deliveryId: delivery.id,
     file: undefined,
     push: undefined,
     email: undefined,
@@ -260,19 +285,14 @@ function resolveSourceDeliveries(
 ): ResolvedDeliveryConfig[] {
   const deliveryMap = new Map(deliveries.map((delivery) => [delivery.id, delivery]))
 
-  return Object.entries(sourceDeliveries).map(([deliveryId, override], index) => {
+  return Object.entries(sourceDeliveries).map(([deliveryId, override]) => {
     const delivery = deliveryMap.get(deliveryId)
 
     if (!delivery) {
       throw new Error(`source.${sourceId}.deliveries 引用了未定义 delivery: ${deliveryId}`)
     }
 
-    const resolvedDelivery = applySourceDeliveryOverride(delivery, override)
-
-    return {
-      ...resolvedDelivery,
-      id: `${sourceId}__${deliveryId}__${index}`,
-    }
+    return applySourceDeliveryOverride(sourceId, delivery, override)
   })
 }
 
@@ -448,7 +468,13 @@ export function resolveConfig(input: AppConfigValidated): AppConfigResolved {
 
   const resolvedSources: ResolvedSourceConfig[] = sources.map((source) => ({
     ...source,
-    syndication: source.syndication ?? (source.xquery ? undefined : {}),
+    http: source.summary ? undefined : source.http,
+    byparr: source.summary ? undefined : source.byparr,
+    summary: cloneSourceSummaryConfig(source.summary),
+    syndication: source.summary
+      ? undefined
+      : (source.syndication ?? (source.xquery ? undefined : {})),
+    xquery: source.summary ? undefined : source.xquery,
     enabled: source.enabled ?? true,
     deliveries: resolveSourceDeliveries(source.id, source.deliveries ?? {}, deliveries),
   }))

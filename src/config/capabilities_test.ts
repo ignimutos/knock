@@ -19,6 +19,8 @@ Deno.test('capabilities: 已声明路径应能命中对应 capability', () => {
   )
   assertEquals(getConfigFieldCapability('sources.feed.http.url')?.allowLiquid, false)
   assertEquals(getConfigFieldCapability('sources.feed.syndication.entry.title')?.allowLiquid, true)
+  assertEquals(getConfigFieldCapability('sources.digest.summary.feed.title')?.allowLiquid, true)
+  assertEquals(getConfigFieldCapability('sources.digest.summary.entry.id')?.allowLiquid, true)
 })
 
 Deno.test('capabilities: 关键用户输入字段应有能力声明', () => {
@@ -31,6 +33,8 @@ Deno.test('capabilities: 关键用户输入字段应有能力声明', () => {
     'sources.*.http.url',
     'sources.*.filter',
     'sources.*.syndication.entry.*',
+    'sources.*.summary.feed.*',
+    'sources.*.summary.entry.*',
     'ai.defaultModel',
     'ai.providers.*.apiKey',
     'ai.providers.*.baseURL',

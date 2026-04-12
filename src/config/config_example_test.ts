@@ -20,11 +20,30 @@ Deno.test('config.example.yml: sources.deliveries keyed map 应通过当前 sche
     'webhook',
   ])
   assertEquals(Object.keys(validated.sources ?? {}).sort(), [
+    'daily_summary',
     'deno',
     'website_news',
     'website_news_byparr',
     'website_news_script',
   ])
+
+  assertEquals(validated.sources.daily_summary.schedule, '0 0 8 * * *')
+  assertEquals(validated.sources.daily_summary.summary, {
+    sources: ['deno'],
+    feed: {
+      title: '{{ sources.deno.feed.title }} Daily Summary',
+      description:
+        '{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}',
+    },
+    entry: {
+      id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}',
+      title: '{{ sources.deno.feed.title }} Daily Summary',
+      description:
+        '窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}\n条目数：{{ sources.deno.entries | size }}\n',
+      content:
+        '{% for item in sources.deno.entries %}\n- {{ item.title }}{% if item.link != blank %} ({{ item.link }}){% endif %}\n{% endfor %}\n',
+    },
+  })
 
   const denoDeliveries = validated.sources.deno.deliveries
 
@@ -55,6 +74,35 @@ Deno.test('config.example.yml: sources.deliveries keyed map 应通过当前 sche
       subject: '[release][{{ source.id }}] {{ entry.title }}',
     },
   })
+})
+
+Deno.test('README.md 与 config.example.yml: 应记录 summary source 契约与示例', () => {
+  const readme = Deno.readTextFileSync(new URL('../../README.md', import.meta.url))
+  const example = Deno.readTextFileSync(new URL('../../config.example.yml', import.meta.url))
+
+  assertStringIncludes(example, 'daily_summary:')
+  assertStringIncludes(example, 'summary source 必须配置 schedule；它不会抓外部输入')
+  assertStringIncludes(example, 'sources:')
+  assertStringIncludes(example, '- deno')
+  assertStringIncludes(example, '{{ source.runtime.window.previousCheckpoint }}')
+  assertStringIncludes(example, '{{ source.runtime.window.scheduledAt }}')
+  assertStringIncludes(example, '{{ sources.deno.feed.title }} Daily Summary')
+  assertStringIncludes(example, 'sources.<id>.name 来自最近保存的 feed.title；若缺失则为空串')
+  assertStringIncludes(example, '{{ sources.deno.entries | size }}')
+
+  assertStringIncludes(readme, '`summary` source 不抓外部输入')
+  assertStringIncludes(readme, '`summary` source 必须配置 `schedule`')
+  assertStringIncludes(readme, '窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint')
+  assertStringIncludes(readme, '窗口内上游 entries 按 `last_seen_at` 选取')
+  assertStringIncludes(readme, '`source.runtime.window.previousCheckpoint`')
+  assertStringIncludes(readme, '`source.runtime.window.scheduledAt`')
+  assertStringIncludes(readme, '`sources.<id>.name`')
+  assertStringIncludes(
+    readme,
+    '当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串',
+  )
+  assertStringIncludes(readme, '`sources.<id>.feed`')
+  assertStringIncludes(readme, '`sources.<id>.entries`')
 })
 
 Deno.test('README.md 与 CLAUDE.md: 应记录 keyed-map 契约与 merge 语义', () => {

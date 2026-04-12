@@ -46,8 +46,41 @@ function createTestLogger(records: Array<Record<string, unknown>>) {
   })
 }
 
-test('sourceStateStore: persistParsedSource 应在 payload 未变化时仅刷新 last_seen_at', async () => {
+test('sourceStateStore: persistParsedSource 应使用 observedAt 写入 feed 和 entry 时间', async () => {
   const sqlite = createSqliteConfig('persist.db')
+  const db = createDbClient({ sqlite })
+  const store = createSourceStateStore({ db, sqlite })
+  const observedAt = '2026-04-12T01:02:03.000Z'
+
+  await store.persistParsedSource({
+    sourceId: 'rust',
+    parser: 'rss',
+    payload: '<rss><channel><item><guid>id-1</guid></item></channel></rss>',
+    feedMapped: { title: 'Rust Feed' },
+    entries: [{ mapped: { id: 'id-1', title: 'Hello' } }],
+    observedAt,
+  })
+
+  const feedRow = db.$client
+    .prepare("SELECT fetched_at, updated_at FROM feeds WHERE source_id = 'rust'")
+    .get() as { fetched_at: string; updated_at: string }
+  const entryRow = db.$client
+    .prepare(
+      "SELECT first_seen_at, last_seen_at, updated_at FROM entries WHERE source_id = 'rust' AND entry_id = 'id-1'",
+    )
+    .get() as { first_seen_at: string; last_seen_at: string; updated_at: string }
+
+  assertEquals(feedRow.fetched_at, observedAt)
+  assertEquals(feedRow.updated_at, observedAt)
+  assertEquals(entryRow.first_seen_at, observedAt)
+  assertEquals(entryRow.last_seen_at, observedAt)
+  assertEquals(entryRow.updated_at, observedAt)
+
+  db.$client.close()
+})
+
+test('sourceStateStore: persistParsedSource 应在 payload 未变化时用 observedAt 刷新 last_seen_at', async () => {
+  const sqlite = createSqliteConfig('persist-refresh.db')
   const db = createDbClient({ sqlite })
   const store = createSourceStateStore({ db, sqlite })
 
@@ -58,8 +91,10 @@ test('sourceStateStore: persistParsedSource 应在 payload 未变化时仅刷新
     feedMapped: { title: 'Rust Feed' },
     entries: [{ mapped: { id: 'id-1', title: 'Hello' } }],
   }
+  const firstObservedAt = '2026-04-12T02:00:00.000Z'
+  const secondObservedAt = '2026-04-12T03:00:00.000Z'
 
-  await store.persistParsedSource(input)
+  await store.persistParsedSource({ ...input, observedAt: firstObservedAt })
 
   const beforeFeed = db.$client
     .prepare("SELECT payload_hash, updated_at FROM feeds WHERE source_id = 'rust'")
@@ -70,8 +105,7 @@ test('sourceStateStore: persistParsedSource 应在 payload 未变化时仅刷新
     )
     .get() as { last_seen_at: string; updated_at: string }
 
-  await new Promise((resolve) => setTimeout(resolve, 5))
-  await store.persistParsedSource(input)
+  await store.persistParsedSource({ ...input, observedAt: secondObservedAt })
 
   const afterFeed = db.$client
     .prepare("SELECT payload_hash, updated_at FROM feeds WHERE source_id = 'rust'")
@@ -88,7 +122,62 @@ test('sourceStateStore: persistParsedSource 应在 payload 未变化时仅刷新
   assertEquals(afterFeed.payload_hash, beforeFeed.payload_hash)
   assertEquals(afterFeed.updated_at, beforeFeed.updated_at)
   assertEquals(afterEntry.updated_at, beforeEntry.updated_at)
-  assertEquals(afterEntry.last_seen_at > beforeEntry.last_seen_at, true)
+  assertEquals(beforeEntry.last_seen_at, firstObservedAt)
+  assertEquals(afterEntry.last_seen_at, secondObservedAt)
+
+  db.$client.close()
+})
+
+test('sourceStateStore: persistParsedSource 应在 updated 不变但 entry 内容变化时更新快照', async () => {
+  const sqlite = createSqliteConfig('persist-entry-snapshot.db')
+  const db = createDbClient({ sqlite })
+  const store = createSourceStateStore({ db, sqlite })
+  const firstObservedAt = '2026-04-12T04:00:00.000Z'
+  const secondObservedAt = '2026-04-12T05:00:00.000Z'
+  const unchangedUpdated = '2026-04-12T00:00:00.000Z'
+
+  await store.persistParsedSource({
+    sourceId: 'rust',
+    parser: 'rss',
+    payload: '<rss><channel><item><guid>id-1</guid><title>Hello</title></item></channel></rss>',
+    feedMapped: { title: 'Rust Feed' },
+    entries: [
+      { mapped: { id: 'id-1', title: 'Hello', content: 'Old body', updated: unchangedUpdated } },
+    ],
+    observedAt: firstObservedAt,
+  })
+
+  await store.persistParsedSource({
+    sourceId: 'rust',
+    parser: 'rss',
+    payload: '<rss><channel><item><guid>id-1</guid><title>Hello 2</title></item></channel></rss>',
+    feedMapped: { title: 'Rust Feed' },
+    entries: [
+      { mapped: { id: 'id-1', title: 'Hello 2', content: 'New body', updated: unchangedUpdated } },
+    ],
+    observedAt: secondObservedAt,
+  })
+
+  const entryRow = db.$client
+    .prepare(
+      "SELECT entry_text, first_seen_at, last_seen_at, updated_at FROM entries WHERE source_id = 'rust' AND entry_id = 'id-1'",
+    )
+    .get() as {
+    entry_text: string
+    first_seen_at: string
+    last_seen_at: string
+    updated_at: string
+  }
+
+  assertEquals(JSON.parse(entryRow.entry_text), {
+    id: 'id-1',
+    title: 'Hello 2',
+    content: 'New body',
+    updated: unchangedUpdated,
+  })
+  assertEquals(entryRow.first_seen_at, firstObservedAt)
+  assertEquals(entryRow.last_seen_at, secondObservedAt)
+  assertEquals(entryRow.updated_at, secondObservedAt)
 
   db.$client.close()
 })

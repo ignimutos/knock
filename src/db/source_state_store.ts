@@ -13,6 +13,7 @@ export interface PersistParsedSourceInput {
   payload: string
   feedMapped: ParsedSourceResult['feedMapped']
   entries: ParsedSourceEntry[]
+  observedAt?: string
 }
 
 export type DeliverIfNeededResult = 'deduped' | 'delivered'
@@ -71,23 +72,24 @@ function touchSeenEntries(
   db: DbClient,
   sourceId: string,
   parsedEntries: ParsedSourceEntry[],
+  observedAt: string,
 ): void {
-  const now = new Date().toISOString()
-
   runInTransaction(db, () => {
     for (const parsedEntry of parsedEntries) {
       const entryId = normalizeEntryId(parsedEntry.mapped.id)
       if (!entryId) continue
-      db.update(entries).set({ lastSeenAt: now }).where(entryIdentityWhere(sourceId, entryId)).run()
+      db.update(entries)
+        .set({ lastSeenAt: observedAt })
+        .where(entryIdentityWhere(sourceId, entryId))
+        .run()
     }
   })
 }
 
 function storeParsedContent(
   db: DbClient,
-  input: PersistParsedSourceInput & { payloadHash: string },
+  input: PersistParsedSourceInput & { payloadHash: string; observedAt: string },
 ): void {
-  const now = new Date().toISOString()
   const feedText = stringifyStoredContent(input.feedMapped)
 
   runInTransaction(db, () => {
@@ -98,8 +100,8 @@ function storeParsedContent(
         payloadText: input.payload,
         payloadHash: input.payloadHash,
         feedText,
-        fetchedAt: now,
-        updatedAt: now,
+        fetchedAt: input.observedAt,
+        updatedAt: input.observedAt,
       })
       .onConflictDoUpdate({
         target: feeds.sourceId,
@@ -108,8 +110,8 @@ function storeParsedContent(
           payloadText: input.payload,
           payloadHash: input.payloadHash,
           feedText,
-          fetchedAt: now,
-          updatedAt: now,
+          fetchedAt: input.observedAt,
+          updatedAt: input.observedAt,
         },
       })
       .run()
@@ -129,9 +131,9 @@ function storeParsedContent(
             sourceId: input.sourceId,
             entryId,
             entryText,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            updatedAt: now,
+            firstSeenAt: input.observedAt,
+            lastSeenAt: input.observedAt,
+            updatedAt: input.observedAt,
           })
           .run()
         continue
@@ -147,18 +149,16 @@ function storeParsedContent(
         }
       })()
       const nextUpdated = String(parsedEntry.mapped.updated ?? '')
-      const shouldUpdate = nextUpdated
-        ? existingUpdated !== nextUpdated
-        : existingEntry.entryText !== entryText
+      const shouldUpdate = existingEntry.entryText !== entryText || existingUpdated !== nextUpdated
 
       if (shouldUpdate) {
         db.update(entries)
-          .set({ entryText, lastSeenAt: now, updatedAt: now })
+          .set({ entryText, lastSeenAt: input.observedAt, updatedAt: input.observedAt })
           .where(entryIdentityWhere(input.sourceId, entryId))
           .run()
       } else {
         db.update(entries)
-          .set({ lastSeenAt: now })
+          .set({ lastSeenAt: input.observedAt })
           .where(entryIdentityWhere(input.sourceId, entryId))
           .run()
       }
@@ -299,9 +299,10 @@ export function createSourceStateStore(options: CreateSourceStateStoreOptions): 
       input: PersistParsedSourceInput,
       sourceRunId?: string,
     ): Promise<void> {
+      const observedAt = input.observedAt ?? new Date().toISOString()
       const payloadHash = await hashPayload(input.payload)
       if (shouldStoreParsedContent(db, input.sourceId, payloadHash)) {
-        storeParsedContent(db, { ...input, payloadHash })
+        storeParsedContent(db, { ...input, payloadHash, observedAt })
         logger?.info('source 状态已持久化', {
           ...getStoreLogFields(input.sourceId, sourceRunId, {
             'db.operation': 'persist_source_state',
@@ -313,7 +314,7 @@ export function createSourceStateStore(options: CreateSourceStateStoreOptions): 
         return
       }
 
-      touchSeenEntries(db, input.sourceId, input.entries)
+      touchSeenEntries(db, input.sourceId, input.entries, observedAt)
       logger?.info('source 状态未变化，仅刷新 last_seen', {
         ...getStoreLogFields(input.sourceId, sourceRunId, {
           'db.operation': 'persist_source_state',

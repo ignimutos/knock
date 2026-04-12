@@ -11,8 +11,16 @@ import type { ContentContext } from './content_runtime.ts'
 import { attachLogFields, createRunId, type Logger } from './logger.ts'
 import type { Scheduler } from './scheduler.ts'
 
+export interface SourceRuntimeFetchOptions {
+  scheduledAt?: string
+}
+
 export interface SourceRuntime {
-  fetchAndParse(source: ResolvedSourceConfig, logger?: Logger): Promise<FetchedParsedSourceResult>
+  fetchAndParse(
+    source: ResolvedSourceConfig,
+    logger?: Logger,
+    options?: SourceRuntimeFetchOptions,
+  ): Promise<FetchedParsedSourceResult>
 }
 
 export interface SourceProcessorContentRuntime {
@@ -25,8 +33,12 @@ export interface SourceProcessorContentRuntime {
   shouldPassFilter(filterTemplate: string | undefined, context: ContentContext): Promise<boolean>
 }
 
+export interface SourceProcessorRunOptions {
+  scheduledAt?: string
+}
+
 export interface SourceProcessor {
-  runOnce(source: ResolvedSourceConfig): Promise<void>
+  runOnce(source: ResolvedSourceConfig, options?: SourceProcessorRunOptions): Promise<void>
 }
 
 export interface CreateSourceProcessorOptions {
@@ -59,6 +71,7 @@ function toPersistParsedSourceInput(
     payload: parsed.payload,
     feedMapped: parsed.feedMapped,
     entries: parsed.entries,
+    observedAt: parsed.observedAt,
   }
 }
 
@@ -101,7 +114,10 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
   const createRunIdImpl = options.createRunId ?? createRunId
 
   return {
-    async runOnce(source: ResolvedSourceConfig): Promise<void> {
+    async runOnce(
+      source: ResolvedSourceConfig,
+      runOptions?: SourceProcessorRunOptions,
+    ): Promise<void> {
       const startedAt = now()
       const runId = createRunIdImpl(source.id, new Date(startedAt))
       const sourceRunLogger = createSourceRunLogger(options.logger, source.id, runId)
@@ -120,13 +136,14 @@ export function createSourceProcessor(options: CreateSourceProcessorOptions): So
               'source.id': source.id,
               'source.run_id': runId,
             }),
+            runOptions,
           )
 
           createFetchLogger(options.logger, source.id, runId).info('抓取成功', {
             'source.operation': 'fetch',
             'source.outcome': 'success',
             'source.fetch_duration_ms': parsed.timing.fetchDurationMs,
-            'source.payload_bytes': parsed.payload.length,
+            'source.payload_bytes': new TextEncoder().encode(parsed.payload).length,
           })
 
           await options.sourceStateStore.persistParsedSource(

@@ -53,11 +53,12 @@ function optionalBoolean() {
   return z.boolean({ error: ISSUE_BOOLEAN }).optional()
 }
 
-function stringArraySchema() {
+function stringArraySchema(options: { minLength?: number } = {}) {
   return z.custom<string[]>(
     (value) => {
       return (
         Array.isArray(value) &&
+        value.length >= (options.minLength ?? 0) &&
         value.every((item) => typeof item === 'string' && item.trim() !== '')
       )
     },
@@ -782,6 +783,20 @@ export const syndicationSchema = z
   })
   .strict()
 
+export const summarySchema = z
+  .object({
+    sources: stringArraySchema({ minLength: 1 }),
+    feed: createMappingSchema(FEED_FIELD_KEYS, {
+      validateLiquid: true,
+      capabilityPath: 'sources.*.summary.feed.*',
+    }).optional(),
+    entry: createMappingSchema(ENTRY_FIELD_KEYS, {
+      validateLiquid: true,
+      capabilityPath: 'sources.*.summary.entry.*',
+    }).optional(),
+  })
+  .strict()
+
 export const xquerySchema = z
   .object({
     locate: requiredString().optional(),
@@ -1235,6 +1250,7 @@ export const sourceSchema = z
     http: sourceHttpSchema.optional(),
     byparr: byparrSchema.optional(),
     syndication: syndicationSchema.optional(),
+    summary: summarySchema.optional(),
     xquery: xquerySchema.optional(),
     push: z.unknown().optional(),
   })
@@ -1272,6 +1288,50 @@ export const sourceSchema = z
 
     if (value.filter !== undefined && value.filter.trim() !== '') {
       validateLiquidTemplate(value.filter, ctx, ['filter'], 'sources.*.filter')
+    }
+
+    if (value.summary) {
+      if (value.schedule === undefined) {
+        ctx.addIssue({
+          path: ['schedule'],
+          code: 'custom',
+          message: ISSUE_REQUIRED,
+        })
+      }
+
+      if (value.http !== undefined) {
+        ctx.addIssue({
+          path: ['http'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      if (value.byparr !== undefined) {
+        ctx.addIssue({
+          path: ['byparr'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      if (value.syndication !== undefined) {
+        ctx.addIssue({
+          path: ['syndication'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      if (value.xquery !== undefined) {
+        ctx.addIssue({
+          path: ['xquery'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      return
     }
 
     if (value.syndication && value.xquery) {
@@ -1321,7 +1381,18 @@ function validateAppConfigReferences(
   const deliveries = value.deliveries ?? {}
   const deliveryIds = new Set(Object.keys(deliveries))
 
+  const sourceIds = new Set(Object.keys(value.sources ?? {}))
+
   for (const [sourceId, source] of Object.entries(value.sources ?? {})) {
+    for (const summarySourceId of source.summary?.sources ?? []) {
+      if (!sourceIds.has(summarySourceId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `source.${sourceId}.summary.sources 引用了未定义 source: ${summarySourceId}`,
+        })
+      }
+    }
+
     for (const [deliveryId, override] of Object.entries(source.deliveries ?? {})) {
       if (!deliveryIds.has(deliveryId)) {
         ctx.addIssue({
@@ -1554,6 +1625,7 @@ export type PushResponseConfig = z.output<typeof pushResponseSchema>
 export type PushConfig = z.output<typeof pushSchema>
 export type DeliveryConfigInput = z.output<typeof deliverySchema>
 export type SyndicationSourceConfig = z.output<typeof syndicationSchema>
+export type SummarySourceConfig = z.output<typeof summarySchema>
 export type XqueryMappingConfig = z.output<typeof xquerySchema>
 export type SourceConfigInput = z.output<typeof sourceSchema>
 export type AppConfigInput = z.input<typeof appConfigSchema>

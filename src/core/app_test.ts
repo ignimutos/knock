@@ -398,20 +398,21 @@ sources:
     },
   } as Deno.HttpClient
 
-  await assertRejects(
-    () =>
-      startApp({
-        runtimeDir: testRuntime,
-        httpFetcher: async (input, init) => {
-          const initWithClient = init as (RequestInit & { client?: Deno.HttpClient }) | undefined
-          if (getRequestUrl(input) === 'https://example.com/rust.xml') {
-            const headers = input instanceof Request ? input.headers : new Headers(init?.headers)
-            sourceFetches.push({
-              sourceToken: String(headers.get('X-Source-Token') ?? ''),
-              authorization: String(headers.get('Authorization') ?? ''),
-              hasExpectedClient: initWithClient?.client === sourceProxyClient,
-            })
-            const xml = `
+  try {
+    await assertRejects(
+      () =>
+        startApp({
+          runtimeDir: testRuntime,
+          httpFetcher: async (input, init) => {
+            const initWithClient = init as (RequestInit & { client?: Deno.HttpClient }) | undefined
+            if (getRequestUrl(input) === 'https://example.com/rust.xml') {
+              const headers = input instanceof Request ? input.headers : new Headers(init?.headers)
+              sourceFetches.push({
+                sourceToken: String(headers.get('X-Source-Token') ?? ''),
+                authorization: String(headers.get('Authorization') ?? ''),
+                hasExpectedClient: initWithClient?.client === sourceProxyClient,
+              })
+              const xml = `
 <rss>
   <channel>
     <item>
@@ -421,70 +422,72 @@ sources:
     </item>
   </channel>
 </rss>`
-            return await Promise.resolve(new Response(xml, { status: 200 }))
-          }
+              return await Promise.resolve(new Response(xml, { status: 200 }))
+            }
 
-          const headers = input instanceof Request ? input.headers : new Headers(init?.headers)
-          deliveryFetches.push({
-            authorization: String(headers.get('Authorization') ?? ''),
-            sourceToken: String(headers.get('X-Source-Token') ?? ''),
-            hasExpectedClient: initWithClient?.client === deliveryProxyClient,
-          })
-          return await Promise.resolve(
-            new Response('{"error":"delivery failed"}', {
-              status: 500,
-              headers: { 'Content-Type': 'application/json' },
-            }),
-          )
-        },
-        httpProxyClientFactory: (options) => {
-          createHttpClientCalls.push(options)
-          const proxyUrl = (options as { proxy?: { url?: string } }).proxy?.url
-          if (proxyUrl === sourceProxyUrl) return sourceProxyClient
-          if (proxyUrl === deliveryProxyUrl) return deliveryProxyClient
-          throw new Error(`unexpected proxy url: ${proxyUrl ?? ''}`)
-        },
-        keepAlive: false,
-        immediate: true,
+            const headers = input instanceof Request ? input.headers : new Headers(init?.headers)
+            deliveryFetches.push({
+              authorization: String(headers.get('Authorization') ?? ''),
+              sourceToken: String(headers.get('X-Source-Token') ?? ''),
+              hasExpectedClient: initWithClient?.client === deliveryProxyClient,
+            })
+            return await Promise.resolve(
+              new Response('{"error":"delivery failed"}', {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+              }),
+            )
+          },
+          httpProxyClientFactory: (options) => {
+            createHttpClientCalls.push(options)
+            const proxyUrl = (options as { proxy?: { url?: string } }).proxy?.url
+            if (proxyUrl === sourceProxyUrl) return sourceProxyClient
+            if (proxyUrl === deliveryProxyUrl) return deliveryProxyClient
+            throw new Error(`unexpected proxy url: ${proxyUrl ?? ''}`)
+          },
+          keepAlive: false,
+          immediate: true,
+        }),
+      Error,
+      'delivery failed',
+    )
+
+    assertEquals(createHttpClientCalls, [
+      { proxy: { url: sourceProxyUrl } },
+      { proxy: { url: deliveryProxyUrl } },
+    ])
+    assertEquals(
+      logs.some((line) => {
+        const scope = getScopeName(line)
+        const attributes = getAttributes(line)
+        return (
+          scope === 'scheduler.source' &&
+          line.body === 'source 执行失败' &&
+          attributes['exception.message'] === 'HTTP 推送失败: status=500'
+        )
       }),
-    Error,
-    'delivery failed',
-  )
-
-  assertEquals(createHttpClientCalls, [
-    { proxy: { url: sourceProxyUrl } },
-    { proxy: { url: deliveryProxyUrl } },
-  ])
-  assertEquals(
-    logs.some((line) => {
-      const scope = getScopeName(line)
-      const attributes = getAttributes(line)
-      return (
-        scope === 'scheduler.source' &&
-        line.body === 'source 执行失败' &&
-        attributes['exception.message'] === 'HTTP 推送失败: status=500'
-      )
-    }),
-    true,
-  )
-  assertEquals(JSON.stringify(logs).includes('delivery failed'), false)
-  assertEquals(sourceFetches, [
-    {
-      sourceToken: 'source-token',
-      authorization: '',
-      hasExpectedClient: true,
-    },
-  ])
-  assertEquals(deliveryFetches, [
-    {
-      authorization: 'Bearer delivery-token',
-      sourceToken: '',
-      hasExpectedClient: true,
-    },
-  ])
-  assertEquals(sourceClientCloseCalls, 1)
-  assertEquals(deliveryClientCloseCalls, 1)
-  restore()
+      true,
+    )
+    assertEquals(JSON.stringify(logs).includes('delivery failed'), false)
+    assertEquals(sourceFetches, [
+      {
+        sourceToken: 'source-token',
+        authorization: '',
+        hasExpectedClient: true,
+      },
+    ])
+    assertEquals(deliveryFetches, [
+      {
+        authorization: 'Bearer delivery-token',
+        sourceToken: '',
+        hasExpectedClient: true,
+      },
+    ])
+    assertEquals(sourceClientCloseCalls, 1)
+    assertEquals(deliveryClientCloseCalls, 1)
+  } finally {
+    restore()
+  }
 })
 
 test('app: immediate 模式下文件模板主链路应可使用 ai_summarize', async () => {
@@ -593,6 +596,111 @@ sources:
   }
 })
 
+test('app: immediate 模式下 summary source 首跑只写 checkpoint、不投递文件且不抓取外部 source', async () => {
+  const testRuntime = getTestRuntime('oneshot-summary-first-run')
+  await emptyDir(testRuntime)
+  await ensureDir(testRuntime)
+
+  await Deno.writeTextFile(
+    join(testRuntime, 'config.yml'),
+    `
+sqlite:
+  path: state/custom.db
+
+deliveries:
+  local:
+    file:
+      path: outputs/summary.md
+      content: "{{ entry.title }}"
+
+sources:
+  rust:
+    enabled: false
+    http:
+      url: https://example.com/rust.xml
+    deliveries: {}
+    syndication:
+      entry:
+        id: "{{ id }}"
+        title: "{{ title }}"
+        description: "{{ description }}"
+
+  summary_daily:
+    name: Daily Summary
+    schedule: "*/5 * * * *"
+    summary:
+      sources:
+        - rust
+    deliveries:
+      local: {}
+`,
+  )
+
+  let fetchCalls = 0
+  const result = await startApp({
+    runtimeDir: testRuntime,
+    httpFetcher: async () => {
+      fetchCalls += 1
+      return await Promise.resolve(new Response('<rss></rss>'))
+    },
+    keepAlive: false,
+    immediate: true,
+  })
+
+  assertEquals(result.mode, 'daemon')
+  assertEquals(fetchCalls, 0)
+  assertEquals(await exists(join(testRuntime, 'outputs', 'summary.md')), false)
+
+  const databasePath = join(testRuntime, 'state', 'custom.db')
+  const { DatabaseSync } = await import('node:sqlite')
+  const db = new DatabaseSync(databasePath)
+  try {
+    const feedRow = db
+      .prepare(
+        'SELECT source_id, parser, payload_text, fetched_at, updated_at FROM feeds WHERE source_id = ?',
+      )
+      .get('summary_daily') as {
+      source_id: string
+      parser: string
+      payload_text: string
+      fetched_at: string
+      updated_at: string
+    }
+    assertEquals(feedRow.source_id, 'summary_daily')
+    assertEquals(feedRow.parser, 'summary')
+    assertEquals(feedRow.fetched_at, feedRow.updated_at)
+    assertEquals(JSON.parse(feedRow.payload_text), {
+      kind: 'summary',
+      sourceId: 'summary_daily',
+      sourceIds: ['rust'],
+      previousCheckpoint: null,
+      scheduledAt: feedRow.fetched_at,
+    })
+    assertEquals(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM entries WHERE source_id = ?')
+          .get('summary_daily') as {
+          count: number
+        }
+      ).count,
+      0,
+    )
+    assertEquals(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM deliveries WHERE source_id = ?')
+          .get('summary_daily') as {
+          count: number
+        }
+      ).count,
+      0,
+    )
+  } finally {
+    db.close()
+  }
+})
+
 test('app: immediate 模式应执行一次并进入非调度模式', async () => {
   const testRuntime = getTestRuntime('oneshot')
   await emptyDir(testRuntime)
@@ -698,7 +806,7 @@ sources:
         return (
           getScopeName(line) === 'delivery.runtime.render' &&
           attributes['delivery.operation'] === 'render_content' &&
-          attributes['delivery.id'] === 'rust__local__0'
+          attributes['delivery.id'] === 'rust__local'
         )
       }),
       true,
@@ -709,7 +817,7 @@ sources:
         return (
           getScopeName(line) === 'delivery.runtime.build' &&
           attributes['delivery.operation'] === 'build_request' &&
-          attributes['delivery.id'] === 'rust__local__0'
+          attributes['delivery.id'] === 'rust__local'
         )
       }),
       true,
@@ -720,7 +828,7 @@ sources:
         return (
           getScopeName(line) === 'delivery.runtime.dispatch' &&
           attributes['delivery.operation'] === 'dispatch' &&
-          attributes['delivery.id'] === 'rust__local__0'
+          attributes['delivery.id'] === 'rust__local'
         )
       }),
       true,
@@ -1065,7 +1173,7 @@ sources:
         getScopeName(line) === 'delivery.http' &&
         attributes['delivery.operation'] === 'push' &&
         attributes['delivery.outcome'] === 'success' &&
-        attributes['delivery.id'] === 'rust__webhook__0'
+        attributes['delivery.id'] === 'rust__webhook'
       )
     }),
     true,

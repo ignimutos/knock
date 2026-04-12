@@ -29,6 +29,8 @@ function createSource(overrides: Partial<ResolvedSourceConfig> = {}): ResolvedSo
     deliveries: [
       {
         id: 'archive',
+        sourceId: 'rust',
+        deliveryId: 'archive',
         file: {
           path: 'outputs/feed.md',
           content: '{{ entry.title }}',
@@ -312,6 +314,8 @@ Deno.test(
       deliveries: [
         {
           id: 'archive_a',
+          sourceId: 'rust',
+          deliveryId: 'archive_a',
           file: {
             path: 'outputs/archive-a.md',
             content: '{{ entry.title }}',
@@ -319,6 +323,8 @@ Deno.test(
         },
         {
           id: 'archive_b',
+          sourceId: 'rust',
+          deliveryId: 'archive_b',
           file: {
             path: 'outputs/archive-b.md',
             content: '{{ entry.title }}',
@@ -376,6 +382,90 @@ Deno.test(
       { itemId: 'entry-1', deliveryId: 'delivery:archive_b' },
     ])
     assertEquals(pushedDeliveryIds, ['archive_a'])
+  },
+)
+
+Deno.test(
+  'sourceProcessor: runOnce 应透传 scheduledAt 到 sourceRuntime 并把 observedAt 写入 state store',
+  async () => {
+    let runtimeOptions: { scheduledAt?: string } | undefined
+    let persistedInput: Record<string, unknown> | undefined
+    const processor = createSourceProcessor({
+      logger: createTestLogger([]),
+      scheduler: {
+        runSource: (_sourceId, task) => task(),
+      },
+      sourceRuntime: {
+        fetchAndParse: ((
+          _source: ResolvedSourceConfig,
+          _runtimeLogger?: Logger,
+          options?: { scheduledAt?: string },
+        ) => {
+          runtimeOptions = options
+          return Promise.resolve({
+            parser: 'summary' as const,
+            payload: '{"kind":"summary"}',
+            feedMapped: { title: 'Daily Summary' },
+            entries: [],
+            timing: {
+              fetchDurationMs: 0,
+              parseDurationMs: 0,
+            },
+            observedAt: '2026-04-12T10:00:00.000Z',
+          })
+        }) as unknown as {
+          fetchAndParse(
+            source: ResolvedSourceConfig,
+            logger?: Logger,
+            options?: { scheduledAt?: string },
+          ): Promise<{
+            parser: 'summary'
+            payload: string
+            feedMapped: { title: string }
+            entries: []
+            timing: {
+              fetchDurationMs: number
+              parseDurationMs: number
+            }
+            observedAt: string
+          }>
+        }['fetchAndParse'],
+      },
+      contentRuntime: {
+        buildContext: (entry, feed, currentSource) => ({ entry, feed, source: currentSource }),
+        shouldPassFilter: () => Promise.resolve(true),
+      },
+      deliveryRuntime: {
+        getDeliveryId: () => 'delivery:archive',
+        push: () => Promise.resolve(),
+      },
+      sourceStateStore: {
+        persistParsedSource: (input) => {
+          persistedInput = input as unknown as Record<string, unknown>
+          return Promise.resolve()
+        },
+        deliverIfNeeded: () => Promise.resolve('delivered'),
+        pruneSourceState: () => {},
+      },
+      createRunId: () => 'run-summary',
+      now: () => 1000,
+    })
+
+    await (
+      processor as unknown as {
+        runOnce(
+          source: ResolvedSourceConfig,
+          options?: {
+            scheduledAt?: string
+          },
+        ): Promise<void>
+      }
+    ).runOnce(createSource({ deliveries: [], summary: { sources: ['rust'] } }), {
+      scheduledAt: '2026-04-12T09:00:00.000Z',
+    })
+
+    assertEquals(runtimeOptions, { scheduledAt: '2026-04-12T09:00:00.000Z' })
+    assertEquals(persistedInput?.observedAt, '2026-04-12T10:00:00.000Z')
   },
 )
 

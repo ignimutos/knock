@@ -44,7 +44,9 @@ Deno.test('deliveryRuntime: file 投递应选择并渲染 file content 模板后
   const templateContext = { entry: { title: 'Hello File' } }
   await runtime.push(
     {
-      id: 'archive',
+      id: 'source-1__archive',
+      sourceId: 'source-1',
+      deliveryId: 'archive',
       file: {
         path: '/tmp/feed.md',
         content: '{{ entry.title }}',
@@ -111,7 +113,9 @@ Deno.test('deliveryRuntime: HTTP 投递应只递归渲染 payload 而不额外�
   }
   await runtime.push(
     {
-      id: 'webhook',
+      id: 'source-1__webhook',
+      sourceId: 'source-1',
+      deliveryId: 'webhook',
       push: {
         http: {
           method: 'POST',
@@ -138,7 +142,7 @@ Deno.test('deliveryRuntime: HTTP 投递应只递归渲染 payload 而不额外�
   assertEquals(renderedTemplates, [])
   assertEquals(calls, [
     {
-      deliveryId: 'webhook',
+      deliveryId: 'source-1__webhook',
       http: {
         method: 'POST',
         url: 'https://example.com/webhook',
@@ -227,7 +231,9 @@ Deno.test('deliveryRuntime: HTTP payload 中可使用 ai_summarize', async () =>
 
   await runtime.push(
     {
-      id: 'webhook',
+      id: 'source-a__webhook',
+      sourceId: 'source-a',
+      deliveryId: 'webhook',
       push: {
         http: {
           method: 'POST',
@@ -247,7 +253,7 @@ Deno.test('deliveryRuntime: HTTP payload 中可使用 ai_summarize', async () =>
   assertEquals(aiCalls.length, 1)
   assertEquals(calls, [
     {
-      deliveryId: 'webhook',
+      deliveryId: 'source-a__webhook',
       http: {
         method: 'POST',
         url: 'https://example.com/webhook',
@@ -294,7 +300,9 @@ Deno.test('deliveryRuntime: HTTP response 模板应保留原模板并透传 temp
 
   await runtime.push(
     {
-      id: 'webhook',
+      id: 'source-1__webhook',
+      sourceId: 'source-1',
+      deliveryId: 'webhook',
       push: {
         http: {
           method: 'POST',
@@ -315,7 +323,7 @@ Deno.test('deliveryRuntime: HTTP response 模板应保留原模板并透传 temp
   assertEquals(renderedTemplates, [])
   assertEquals(calls, [
     {
-      deliveryId: 'webhook',
+      deliveryId: 'source-1__webhook',
       http: {
         method: 'POST',
         url: 'https://example.com/webhook',
@@ -375,7 +383,9 @@ Deno.test('deliveryRuntime: email 投递应渲染 message 字段并分发到 ema
 
   await runtime.push(
     {
-      id: 'release_email',
+      id: 'feed__release_email',
+      sourceId: 'feed',
+      deliveryId: 'release_email',
       email: {
         smtp: {
           host: 'smtp.example.com',
@@ -417,7 +427,7 @@ Deno.test('deliveryRuntime: email 投递应渲染 message 字段并分发到 ema
   ])
   assertEquals(calls, [
     {
-      deliveryId: 'release_email',
+      deliveryId: 'feed__release_email',
       templateContext,
       smtp: {
         host: 'smtp.example.com',
@@ -461,7 +471,9 @@ Deno.test('deliveryRuntime: email 地址渲染后非法时应在发送前失败'
     () =>
       runtime.push(
         {
-          id: 'release_email',
+          id: 'source-1__release_email',
+          sourceId: 'source-1',
+          deliveryId: 'release_email',
           email: {
             smtp: {
               host: 'smtp.example.com',
@@ -495,7 +507,9 @@ Deno.test('deliveryRuntime: delivery 标识应直接使用 delivery.id', () => {
   })
 
   const httpDelivery = {
-    id: 'webhook',
+    id: 'source-1__webhook',
+    sourceId: 'source-1',
+    deliveryId: 'webhook',
     push: {
       http: {
         method: 'POST' as const,
@@ -507,7 +521,7 @@ Deno.test('deliveryRuntime: delivery 标识应直接使用 delivery.id', () => {
     },
   }
 
-  assertEquals(runtime.getDeliveryId(httpDelivery), 'webhook')
+  assertEquals(runtime.getDeliveryId(httpDelivery), 'source-1__webhook')
 })
 
 Deno.test('deliveryRuntime: 未配置目标时应报错', async () => {
@@ -563,7 +577,9 @@ Deno.test('deliveryRuntime: 应记录 build/render/dispatch 阶段日志并透�
 
   await runtime.push(
     {
-      id: 'webhook',
+      id: 'source-1__webhook',
+      sourceId: 'source-1',
+      deliveryId: 'webhook',
       push: {
         http: {
           method: 'POST',
@@ -594,7 +610,7 @@ Deno.test('deliveryRuntime: 应记录 build/render/dispatch 阶段日志并透�
   assertEquals((buildLog?.scope as Record<string, unknown>).name, 'delivery.runtime.build')
   assertEquals(buildAttributes['delivery.operation'], 'build_request')
   assertEquals(buildAttributes['delivery.outcome'], 'success')
-  assertEquals(buildAttributes['delivery.id'], 'webhook')
+  assertEquals(buildAttributes['delivery.id'], 'source-1__webhook')
   assertEquals(buildAttributes['source.id'], 'source-1')
   assertEquals('body' in buildAttributes, false)
   assertEquals(JSON.stringify(buildLog).includes('secret body'), false)
@@ -602,7 +618,7 @@ Deno.test('deliveryRuntime: 应记录 build/render/dispatch 阶段日志并透�
   assertEquals((renderLog?.scope as Record<string, unknown>).name, 'delivery.runtime.render')
   assertEquals(renderAttributes['delivery.operation'], 'render_payload')
   assertEquals(renderAttributes['delivery.outcome'], 'success')
-  assertEquals(renderAttributes['delivery.id'], 'webhook')
+  assertEquals(renderAttributes['delivery.id'], 'source-1__webhook')
   assertEquals(renderAttributes['source.id'], 'source-1')
   assertEquals(renderAttributes['delivery.request_type'], 'body')
   assertEquals(JSON.stringify(renderLog).includes('secret body'), false)
@@ -610,7 +626,7 @@ Deno.test('deliveryRuntime: 应记录 build/render/dispatch 阶段日志并透�
   assertEquals((dispatchLog?.scope as Record<string, unknown>).name, 'delivery.runtime.dispatch')
   assertEquals(dispatchAttributes['delivery.operation'], 'dispatch')
   assertEquals(dispatchAttributes['delivery.outcome'], 'success')
-  assertEquals(dispatchAttributes['delivery.id'], 'webhook')
+  assertEquals(dispatchAttributes['delivery.id'], 'source-1__webhook')
   assertEquals(dispatchAttributes['source.id'], 'source-1')
   assertEquals(JSON.stringify(dispatchLog).includes('secret body'), false)
 })
@@ -659,7 +675,9 @@ Deno.test(
 
     await runtime.push(
       {
-        id: 'archive',
+        id: 'source-1__archive',
+        sourceId: 'source-1',
+        deliveryId: 'archive',
         file: {
           path: '/tmp/feed.md',
           content: '{{ entry.title }}',
@@ -670,7 +688,9 @@ Deno.test(
 
     await runtime.push(
       {
-        id: 'release_email',
+        id: 'source-1__release_email',
+        sourceId: 'source-1',
+        deliveryId: 'release_email',
         email: {
           smtp: {
             host: 'smtp.example.com',

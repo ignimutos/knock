@@ -138,6 +138,16 @@ export const CONFIG_FIELD_CAPABILITIES: ConfigFieldCapability[] = [
     allowLiquid: true,
   },
   {
+    path: 'sources.*.summary.feed.*',
+    allowEnv: true,
+    allowLiquid: true,
+  },
+  {
+    path: 'sources.*.summary.entry.*',
+    allowEnv: true,
+    allowLiquid: true,
+  },
+  {
     path: 'ai.defaultModel',
     allowEnv: false,
     allowLiquid: false,

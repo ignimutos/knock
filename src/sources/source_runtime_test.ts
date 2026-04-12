@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
+import { createContentRuntime } from '../core/content_runtime.ts'
 import { createHttpClient } from '../core/http_client.ts'
 import { createLogger } from '../core/logger.ts'
 import { fetchAndParseSource } from './source_runtime.ts'
@@ -186,6 +187,66 @@ Deno.test('source_runtime: xquery 脚本模式应完成抓取与解析', async (
   assertEquals(parsed.entries.length, 1)
   assertEquals(parsed.entries[0].mapped.id, '1')
   assertEquals(parsed.entries[0].mapped.title, 'Hello')
+})
+
+Deno.test('source_runtime: summary source 缺少 summary 依赖时应拒绝执行', async () => {
+  await assertRejects(
+    () =>
+      fetchAndParseSource({
+        source: {
+          id: 'summary.daily',
+          name: 'Daily Summary',
+          enabled: true,
+          deliveries: [],
+          summary: {
+            sources: ['rust'],
+          },
+        },
+        httpClient: createHttpClient({
+          fetcher: () => Promise.resolve(new Response('unexpected')),
+        }),
+        timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+      }),
+    Error,
+    '[summary] 缺少 stateQuery 依赖 source=summary.daily',
+  )
+})
+
+Deno.test('source_runtime: summary source 应走 summary parser 且不抓取外部输入', async () => {
+  let fetchCalls = 0
+  const parsed = await fetchAndParseSource({
+    source: {
+      id: 'summary.daily',
+      name: 'Daily Summary',
+      enabled: true,
+      deliveries: [],
+      summary: {
+        sources: ['rust'],
+      },
+    },
+    httpClient: createHttpClient({
+      fetcher: () => {
+        fetchCalls += 1
+        return Promise.resolve(new Response('unexpected'))
+      },
+    }),
+    timeOptions: { timezone: 'UTC', timestampFormat: 'yyyy-MM-dd HH:mm:ss' },
+    summaryOptions: {
+      scheduledAt: '2026-04-12T10:00:00.000Z',
+      language: 'en-US',
+      stateQuery: {
+        getSummaryCheckpoint: () => Promise.resolve(undefined),
+        getSummaryInputs: () => Promise.resolve({}),
+      },
+      contentRuntime: createContentRuntime(),
+    },
+  })
+
+  assertEquals(parsed.parser, 'summary')
+  assertEquals(parsed.observedAt, '2026-04-12T10:00:00.000Z')
+  assertEquals(parsed.feedMapped.title, 'Daily Summary')
+  assertEquals(parsed.entries, [])
+  assertEquals(fetchCalls, 0)
 })
 
 Deno.test('source_runtime: 未配置解析器时应返回 none 结果', async () => {

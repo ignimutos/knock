@@ -14,6 +14,7 @@ import {
   type LogLevel as SchemaLogLevel,
   type PushConfig,
   type SourceConfigInput,
+  type SummarySourceConfig,
   type SqliteJournalMode as SchemaSqliteJournalMode,
   type SqliteRetentionVacuumMode as SchemaSqliteRetentionVacuumMode,
 } from './schema.ts'
@@ -50,7 +51,12 @@ export interface HttpDeliveryConfig {
 }
 
 export type DeliveryConfig = DeliveryConfigInput & { id: string }
-export type ResolvedDeliveryConfig = DeliveryConfig
+
+export interface ResolvedDeliveryConfig extends Omit<DeliveryConfig, 'id'> {
+  id: string
+  sourceId: string
+  deliveryId: DeliveryConfig['id']
+}
 
 export type UnifiedFeedField = (typeof FEED_FIELD_KEYS)[number]
 export type UnifiedEntryField = (typeof ENTRY_FIELD_KEYS)[number]
@@ -123,10 +129,16 @@ export type SourceDeliveryOverride =
 
 export type SourceDeliveriesConfig = Record<string, SourceDeliveryOverride>
 
-export interface ResolvedSourceConfig extends Omit<SourceConfigInput, 'enabled' | 'deliveries'> {
+export interface ResolvedSummarySourceConfig extends SummarySourceConfig {}
+
+export interface ResolvedSourceConfig extends Omit<
+  SourceConfigInput,
+  'enabled' | 'deliveries' | 'summary'
+> {
   id: string
   enabled: boolean
   deliveries: ResolvedDeliveryConfig[]
+  summary?: ResolvedSummarySourceConfig
 }
 
 export interface AppConfigResolved {
