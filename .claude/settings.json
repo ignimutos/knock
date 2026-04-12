@@ -11,7 +11,7 @@
   "permissions": {
     "allow": [],
     "deny": [],
-    "defaultMode": "plan",
+    "defaultMode": "bypassPermissions",
     "skipDangerousModePermissionPrompt": true
   },
   "hooks": {
