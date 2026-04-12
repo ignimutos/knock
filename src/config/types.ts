@@ -4,10 +4,11 @@ import {
   type AiModelVariantConfig,
   type AiProviderType,
   type DeliveryConfigInput,
-  type EmailConfig,
+  type EmailMessageConfig,
   ENTRY_FIELD_KEYS,
   FEED_FIELD_KEYS,
   type FileDeliveryConfig,
+  type HttpPayload,
   type LogConsoleSinkConfig as SchemaLogConsoleSinkConfig,
   type LogFormat as SchemaLogFormat,
   type LogLevel as SchemaLogLevel,
@@ -103,6 +104,25 @@ export interface AiConfigResolved {
   modelRefs: Record<string, AiModelRefResolved>
 }
 
+export interface SourceFileDeliveryOverride {
+  content?: FileDeliveryConfig['content']
+}
+
+export interface SourcePushDeliveryOverride {
+  payload?: HttpPayload
+}
+
+export interface SourceEmailDeliveryOverride {
+  message?: Partial<EmailMessageConfig>
+}
+
+export type SourceDeliveryOverride =
+  | SourceFileDeliveryOverride
+  | SourcePushDeliveryOverride
+  | SourceEmailDeliveryOverride
+
+export type SourceDeliveriesConfig = Record<string, SourceDeliveryOverride>
+
 export interface ResolvedSourceConfig extends Omit<SourceConfigInput, 'enabled' | 'deliveries'> {
   id: string
   enabled: boolean
@@ -116,12 +136,7 @@ export interface AppConfigResolved {
   timestampFormat: string
   sqlite: SqliteConfigResolved
   ai?: AiConfigResolved
-  deliveries: Array<{
-    id: string
-    file?: FileDeliveryConfig
-    push?: PushConfig
-    email?: EmailConfig
-  }>
+  deliveries: DeliveryConfig[]
   sources: ResolvedSourceConfig[]
   logging: LoggingConfigResolved
 }

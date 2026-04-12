@@ -5,6 +5,7 @@ import {
   ISSUE_DEPRECATED_DELIVERY_HTTP,
   ISSUE_ILLEGAL,
   ISSUE_INTEGER,
+  ISSUE_OBJECT,
   ISSUE_REQUIRED,
   ISSUE_SOURCE_PARSER_CONFLICT,
   ISSUE_SOURCE_PUSH_FORBIDDEN,
@@ -63,6 +64,7 @@ function formatCustomIssue(issue: z.ZodIssue): string | undefined {
   if (message === ISSUE_BOOLEAN && path) return `${path} 必须是布尔值`
   if (message === ISSUE_INTEGER && path) return `${path} 必须是整数`
   if (message === ISSUE_STRING_ARRAY && path) return `${path} 必须是字符串数组`
+  if (message === ISSUE_OBJECT && path) return `${path} 必须是对象`
   if (message === ISSUE_ILLEGAL && path) return `${path} 非法`
   const invalidMessage = parseInvalidIssueMessage(message)
   if (invalidMessage !== undefined && path) {

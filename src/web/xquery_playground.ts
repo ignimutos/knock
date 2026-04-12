@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ResolvedSourceConfig } from '../config/types.ts'
 import {
   byparrSchema,
   sourceHttpSchema,
@@ -84,7 +85,11 @@ export function assertPlaygroundUrlAllowed(input: string) {
 }
 
 export interface ParsedPlaygroundRequest {
-  source: SourceConfigInput & { id: string; enabled: true; deliveries: [] }
+  source: SourceConfigInput & {
+    id: string
+    enabled: true
+    deliveries: Record<string, Record<string, unknown>>
+  }
   warnings: string[]
 }
 
@@ -114,14 +119,14 @@ export function parsePlaygroundRequest(input: unknown): ParsedPlaygroundRequest 
       ? {
           id: 'playground',
           enabled: true as const,
-          deliveries: [] as [],
+          deliveries: {},
           byparr: parseWithFirstIssue(byparrSchema, { url: request.url }, 'byparr 配置非法'),
           xquery,
         }
       : {
           id: 'playground',
           enabled: true as const,
-          deliveries: [] as [],
+          deliveries: {},
           http: parseWithFirstIssue(
             sourceHttpSchema,
             {
@@ -280,9 +285,13 @@ export async function evaluatePlayground(input: EvaluatePlaygroundInput) {
   const parsed = parsePlaygroundRequest(input.request)
   const httpClient = createHttpClient({ fetcher: input.fetcher ?? fetch })
   const runFetchAndParseSource = input.fetchAndParseSourceImpl ?? fetchAndParseSource
+  const resolvedSource: ResolvedSourceConfig = {
+    ...parsed.source,
+    deliveries: [],
+  }
 
   const result = await runFetchAndParseSource({
-    source: parsed.source,
+    source: resolvedSource,
     httpClient,
     timeOptions: {
       timezone: 'UTC',

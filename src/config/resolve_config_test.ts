@@ -3,44 +3,80 @@ import { resolveConfig } from './resolve_config.ts'
 import { validateConfig } from './validate_config.ts'
 import type { AppConfigInput } from './schema.ts'
 
-Deno.test(
-  'resolveConfig: sources.<id>.deliveries 应展开成 ResolvedDeliveryConfig[] 并保留 content',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-      deliveries: {
-        archive: {
-          file: {
-            path: 'a.md',
-            content: '{{ entry.title }}',
-          },
-        },
-        webhook: {
-          push: {
-            http: {
-              method: 'POST',
-              url: 'https://example.com/hook',
-            },
-          },
+Deno.test('resolveConfig: source.deliveries keyed map 顺序应保留到 resolved 层', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      first: {
+        file: {
+          path: 'a.md',
+          content: 'A',
         },
       },
-      sources: {
-        s1: {
-          http: {
-            url: 'https://example.com/feed.xml',
-          },
-          deliveries: ['archive', 'webhook'],
+      second: {
+        file: {
+          path: 'b.md',
+          content: 'B',
         },
       },
-    }
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          second: {},
+          first: {},
+        },
+      },
+    },
+  }
 
-    const resolved = resolveConfig(validateConfig(input))
-    assertEquals(resolved.deliveries.length, 2)
-    assertEquals(resolved.sources[0].deliveries.length, 2)
-    assertEquals(resolved.sources[0].deliveries[0].file?.content, '{{ entry.title }}')
-    assertEquals(resolved.sources[0].deliveries[1].push?.http.url, 'https://example.com/hook')
-  },
-)
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.deliveries.length, 2)
+  assertEquals(resolved.sources[0].deliveries.length, 2)
+  assertEquals(
+    resolved.sources[0].deliveries.map((item) => item.id),
+    ['feed__second__0', 'feed__first__1'],
+  )
+  assertEquals(
+    resolved.sources[0].deliveries.map((item) => item.file?.content),
+    ['B', 'A'],
+  )
+})
+
+Deno.test('resolveConfig: file override 应只改 content', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'a.md',
+          content: 'default',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          local: {
+            content: 'custom',
+          },
+        },
+      },
+    },
+  }
+
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.deliveries[0].file?.content, 'default')
+  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__local__0')
+  assertEquals(resolved.sources[0].deliveries[0].file?.path, '/tmp/runtime/a.md')
+  assertEquals(resolved.sources[0].deliveries[0].file?.content, 'custom')
+})
 
 Deno.test('resolveConfig: logging.format=pretty 应进入 resolved 层', () => {
   const input: AppConfigInput = {
@@ -86,7 +122,9 @@ Deno.test('resolveConfig: 默认值与路径解析仍应成立', () => {
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: ['archive'],
+        deliveries: {
+          archive: {},
+        },
       },
     },
   }
@@ -142,7 +180,9 @@ Deno.test('resolveConfig: push.http transport 与 push.request 应进入 resolve
             'User-Agent': 'knock-test',
           },
         },
-        deliveries: ['webhook'],
+        deliveries: {
+          webhook: {},
+        },
       },
     },
   }
@@ -167,6 +207,61 @@ Deno.test('resolveConfig: push.http transport 与 push.request 应进入 resolve
   assertEquals(resolved.sources[0].http!.headers?.['User-Agent'], 'knock-test')
   assertEquals(resolved.sources[0].deliveries[0].push?.http.url, 'https://example.com/hook')
   assertEquals(resolved.sources[0].deliveries[0].push?.request.type, 'body')
+})
+
+Deno.test('resolveConfig: push override 应 deep merge payload 且数组整体替换', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      telegram: {
+        push: {
+          http: {
+            url: 'https://example.com/hook',
+          },
+          request: {
+            payload: {
+              tags: ['a', 'b'],
+              link_preview_options: {
+                is_disabled: true,
+                show_above_text: false,
+              },
+              text: 'default',
+            },
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          telegram: {
+            payload: {
+              tags: ['c'],
+              link_preview_options: {
+                show_above_text: true,
+              },
+              text: 'custom',
+            },
+          },
+        },
+      },
+    },
+  }
+
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.sources[0].deliveries[0].id, 'feed__telegram__0')
+  assertEquals(resolved.sources[0].deliveries[0].push?.http.url, 'https://example.com/hook')
+  assertEquals(resolved.sources[0].deliveries[0].push?.request.payload, {
+    tags: ['c'],
+    link_preview_options: {
+      is_disabled: true,
+      show_above_text: true,
+    },
+    text: 'custom',
+  })
 })
 
 Deno.test(
@@ -204,7 +299,9 @@ Deno.test(
               'User-Agent': 'knock-test',
             },
           },
-          deliveries: ['webhook'],
+          deliveries: {
+            webhook: {},
+          },
         },
       },
     }
@@ -245,7 +342,7 @@ Deno.test('resolveConfig: source.byparr 应进入 resolved 层并保持字段', 
           maxTimeout: '90s',
           proxy: 'http://user:pass@127.0.0.1:8080',
         },
-        deliveries: [],
+        deliveries: {},
       },
     },
   }
@@ -296,7 +393,7 @@ Deno.test('resolveConfig: source 未配置 enabled 时默认启用', () => {
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: [],
+        deliveries: {},
       },
     },
   }
@@ -313,7 +410,7 @@ Deno.test('resolveConfig: source 未显式配置 parser 时默认补为 syndicat
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: [],
+        deliveries: {},
       },
     },
   }
@@ -332,7 +429,7 @@ Deno.test('resolveConfig: source 应保留 schedule 配置', () => {
           url: 'https://example.com/feed.xml',
         },
         schedule: '*/5 * * * *',
-        deliveries: [],
+        deliveries: {},
       },
     },
   }
@@ -350,7 +447,7 @@ Deno.test('resolveConfig: source 显式 enabled=false 时应保留禁用状态',
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: [],
+        deliveries: {},
       },
     },
   }
@@ -378,7 +475,7 @@ Deno.test('resolveConfig: 缺省时应补系统时区与默认时间格式', () 
   assertEquals(resolved.timestampFormat, 'yyyy-MM-dd HH:mm:ss')
 })
 
-Deno.test('resolveConfig: 应按 source deliveries 展开独立 resolved delivery', () => {
+Deno.test('resolveConfig: source.deliveries keyed map 应展开为声明顺序的 resolved delivery', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -399,7 +496,10 @@ Deno.test('resolveConfig: 应按 source deliveries 展开独立 resolved deliver
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: ['archive', 'archive', 'webhook'],
+        deliveries: {
+          archive: {},
+          webhook: {},
+        },
       },
     },
   }
@@ -407,13 +507,11 @@ Deno.test('resolveConfig: 应按 source deliveries 展开独立 resolved deliver
   const resolved = resolveConfig(validateConfig(input))
   assertEquals(resolved.deliveries.length, 2)
   assertEquals(resolved.sources.length, 1)
-  assertEquals(resolved.sources[0].deliveries.length, 3)
+  assertEquals(resolved.sources[0].deliveries.length, 2)
   assertEquals(resolved.sources[0].deliveries[0].id, 's1__archive__0')
   assertEquals(resolved.sources[0].deliveries[0].file?.content, '{{ entry.title }}')
-  assertEquals(resolved.sources[0].deliveries[1].id, 's1__archive__1')
-  assertEquals(resolved.sources[0].deliveries[1].file?.content, '{{ entry.title }}')
-  assertEquals(resolved.sources[0].deliveries[2].id, 's1__webhook__2')
-  assertEquals(resolved.sources[0].deliveries[2].push?.http.url, 'https://example.com/hook')
+  assertEquals(resolved.sources[0].deliveries[1].id, 's1__webhook__1')
+  assertEquals(resolved.sources[0].deliveries[1].push?.http.url, 'https://example.com/hook')
 })
 
 Deno.test('resolveConfig: delivery.file.rotation 未显式 enabled 时默认 false', () => {
@@ -469,7 +567,7 @@ Deno.test('resolveConfig: sqlite.path 相对路径应解析为基于 runtimeDir 
   assertEquals(resolved.sqlite.path, '/tmp/runtime/data/custom.db')
 })
 
-Deno.test('resolveConfig: email delivery 应进入 resolved 层并按 source 展开 clone', () => {
+Deno.test('resolveConfig: email override 应 deep merge message 且数组整体替换', () => {
   const input = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -486,11 +584,12 @@ Deno.test('resolveConfig: email delivery 应进入 resolved 层并按 source 展
           },
           message: {
             from: '{{ source.id }}@example.com',
-            to: ['team+{{ entry.id }}@example.com'],
+            to: ['team+{{ entry.id }}@example.com', 'fallback@example.com'],
             subject: '[{{ source.id }}] {{ entry.title }}',
             text: '{{ entry.title }}',
             headers: {
               'X-Knock-Source': '{{ source.id }}',
+              'X-Env': 'prod',
             },
           },
         },
@@ -501,7 +600,17 @@ Deno.test('resolveConfig: email delivery 应进入 resolved 层并按 source 展
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: ['release_email'],
+        deliveries: {
+          release_email: {
+            message: {
+              to: ['override@example.com'],
+              headers: {
+                'X-Env': 'staging',
+              },
+              subject: '[override] {{ entry.title }}',
+            },
+          },
+        },
       },
     },
   } as const satisfies AppConfigInput
@@ -509,10 +618,19 @@ Deno.test('resolveConfig: email delivery 应进入 resolved 层并按 source 展
   const resolved = resolveConfig(validateConfig(input))
   assertEquals(resolved.deliveries[0].email?.smtp.security, 'implicit')
   assertEquals(resolved.sources[0].deliveries[0].id, 'feed__release_email__0')
-  assertEquals(
-    resolved.sources[0].deliveries[0].email?.message.headers?.['X-Knock-Source'],
-    '{{ source.id }}',
-  )
+  assertEquals(resolved.sources[0].deliveries[0].email?.message, {
+    from: '{{ source.id }}@example.com',
+    to: ['override@example.com'],
+    cc: undefined,
+    bcc: undefined,
+    replyTo: undefined,
+    subject: '[override] {{ entry.title }}',
+    text: '{{ entry.title }}',
+    headers: {
+      'X-Knock-Source': '{{ source.id }}',
+      'X-Env': 'staging',
+    },
+  })
   assertNotStrictEquals(resolved.deliveries[0].email, resolved.sources[0].deliveries[0].email)
   assertNotStrictEquals(
     resolved.deliveries[0].email?.message,

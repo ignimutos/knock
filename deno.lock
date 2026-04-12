@@ -16,6 +16,7 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@^1.1.2": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
+    "jsr:@std/yaml@1.0.12": "1.0.12",
     "jsr:@std/yaml@^1.0.12": "1.0.12",
     "npm:@ai-sdk/anthropic@^3.0.68": "3.0.68_zod@4.3.6",
     "npm:@ai-sdk/google@^3.0.61": "3.0.61_zod@4.3.6",

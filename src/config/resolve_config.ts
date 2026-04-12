@@ -8,6 +8,10 @@ import type {
   LoggingConfigResolved,
   ResolvedDeliveryConfig,
   ResolvedSourceConfig,
+  SourceDeliveriesConfig,
+  SourceEmailDeliveryOverride,
+  SourceFileDeliveryOverride,
+  SourcePushDeliveryOverride,
   SqliteConfigResolved,
 } from './types.ts'
 import type {
@@ -142,21 +146,132 @@ function normalizeSources(
   }))
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function deepMergeValue(base: unknown, override: unknown): unknown {
+  if (override === undefined) return structuredClone(base)
+  if (base === undefined) return structuredClone(override)
+  if (Array.isArray(override)) return structuredClone(override)
+  if (Array.isArray(base)) return structuredClone(override)
+  if (isPlainObject(base) && isPlainObject(override)) {
+    const merged: Record<string, unknown> = { ...base }
+
+    for (const [key, value] of Object.entries(override)) {
+      merged[key] = deepMergeValue(base[key], value)
+    }
+
+    return merged
+  }
+
+  return structuredClone(override)
+}
+
+function resolveFileDelivery(
+  delivery: DeliveryConfig,
+  override: SourceFileDeliveryOverride,
+): ResolvedDeliveryConfig {
+  return {
+    id: delivery.id,
+    file: delivery.file
+      ? {
+          ...delivery.file,
+          ...(override.content === undefined ? {} : { content: override.content }),
+        }
+      : undefined,
+    push: undefined,
+    email: undefined,
+  }
+}
+
+function resolvePushDelivery(
+  delivery: DeliveryConfig,
+  override: SourcePushDeliveryOverride,
+): ResolvedDeliveryConfig {
+  const push = clonePushConfig(delivery.push)
+
+  return {
+    id: delivery.id,
+    file: undefined,
+    push: push
+      ? {
+          ...push,
+          request: {
+            ...push.request,
+            payload: deepMergeValue(
+              push.request.payload,
+              override.payload,
+            ) as PushConfig['request']['payload'],
+          },
+        }
+      : undefined,
+    email: undefined,
+  }
+}
+
+function resolveEmailDelivery(
+  delivery: DeliveryConfig,
+  override: SourceEmailDeliveryOverride,
+): ResolvedDeliveryConfig {
+  const email = cloneEmailConfig(delivery.email)
+
+  return {
+    id: delivery.id,
+    file: undefined,
+    push: undefined,
+    email: email
+      ? {
+          ...email,
+          message: deepMergeValue(email.message, override.message) as EmailConfig['message'],
+        }
+      : undefined,
+  }
+}
+
+function applySourceDeliveryOverride(
+  delivery: DeliveryConfig,
+  override: SourceFileDeliveryOverride | SourcePushDeliveryOverride | SourceEmailDeliveryOverride,
+): ResolvedDeliveryConfig {
+  if (delivery.file) {
+    return resolveFileDelivery(delivery, override as SourceFileDeliveryOverride)
+  }
+
+  if (delivery.push) {
+    return resolvePushDelivery(delivery, override as SourcePushDeliveryOverride)
+  }
+
+  if (delivery.email) {
+    return resolveEmailDelivery(delivery, override as SourceEmailDeliveryOverride)
+  }
+
+  return {
+    id: delivery.id,
+    file: undefined,
+    push: undefined,
+    email: undefined,
+  }
+}
+
 function resolveSourceDeliveries(
   sourceId: string,
-  deliveryIds: string[],
+  sourceDeliveries: SourceDeliveriesConfig,
   deliveries: DeliveryConfig[],
 ): ResolvedDeliveryConfig[] {
   const deliveryMap = new Map(deliveries.map((delivery) => [delivery.id, delivery]))
 
-  return deliveryIds.map((deliveryId, index) => {
+  return Object.entries(sourceDeliveries).map(([deliveryId, override], index) => {
     const delivery = deliveryMap.get(deliveryId)
 
+    if (!delivery) {
+      throw new Error(`source.${sourceId}.deliveries 引用了未定义 delivery: ${deliveryId}`)
+    }
+
+    const resolvedDelivery = applySourceDeliveryOverride(delivery, override)
+
     return {
+      ...resolvedDelivery,
       id: `${sourceId}__${deliveryId}__${index}`,
-      file: delivery?.file ? { ...delivery.file } : undefined,
-      push: clonePushConfig(delivery?.push),
-      email: cloneEmailConfig(delivery?.email),
     }
   })
 }
@@ -335,7 +450,7 @@ export function resolveConfig(input: AppConfigValidated): AppConfigResolved {
     ...source,
     syndication: source.syndication ?? (source.xquery ? undefined : {}),
     enabled: source.enabled ?? true,
-    deliveries: resolveSourceDeliveries(source.id, source.deliveries ?? [], deliveries),
+    deliveries: resolveSourceDeliveries(source.id, source.deliveries ?? {}, deliveries),
   }))
 
   return {
