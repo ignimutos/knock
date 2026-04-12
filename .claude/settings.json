@@ -36,6 +36,50 @@
           }
         ]
       }
+    ],
+    "WorktreeCreate": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
+          }
+        ]
+      }
     ]
   }
 }

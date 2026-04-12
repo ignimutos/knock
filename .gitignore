@@ -6,6 +6,7 @@
 .DS_Store
 .cache/
 .claude/tmp/
+.claude/state/
 .claude/worktrees/
 .env
 .env.*

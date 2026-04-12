@@ -18,6 +18,72 @@ type Failure = {
   }
 }
 
+type CommandResult = {
+  code: number
+  stdout: string
+  stderr: string
+}
+
+type TaskSelection =
+  | { mode: 'skip'; reason: string }
+  | { mode: 'default'; reason: string }
+  | { mode: 'paths'; reason: string; paths: readonly string[] }
+
+type VerificationPlan = {
+  fmtCheck: TaskSelection
+  lintCheck: TaskSelection
+  check: TaskSelection
+  test: TaskSelection
+}
+
+type TaskRunner = (task: string, cwd: string, paths?: readonly string[]) => Promise<CommandResult>
+
+type FinishContext = {
+  worktreePath: string
+  rootRepoPath: string
+  featureBranch: string
+  baseBranch: string
+  paths: readonly string[]
+}
+
+type VerificationFailure = {
+  step: string
+  code: string
+  stdout: string
+  stderr: string
+}
+
+type FinishAttentionInput =
+  | (FinishContext & {
+      type: 'merge_main_conflict'
+      stdout: string
+      stderr: string
+    })
+  | (FinishContext & {
+      type: 'verification_failed'
+      verification: VerificationFailure
+    })
+  | (FinishContext & {
+      type: 'merge_back_conflict'
+      stdout: string
+      stderr: string
+    })
+
+const CODE_FILE_PATTERN = /\.(ts|tsx|js|jsx|mjs|mts|cts)$/i
+const NON_CODE_FILE_PATTERN = /\.(md|ya?ml|json)$/i
+const FULL_TEST_TRIGGER_PATTERNS = [
+  /^deno\.json$/,
+  /^scripts\/run-paths\.sh$/,
+  /^src\/test_runtime\.ts$/,
+  /^src\/main\.ts$/,
+  /^src\/core\/app\.ts$/,
+  /^src\/db\/client\.ts$/,
+  /^src\/db\/schema\.ts$/,
+  /^src\/db\/migrations\//,
+  /^src\/sources\/xquery\.ts$/,
+  /^src\/sources\/source_runtime\.ts$/,
+]
+
 function printJson(value: unknown) {
   console.log(JSON.stringify(value, null, 2))
 }
@@ -84,8 +150,12 @@ function parseRepeatedFlag(args: string[], flag: string) {
   return values
 }
 
+export function isManagedFinishWorktreePath(worktreePath: string) {
+  return worktreePath.includes('/.claude/worktrees/')
+}
+
 function getRootRepoPathByConvention(worktreePath: string) {
-  if (!worktreePath.includes('/.claude/worktrees/')) return undefined
+  if (!isManagedFinishWorktreePath(worktreePath)) return undefined
   return worktreePath.split('/.claude/worktrees/')[0]
 }
 
@@ -209,41 +279,6 @@ async function runCommand(name: string, args: string[], cwd = Deno.cwd()) {
   }
 }
 
-type CommandResult = {
-  code: number
-  stdout: string
-  stderr: string
-}
-
-type TaskSelection =
-  | { mode: 'skip'; reason: string }
-  | { mode: 'default'; reason: string }
-  | { mode: 'paths'; reason: string; paths: readonly string[] }
-
-type VerificationPlan = {
-  fmtCheck: TaskSelection
-  lintCheck: TaskSelection
-  check: TaskSelection
-  test: TaskSelection
-}
-
-type TaskRunner = (task: string, cwd: string, paths?: readonly string[]) => Promise<CommandResult>
-
-const CODE_FILE_PATTERN = /\.(ts|tsx|js|jsx|mjs|mts|cts)$/i
-const NON_CODE_FILE_PATTERN = /\.(md|ya?ml|json)$/i
-const FULL_TEST_TRIGGER_PATTERNS = [
-  /^deno\.json$/,
-  /^scripts\/run-paths\.sh$/,
-  /^src\/test_runtime\.ts$/,
-  /^src\/main\.ts$/,
-  /^src\/core\/app\.ts$/,
-  /^src\/db\/client\.ts$/,
-  /^src\/db\/schema\.ts$/,
-  /^src\/db\/migrations\//,
-  /^src\/sources\/xquery\.ts$/,
-  /^src\/sources\/source_runtime\.ts$/,
-]
-
 async function runTask(task: string, cwd: string, paths: readonly string[] = []) {
   const args = ['task', task, ...paths]
   return await runCommand('deno', args, cwd)
@@ -308,7 +343,7 @@ async function getTestSelection(cwd: string, paths: string[]): Promise<TaskSelec
   }
 }
 
-function buildCompletionChoices(context: {
+export function buildCompletionChoices(context: {
   worktreePath: string
   rootRepoPath: string
   featureBranch: string
@@ -317,7 +352,7 @@ function buildCompletionChoices(context: {
   return [
     {
       id: '1',
-      label: '先返回主工作区，再删除 worktree 和分支',
+      label: '删除当前 worktree（默认也清理当前 root session 的子代理 worktree）',
       worktreePath: context.worktreePath,
       featureBranch: context.featureBranch,
       rootRepoPath: context.rootRepoPath,
@@ -325,9 +360,11 @@ function buildCompletionChoices(context: {
     },
     {
       id: '2',
-      label: '不删除，保留当前工作区',
+      label: '保留当前 worktree（默认仍清理当前 root session 的子代理 worktree）',
       worktreePath: context.worktreePath,
       featureBranch: context.featureBranch,
+      rootRepoPath: context.rootRepoPath,
+      baseBranch: context.baseBranch,
     },
     {
       id: '3',
@@ -336,27 +373,52 @@ function buildCompletionChoices(context: {
   ] as const
 }
 
+export function classifyFinishAttention(input: FinishAttentionInput) {
+  const base = {
+    status: 'needs_attention' as const,
+    nextAction: 'repair_loop' as const,
+    reason: input.type,
+    worktreePath: input.worktreePath,
+    rootRepoPath: input.rootRepoPath,
+    featureBranch: input.featureBranch,
+    baseBranch: input.baseBranch,
+    paths: [...input.paths],
+  }
+
+  if (input.type === 'verification_failed') {
+    return {
+      ...base,
+      verification: input.verification,
+    }
+  }
+
+  return {
+    ...base,
+    stdout: input.stdout,
+    stderr: input.stderr,
+  }
+}
+
 export async function buildVerificationPlan(
   cwd: string,
   paths: string[],
 ): Promise<VerificationPlan> {
   if (paths.length === 0) {
-    throw new Error('workflow-finish 需要至少一个 --path')
+    throw new Error('finishing-a-development-branch 需要至少一个 --path')
   }
 
   const fmtCheck: TaskSelection = { mode: 'paths', reason: 'scoped_paths', paths }
-  const lintTargets = await getCodeTargets(cwd, paths)
-  const checkTargets = await getCodeTargets(cwd, paths)
+  const codeTargets = await getCodeTargets(cwd, paths)
 
   return {
     fmtCheck,
     lintCheck:
-      lintTargets.length > 0
-        ? { mode: 'paths', reason: 'scoped_paths', paths: lintTargets }
+      codeTargets.length > 0
+        ? { mode: 'paths', reason: 'scoped_paths', paths: codeTargets }
         : { mode: 'skip', reason: 'no_lint_targets' },
     check:
-      checkTargets.length > 0
-        ? { mode: 'paths', reason: 'scoped_paths', paths: checkTargets }
+      codeTargets.length > 0
+        ? { mode: 'paths', reason: 'scoped_paths', paths: codeTargets }
         : { mode: 'skip', reason: 'no_check_targets' },
     test: await getTestSelection(cwd, paths),
   }
@@ -480,7 +542,7 @@ async function main() {
   const action = 'finish'
   const message = parseFlag(Deno.args, '--message')?.trim()
   if (!message) {
-    fail(action, 'missing_message', 'workflow-finish 需要完整 commit message')
+    fail(action, 'missing_message', 'finishing-a-development-branch 需要完整 commit message')
   }
 
   const rawPaths = parseRepeatedFlag(Deno.args, '--path')
@@ -488,7 +550,7 @@ async function main() {
     .filter(Boolean)
   const uniquePaths = [...new Set(rawPaths)]
   if (uniquePaths.length === 0) {
-    fail(action, 'missing_paths', 'workflow-finish 需要至少一个 --path')
+    fail(action, 'missing_paths', 'finishing-a-development-branch 需要至少一个 --path')
   }
 
   const worktreePath = await requireGitValue(
@@ -496,10 +558,15 @@ async function main() {
     ['rev-parse', '--show-toplevel'],
     'git_root_failed',
   )
-  if (!worktreePath.includes('/.claude/worktrees/')) {
-    fail(action, 'finish_requires_worktree', '当前不在 worktree 中，拒绝执行 workflow-finish', {
-      worktreePath,
-    })
+  if (!isManagedFinishWorktreePath(worktreePath)) {
+    fail(
+      action,
+      'finish_requires_worktree',
+      '当前不在 .claude/worktrees/ 下，拒绝执行 finishing-a-development-branch',
+      {
+        worktreePath,
+      },
+    )
   }
 
   const featureBranch = await requireGitValue(
@@ -519,14 +586,12 @@ async function main() {
   const mergeMainIntoFeature = await runGit(['merge', baseBranch], worktreePath)
   if (mergeMainIntoFeature.code !== 0) {
     if (isMergeConflict(mergeMainIntoFeature)) {
-      console.log('合并 main 时发生冲突，需要进入 ralph-loop')
+      console.log('合并主分支时发生冲突，需要进入 repair loop')
       printJson({
         ok: true,
         action,
-        data: {
-          status: 'needs_attention',
-          nextAction: 'ralph_loop',
-          reason: 'merge_conflict',
+        data: classifyFinishAttention({
+          type: 'merge_main_conflict',
           worktreePath,
           rootRepoPath,
           featureBranch,
@@ -534,7 +599,7 @@ async function main() {
           paths: uniquePaths,
           stdout: mergeMainIntoFeature.stdout,
           stderr: mergeMainIntoFeature.stderr,
-        },
+        }),
       } satisfies Success<Record<string, unknown>>)
       return
     }
@@ -556,14 +621,12 @@ async function main() {
 
   const verification = await runVerification(worktreePath, uniquePaths)
   if (!verification.ok) {
-    console.log('验证失败，需要进入 ralph-loop')
+    console.log('验证失败，需要进入 repair loop')
     printJson({
       ok: true,
       action,
-      data: {
-        status: 'needs_attention',
-        nextAction: 'ralph_loop',
-        reason: 'verification_failed',
+      data: classifyFinishAttention({
+        type: 'verification_failed',
         worktreePath,
         rootRepoPath,
         featureBranch,
@@ -575,7 +638,7 @@ async function main() {
           stdout: verification.stdout,
           stderr: verification.stderr,
         },
-      },
+      }),
     } satisfies Success<Record<string, unknown>>)
     return
   }
@@ -594,6 +657,25 @@ async function main() {
   console.log(`合并 ${featureBranch} 回 ${baseBranch}`)
   const mergeFeatureIntoMain = await runGit(['merge', featureBranch], rootRepoPath)
   if (mergeFeatureIntoMain.code !== 0) {
+    if (isMergeConflict(mergeFeatureIntoMain)) {
+      console.log('merge-back 时发生冲突，需要进入 repair loop')
+      printJson({
+        ok: true,
+        action,
+        data: classifyFinishAttention({
+          type: 'merge_back_conflict',
+          worktreePath,
+          rootRepoPath,
+          featureBranch,
+          baseBranch,
+          paths: uniquePaths,
+          stdout: mergeFeatureIntoMain.stdout,
+          stderr: mergeFeatureIntoMain.stderr,
+        }),
+      } satisfies Success<Record<string, unknown>>)
+      return
+    }
+
     fail(
       action,
       'merge_feature_into_main_failed',
