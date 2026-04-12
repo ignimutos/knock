@@ -11,7 +11,7 @@
   "permissions": {
     "allow": [],
     "deny": [],
-    "defaultMode": "bypassPermissions",
+    "defaultMode": "acceptEdits",
     "skipDangerousModePermissionPrompt": true
   },
   "hooks": {
