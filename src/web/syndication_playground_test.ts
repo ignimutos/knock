@@ -15,6 +15,7 @@ Deno.test('syndication_playground: 空 mapping 时应保留 runtime 默认行为
   })
 
   assertEquals(parsed.source.http?.url, 'https://example.com/feed.xml')
+  assertEquals(parsed.source.deliveries, {})
   assertEquals(parsed.source.syndication, {})
 })
 

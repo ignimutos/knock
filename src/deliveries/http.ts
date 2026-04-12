@@ -33,6 +33,20 @@ export interface HttpDelivery {
 const queryPayloadSchema = z.union([z.string(), z.record(z.string(), z.unknown())])
 const formPayloadSchema = z.record(z.string(), z.unknown())
 
+type HttpDeliveryFailureReason =
+  | 'transport_error'
+  | 'response_parse_error'
+  | 'response_predicate_render_error'
+  | 'response_message_render_error'
+  | 'response_predicate_false'
+  | 'http_status_not_ok'
+
+type AnnotatedHttpDeliveryError = Error & {
+  safeLogMessage?: string
+  deliveryReason?: HttpDeliveryFailureReason
+  httpStatus?: number
+}
+
 function buildQueryString(payload: HttpPayload | undefined): string {
   if (payload === undefined) return ''
 
@@ -130,13 +144,46 @@ function buildResponseTemplateContext(
   )
 }
 
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+function annotateError(
+  error: unknown,
+  params: {
+    safeLogMessage: string
+    deliveryReason?: HttpDeliveryFailureReason
+    httpStatus?: number
+  },
+): AnnotatedHttpDeliveryError {
+  const nextError = toError(error) as AnnotatedHttpDeliveryError
+  nextError.safeLogMessage = params.safeLogMessage
+  nextError.deliveryReason = params.deliveryReason
+  if (params.httpStatus !== undefined) {
+    nextError.httpStatus = params.httpStatus
+  }
+  return nextError
+}
+
+function createFailureError(params: {
+  message: string
+  safeLogMessage: string
+  deliveryReason: HttpDeliveryFailureReason
+  httpStatus: number
+}): AnnotatedHttpDeliveryError {
+  const error = new Error(params.message) as AnnotatedHttpDeliveryError
+  error.name = 'HttpDeliveryError'
+  error.safeLogMessage = params.safeLogMessage
+  error.deliveryReason = params.deliveryReason
+  error.httpStatus = params.httpStatus
+  return error
+}
+
 export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDelivery {
   const renderTemplate = options.renderContent ?? renderContent
 
   return {
     async push(req: HttpDeliveryRequest): Promise<void> {
-      const { url, init } = buildRequestInit(req)
-
       const logFields = {
         ...(req.templateContext ? (getLogFields(req.templateContext) ?? {}) : {}),
         'delivery.id': req.deliveryId,
@@ -148,43 +195,114 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
         ...logFields,
       })
 
-      const response = await options.httpClient.request({
-        transport: req.http,
-        request: url,
-        init,
-      })
-      const normalized = await normalizeResponse(response)
-      const responseContext = buildResponseTemplateContext(normalized, req.templateContext)
-      const predicate = req.response?.predicate
-      const messageTemplate = req.response?.message
-      const passed = predicate
-        ? (await renderTemplate(predicate, responseContext)).trim() === 'true'
-        : response.ok
-      const safeMessage = `HTTP 推送失败: status=${response.status}`
+      try {
+        const { url, init } = buildRequestInit(req)
+        const response = await options.httpClient
+          .request({
+            transport: req.http,
+            request: url,
+            init,
+          })
+          .catch((error) => {
+            throw annotateError(error, {
+              safeLogMessage: 'HTTP 推送失败: transport_error',
+              deliveryReason: 'transport_error',
+            })
+          })
+        const predicate = req.response?.predicate
+        const messageTemplate = req.response?.message
+        const safeMessage = `HTTP 推送失败: status=${response.status}`
 
-      if (!passed) {
-        const message = messageTemplate
-          ? await renderTemplate(messageTemplate, responseContext)
-          : safeMessage
+        let responseContextPromise: Promise<Record<string, unknown>> | undefined
+        const getResponseContext = (): Promise<Record<string, unknown>> => {
+          if (!responseContextPromise) {
+            responseContextPromise = normalizeResponse(response)
+              .then((normalized) => buildResponseTemplateContext(normalized, req.templateContext))
+              .catch((error) => {
+                throw annotateError(error, {
+                  safeLogMessage: 'HTTP 推送失败: response_parse_error',
+                  deliveryReason: 'response_parse_error',
+                  httpStatus: response.status,
+                })
+              })
+          }
+          return responseContextPromise
+        }
+
+        if (predicate) {
+          const responseContext = await getResponseContext()
+          const passed = await renderTemplate(predicate, responseContext)
+            .then((value) => value.trim() === 'true')
+            .catch((error) => {
+              throw annotateError(error, {
+                safeLogMessage: 'HTTP 推送失败: response_predicate_render_error',
+                deliveryReason: 'response_predicate_render_error',
+                httpStatus: response.status,
+              })
+            })
+
+          if (!passed) {
+            const message = messageTemplate
+              ? await renderTemplate(messageTemplate, responseContext).catch((error) => {
+                  throw annotateError(error, {
+                    safeLogMessage: 'HTTP 推送失败: response_message_render_error',
+                    deliveryReason: 'response_message_render_error',
+                    httpStatus: response.status,
+                  })
+                })
+              : safeMessage
+            throw createFailureError({
+              message,
+              safeLogMessage: safeMessage,
+              deliveryReason: 'response_predicate_false',
+              httpStatus: response.status,
+            })
+          }
+        } else if (!response.ok) {
+          const message = messageTemplate
+            ? await getResponseContext().then((responseContext) =>
+                renderTemplate(messageTemplate, responseContext).catch((error) => {
+                  throw annotateError(error, {
+                    safeLogMessage: 'HTTP 推送失败: response_message_render_error',
+                    deliveryReason: 'response_message_render_error',
+                    httpStatus: response.status,
+                  })
+                }),
+              )
+            : safeMessage
+          throw createFailureError({
+            message,
+            safeLogMessage: safeMessage,
+            deliveryReason: 'http_status_not_ok',
+            httpStatus: response.status,
+          })
+        }
+
+        options.logger?.info('HTTP 推送成功', {
+          'delivery.operation': 'push',
+          'delivery.outcome': 'success',
+          ...logFields,
+          http_status: response.status,
+        })
+      } catch (error) {
+        const annotatedError = error as AnnotatedHttpDeliveryError
         options.logger?.error('HTTP 推送失败', {
           'delivery.operation': 'push',
           'delivery.outcome': 'failure',
+          ...(annotatedError.deliveryReason
+            ? { 'delivery.reason': annotatedError.deliveryReason }
+            : {}),
           ...logFields,
-          http_status: response.status,
-          error_name: 'HttpDeliveryError',
-          error_message: safeMessage,
+          ...(annotatedError.httpStatus !== undefined
+            ? { http_status: annotatedError.httpStatus }
+            : {}),
+          error_name: annotatedError.name,
+          error_message:
+            annotatedError.safeLogMessage ??
+            (annotatedError.message.trim() ? annotatedError.message : 'HTTP 推送失败'),
         })
-        const error = new Error(message) as Error & { safeLogMessage?: string }
-        error.safeLogMessage = safeMessage
-        throw error
+        throw annotatedError
       }
-
-      options.logger?.info('HTTP 推送成功', {
-        'delivery.operation': 'push',
-        'delivery.outcome': 'success',
-        ...logFields,
-        http_status: response.status,
-      })
     },
   }
 }

@@ -54,8 +54,8 @@ sources:
     http:
       url: ${'${KNOCK_TEST_SOURCE_URL}'}
     deliveries:
-      - webhook
-      - archive
+      webhook: {}
+      archive: {}
     syndication:
       entry:
         id: "{{ id }}"
@@ -116,6 +116,44 @@ sources: {}
   } finally {
     Deno.env.delete('KNOCK_TEST_EMAIL_URL')
   }
+})
+
+test('loadConfig: source.deliveries keyed map 应保留普通声明顺序并映射到 resolved delivery', async () => {
+  await emptyDir(TEST_RUNTIME)
+  await ensureDir(TEST_RUNTIME)
+
+  await Deno.writeTextFile(
+    join(TEST_RUNTIME, 'config.yml'),
+    `
+deliveries:
+  first:
+    file:
+      path: first.md
+      content: first
+  second:
+    file:
+      path: second.md
+      content: second
+
+sources:
+  feed:
+    http:
+      url: https://example.com/feed.xml
+    deliveries:
+      second: {}
+      first: {}
+`,
+  )
+
+  const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+  assertEquals(
+    config.sources[0].deliveries.map((delivery) => delivery.id),
+    ['feed__second__0', 'feed__first__1'],
+  )
+  assertEquals(
+    config.sources[0].deliveries.map((delivery) => delivery.file?.content),
+    ['second', 'first'],
+  )
 })
 
 test('loadConfig: 缺失环境变量时应报出配置路径', async () => {

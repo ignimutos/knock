@@ -160,7 +160,7 @@ sources:
     http:
       url: https://github.com/denoland/deno/releases.atom
     deliveries:
-      - local
+      local: {}
 ```
 
 这份配置的意思：
@@ -219,7 +219,7 @@ sources:
       url: https://github.com/denoland/deno/releases.atom
     schedule: '0 */30 * * * *'
     deliveries:
-      - local
+      local: {}
 ```
 
 然后启动：
@@ -385,6 +385,7 @@ deliveries:
         type: body
         payload:
           chat_id: '${TELEGRAM_CHAT_ID}'
+          parse_mode: 'HTML'
           text: |
             <b>{{ title }}</b>
 
@@ -414,6 +415,21 @@ deliveries:
         predicate: '{{ ok }}'
         message: 'webhook failed: {{ status }}'
 
+  release_email:
+    email:
+      smtp:
+        host: '${SMTP_HOST}'
+        port: 587
+        security: starttls
+      message:
+        from: 'bot+{{ source.id }}@example.com'
+        to:
+          - 'team+{{ entry.id }}@example.com'
+        subject: '[{{ source.id }}] {{ entry.title }}'
+        text: |
+          {{ entry.title }}
+          {{ entry.link }}
+
 sources:
   deno:
     name: Deno releases
@@ -425,10 +441,19 @@ sources:
         User-Agent: knock-example
     schedule: '0 */30 * * * *'
     deliveries:
-      - local
-      - telegram_webhook
-      - webhook
-      - release_email
+      local: {}
+      telegram_webhook:
+        payload:
+          text: |
+            <b>[{{ source.id }}] {{ title }}</b>
+
+            {{ content | strip_html }}
+
+            {{ link }}
+      webhook: {}
+      release_email:
+        message:
+          subject: '[release][{{ source.id }}] {{ entry.title }}'
     filter: '{{ title | match_regex: "release", "i" }}'
     syndication:
       entry:
@@ -444,7 +469,7 @@ sources:
     http:
       url: https://example.com/news
     deliveries:
-      - local
+      local: {}
     xquery:
       locate: //article
       feed:
@@ -733,7 +758,7 @@ logging:
 - `webhook`
 - `telegram_webhook`
 
-source 通过 `sources.<id>.deliveries` 引用这些 delivery ID。
+source 通过 `sources.<id>.deliveries` 这个 keyed map 引用这些 delivery ID，并可按 delivery 类型覆写默认消息子树。
 
 一个 delivery 只能配置一种投递目标（`file` / `push` / `email` 三选一）：
 
@@ -1088,7 +1113,7 @@ sources:
       maxTimeout: 60s
       proxy: http://user:pass@127.0.0.1:8080
     deliveries:
-      - local
+      local: {}
     xquery:
       locate: //article
       entry:
@@ -1116,7 +1141,7 @@ sources:
     http:
       url: https://github.com/denoland/deno/releases.atom
     deliveries:
-      - local
+      local: {}
 ```
 
 ### 完整示例
@@ -1132,8 +1157,10 @@ sources:
         User-Agent: knock-example
     schedule: '0 */30 * * * *'
     deliveries:
-      - local
-      - telegram_webhook
+      local: {}
+      telegram_webhook:
+        payload:
+          text: '{{ title }}'
     filter: '{{ title | match_regex: "release", "i" }}'
     syndication:
       feed:
@@ -1168,14 +1195,29 @@ cron 表达式。写了就会进入调度模式；不写就只在 `--immediate` 
 
 ### `deliveries`
 
-一个字符串数组，填写 delivery ID。
+一个 keyed map，key 是 delivery ID，value 是该 source 对对应 delivery 的 override。
+
+规则：
+
+- file 只能覆写 `content`
+- push 只能覆写 `payload`
+- email 只能覆写 `message`
+- 不需要覆写时使用 `{}`
+- source 侧不能改 transport 层字段，例如 `file.path`、`push.http.*`、`email.smtp.*`
+- merge 语义为：对象 deep merge、数组整体替换、标量直接替换
+- v1 不支持 null-delete；`null` 不能用来删除默认字段
 
 例如：
 
 ```yml
 deliveries:
-  - local
-  - telegram_webhook
+  local: {}
+  telegram_webhook:
+    payload:
+      text: '{{ title }}'
+  release_email:
+    message:
+      subject: '[{{ source.id }}] {{ entry.title }}'
 ```
 
 ### `filter`
@@ -1338,7 +1380,7 @@ sources:
     http:
       url: https://example.com/news
     deliveries:
-      - local
+      local: {}
     xquery:
       locate: //li
       entry:
@@ -1428,7 +1470,7 @@ XQuery 映射值就是**原生 XPath/XQuery 表达式**，不是 Liquid 模板�
 
 ## 模板上下文
 
-无论是 `filter` 还是 `delivery.content`，可用上下文都来自：
+无论是 `filter`，还是 `file.content` / `push.request.payload` / `email.message` 里的模板字符串，可用上下文都来自：
 
 ```ts
 {
@@ -1671,7 +1713,7 @@ sources:
       url: https://github.com/denoland/deno/releases.atom
     schedule: '0 */30 * * * *'
     deliveries:
-      - local
+      local: {}
 ```
 
 ## 示例 2：通过 push 直连 Telegram Bot API（HTML）
@@ -1700,7 +1742,14 @@ sources:
     http:
       url: https://github.com/denoland/deno/releases.atom
     deliveries:
-      - telegram_webhook
+      telegram_webhook:
+        payload:
+          text: |
+            <b>[{{ source.id }}] {{ title }}</b>
+
+            {{ content | to_telegram_html }}
+
+            {{ link }}
 ```
 
 ## 示例 3：通过 push 直连 Telegram Bot API（MarkdownV2）
@@ -1734,7 +1783,7 @@ sources:
     http:
       url: https://github.com/denoland/deno/releases.atom
     deliveries:
-      - telegram_webhook_md
+      telegram_webhook_md: {}
 ```
 
 ## 示例 3：只推送标题里带 `release` 的版本
@@ -1751,7 +1800,7 @@ sources:
     http:
       url: https://github.com/denoland/deno/releases.atom
     deliveries:
-      - local
+      local: {}
     filter: '{{ title | match_regex: "release", "i" }}'
 ```
 
@@ -1779,7 +1828,7 @@ sources:
     http:
       url: https://github.com/denoland/deno/releases.atom
     deliveries:
-      - webhook
+      webhook: {}
 ```
 
 ## 示例 5：从普通网页提取条目
@@ -1797,7 +1846,7 @@ sources:
     http:
       url: https://example.com/news
     deliveries:
-      - local
+      local: {}
     xquery:
       locate: //article
       feed:

@@ -246,7 +246,7 @@ sources:
     http:
       url: https://example.com/rust.xml
     deliveries:
-      - webhook
+      webhook: {}
     syndication:
       entry:
         id: "{{ id }}"
@@ -363,7 +363,7 @@ sources:
       headers:
         X-Source-Token: source-token
     deliveries:
-      - webhook
+      webhook: {}
     syndication:
       entry:
         id: "{{ id }}"
@@ -561,7 +561,7 @@ sources:
         title: "{{ title }}"
         description: "{{ description }}"
     deliveries:
-      - local
+      local: {}
 `,
     )
 
@@ -619,7 +619,7 @@ sources:
         link: "{{ link }}"
         description: "{{ description }}"
     deliveries:
-      - local
+      local: {}
     filter: "{{ entry.title != '' }}"
 `,
   )
@@ -750,7 +750,7 @@ sources:
       url: https://example.com/rust.xml
     schedule: "*/5 * * * *"
     deliveries:
-      - local
+      local: {}
     syndication:
       entry:
         id: "{{ id }}"
@@ -831,7 +831,7 @@ sources:
       url: https://example.com/rust.xml
     schedule: "*/5 * * * *"
     deliveries:
-      - local
+      local: {}
     syndication:
       entry:
         id: "{{ id }}"
@@ -907,7 +907,7 @@ sources:
     http:
       url: https://example.com/rust.xml
     deliveries:
-      - release_email
+      release_email: {}
     syndication:
       entry:
         id: "{{ id }}"
@@ -1013,7 +1013,7 @@ sources:
     http:
       url: https://example.com/rust.xml
     deliveries:
-      - webhook
+      webhook: {}
     syndication:
         entry:
           id: "{{ id }}"

@@ -8,6 +8,7 @@ import {
   ISSUE_DEPRECATED_DELIVERY_HTTP,
   ISSUE_ILLEGAL,
   ISSUE_INTEGER,
+  ISSUE_OBJECT,
   ISSUE_REQUIRED,
   ISSUE_SOURCE_PARSER_CONFLICT,
   ISSUE_SOURCE_PUSH_FORBIDDEN,
@@ -62,6 +63,35 @@ function stringArraySchema() {
     },
     { message: ISSUE_STRING_ARRAY },
   )
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function objectRecordSchema<T extends Record<string, unknown>>() {
+  return z.custom<T>((value) => isPlainObject(value), { message: ISSUE_OBJECT })
+}
+
+function addIllegalKeyIssues(
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  ctx: z.RefinementCtx,
+) {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) {
+      ctx.addIssue({
+        path: [key],
+        code: 'custom',
+        message: ISSUE_ILLEGAL,
+      })
+    }
+  }
 }
 
 function createDurationSchema(path: string, options: { allowDays?: boolean } = {}) {
@@ -204,6 +234,56 @@ function validateLiquidPayload(
       validateLiquidPayload(child, ctx, [...path, key], capabilityPath)
     }
   }
+}
+
+function validateHttpPayloadShape(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+): boolean {
+  const parsed = httpPayloadSchema.safeParse(value)
+  if (parsed.success) {
+    return true
+  }
+
+  for (const issue of parsed.error.issues) {
+    ctx.addIssue({
+      path: [...path, ...issue.path],
+      code: 'custom',
+      message: issue.message,
+    })
+  }
+
+  return false
+}
+
+function validateRequiredTemplateOverride(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  capabilityPath: string,
+): void {
+  const parsed = requiredString().safeParse(value)
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue({
+        path: [...path, ...issue.path],
+        code: 'custom',
+        message: issue.message,
+      })
+    }
+    return
+  }
+
+  validateLiquidTemplate(parsed.data, ctx, path, capabilityPath)
+}
+
+function hasForbiddenBodyPayload(
+  method: string | undefined,
+  requestType: string | undefined,
+  payload: unknown,
+): boolean {
+  return (method === 'GET' || method === 'HEAD') && requestType === 'body' && payload !== undefined
 }
 
 function createMappingSchema(
@@ -360,12 +440,47 @@ export const fileSchema = z
     validateLiquidTemplate(value.content, ctx, ['content'], 'deliveries.*.file.content')
   })
 
+function createTemplateStringSchema(capabilityPath: string, options: { required?: boolean } = {}) {
+  const baseSchema = options.required === false ? z.string() : requiredString()
+  return baseSchema.superRefine((value, ctx) => {
+    validateLiquidTemplate(value, ctx, [], capabilityPath)
+  })
+}
+
 function createTemplateStringArraySchema(capabilityPath: string) {
   return stringArraySchema().superRefine((items, ctx) => {
     items.forEach((item, index) => {
       validateLiquidTemplate(item, ctx, [index], capabilityPath)
     })
   })
+}
+
+function createTemplateStringRecordSchema(capabilityPath: string) {
+  return z.record(z.string(), z.string()).superRefine((record, ctx) => {
+    for (const [key, value] of Object.entries(record)) {
+      validateLiquidTemplate(value, ctx, [key], capabilityPath)
+    }
+  })
+}
+
+function addSchemaIssues<T>(
+  parsed: z.ZodSafeParseResult<T>,
+  ctx: z.RefinementCtx,
+  path: Array<string | number> = [],
+): boolean {
+  if (parsed.success) {
+    return true
+  }
+
+  for (const issue of parsed.error.issues) {
+    ctx.addIssue({
+      path: [...path, ...issue.path],
+      code: 'custom',
+      message: issue.message,
+    })
+  }
+
+  return false
 }
 
 const emailSmtpAuthSchema = z
@@ -394,38 +509,32 @@ export const emailSmtpSchema = z
   })
   .strict()
 
+const emailMessageFieldSchemas = {
+  from: createTemplateStringSchema('deliveries.*.email.message.from'),
+  to: createTemplateStringArraySchema('deliveries.*.email.message.to[]'),
+  cc: createTemplateStringArraySchema('deliveries.*.email.message.cc[]'),
+  bcc: createTemplateStringArraySchema('deliveries.*.email.message.bcc[]'),
+  replyTo: createTemplateStringArraySchema('deliveries.*.email.message.replyTo[]'),
+  subject: createTemplateStringSchema('deliveries.*.email.message.subject'),
+  text: createTemplateStringSchema('deliveries.*.email.message.text', { required: false }),
+  html: createTemplateStringSchema('deliveries.*.email.message.html', { required: false }),
+  headers: createTemplateStringRecordSchema('deliveries.*.email.message.headers.*'),
+} as const
+
 export const emailMessageSchema = z
   .object({
-    from: requiredString(),
-    to: createTemplateStringArraySchema('deliveries.*.email.message.to[]'),
-    cc: createTemplateStringArraySchema('deliveries.*.email.message.cc[]').optional(),
-    bcc: createTemplateStringArraySchema('deliveries.*.email.message.bcc[]').optional(),
-    replyTo: createTemplateStringArraySchema('deliveries.*.email.message.replyTo[]').optional(),
-    subject: requiredString(),
-    text: z.string().optional(),
-    html: z.string().optional(),
-    headers: z.record(z.string(), z.string()).optional(),
+    from: emailMessageFieldSchemas.from,
+    to: emailMessageFieldSchemas.to,
+    cc: emailMessageFieldSchemas.cc.optional(),
+    bcc: emailMessageFieldSchemas.bcc.optional(),
+    replyTo: emailMessageFieldSchemas.replyTo.optional(),
+    subject: emailMessageFieldSchemas.subject,
+    text: emailMessageFieldSchemas.text.optional(),
+    html: emailMessageFieldSchemas.html.optional(),
+    headers: emailMessageFieldSchemas.headers.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    validateLiquidTemplate(value.from, ctx, ['from'], 'deliveries.*.email.message.from')
-    validateLiquidTemplate(value.subject, ctx, ['subject'], 'deliveries.*.email.message.subject')
-    if (value.text !== undefined) {
-      validateLiquidTemplate(value.text, ctx, ['text'], 'deliveries.*.email.message.text')
-    }
-    if (value.html !== undefined) {
-      validateLiquidTemplate(value.html, ctx, ['html'], 'deliveries.*.email.message.html')
-    }
-    if (value.headers) {
-      for (const [key, headerValue] of Object.entries(value.headers)) {
-        validateLiquidTemplate(
-          headerValue,
-          ctx,
-          ['headers', key],
-          'deliveries.*.email.message.headers.*',
-        )
-      }
-    }
     if (value.text === undefined && value.html === undefined) {
       ctx.addIssue({
         path: [],
@@ -441,6 +550,89 @@ export const emailSchema = z
     message: emailMessageSchema,
   })
   .strict()
+
+const sourceDeliveriesSchema = objectRecordSchema<
+  Record<string, Record<string, unknown>>
+>().superRefine((value, ctx) => {
+  for (const [key, child] of Object.entries(value)) {
+    if (!isPlainObject(child)) {
+      ctx.addIssue({
+        path: [key],
+        code: 'custom',
+        message: ISSUE_OBJECT,
+      })
+    }
+  }
+})
+
+const sourceFileDeliveryOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, ['content'], ctx)
+
+    if (value.content !== undefined) {
+      validateRequiredTemplateOverride(value.content, ctx, ['content'], 'deliveries.*.file.content')
+    }
+  },
+)
+
+const sourcePushDeliveryOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, ['payload'], ctx)
+
+    if (value.payload !== undefined) {
+      if (validateHttpPayloadShape(value.payload, ctx, ['payload'])) {
+        validateLiquidPayload(
+          value.payload,
+          ctx,
+          ['payload'],
+          'deliveries.*.push.request.payload.**',
+        )
+      }
+    }
+  },
+)
+
+const sourceEmailMessageOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, Object.keys(emailMessageFieldSchemas), ctx)
+
+    const optionalFieldSchemas = {
+      from: emailMessageFieldSchemas.from.optional(),
+      to: emailMessageFieldSchemas.to.optional(),
+      cc: emailMessageFieldSchemas.cc.optional(),
+      bcc: emailMessageFieldSchemas.bcc.optional(),
+      replyTo: emailMessageFieldSchemas.replyTo.optional(),
+      subject: emailMessageFieldSchemas.subject.optional(),
+      text: emailMessageFieldSchemas.text.optional(),
+      html: emailMessageFieldSchemas.html.optional(),
+      headers: emailMessageFieldSchemas.headers.optional(),
+    } as const
+
+    for (const [key, schema] of Object.entries(optionalFieldSchemas)) {
+      if (value[key] === undefined) continue
+      addSchemaIssues((schema as z.ZodType<unknown>).safeParse(value[key]), ctx, [key])
+    }
+  },
+)
+
+const sourceEmailDeliveryOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, ['message'], ctx)
+
+    if (value.message !== undefined) {
+      const parsed = sourceEmailMessageOverrideSchema.safeParse(value.message)
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({
+            path: ['message', ...issue.path],
+            code: 'custom',
+            message: issue.message,
+          })
+        }
+      }
+    }
+  },
+)
 
 const retryStatusCodeSchema = z
   .number({ error: ISSUE_INTEGER })
@@ -568,11 +760,7 @@ export const pushSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (
-      (value.http.method === 'GET' || value.http.method === 'HEAD') &&
-      value.request.type === 'body' &&
-      value.request.payload !== undefined
-    ) {
+    if (hasForbiddenBodyPayload(value.http.method, value.request.type, value.request.payload)) {
       ctx.addIssue({
         path: ['request', 'payload'],
         code: 'custom',
@@ -1042,7 +1230,7 @@ export const sourceSchema = z
     name: z.string().optional(),
     enabled: optionalBoolean(),
     schedule: z.string().optional(),
-    deliveries: stringArraySchema().optional(),
+    deliveries: sourceDeliveriesSchema.optional(),
     filter: z.string().optional(),
     http: sourceHttpSchema.optional(),
     byparr: byparrSchema.optional(),
@@ -1130,14 +1318,53 @@ function validateAppConfigReferences(
   },
   ctx: z.core.$RefinementCtx,
 ) {
-  const deliveryIds = new Set(Object.keys(value.deliveries ?? {}))
+  const deliveries = value.deliveries ?? {}
+  const deliveryIds = new Set(Object.keys(deliveries))
 
   for (const [sourceId, source] of Object.entries(value.sources ?? {})) {
-    for (const deliveryId of source.deliveries ?? []) {
+    for (const [deliveryId, override] of Object.entries(source.deliveries ?? {})) {
       if (!deliveryIds.has(deliveryId)) {
         ctx.addIssue({
           code: 'custom',
           message: `source.${sourceId}.deliveries 引用了未定义 delivery: ${deliveryId}`,
+        })
+        continue
+      }
+
+      const target = deliveries[deliveryId]
+      const parsed = target?.file
+        ? sourceFileDeliveryOverrideSchema.safeParse(override)
+        : target?.push
+          ? sourcePushDeliveryOverrideSchema.safeParse(override)
+          : target?.email
+            ? sourceEmailDeliveryOverrideSchema.safeParse(override)
+            : undefined
+
+      if (
+        target?.push &&
+        parsed?.success &&
+        hasForbiddenBodyPayload(
+          target.push.http.method,
+          target.push.request.type,
+          parsed.data.payload,
+        )
+      ) {
+        ctx.addIssue({
+          path: ['sources', sourceId, 'deliveries', deliveryId, 'payload'],
+          code: 'custom',
+          message: ISSUE_BODY_PAYLOAD_FORBIDDEN,
+        })
+      }
+
+      if (!parsed || parsed.success) {
+        continue
+      }
+
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({
+          path: ['sources', sourceId, 'deliveries', deliveryId, ...issue.path],
+          code: 'custom',
+          message: issue.message,
         })
       }
     }
@@ -1275,15 +1502,11 @@ export const phase1ConfigSchema = z.record(z.string(), z.unknown()).superRefine(
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue
     const deliveries = (value as Record<string, unknown>).deliveries
     if (!Array.isArray(deliveries)) continue
-    for (const delivery of deliveries) {
-      if (typeof delivery !== 'string') {
-        ctx.addIssue({
-          code: 'custom',
-          message: `source.${sourceId}.deliveries 已迁移为字符串数组`,
-        })
-        return
-      }
-    }
+    ctx.addIssue({
+      code: 'custom',
+      message: `source.${sourceId}.deliveries 已迁移为 keyed map，对象 key 必须是 delivery id`,
+    })
+    return
   }
 })
 

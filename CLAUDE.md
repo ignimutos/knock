@@ -41,7 +41,7 @@
 
 ### Config model
 
-- 当前配置模型：`deliveries.<id>` 定义投递，`sources.<id>.deliveries` 引用投递 ID 数组，并允许内联 `file` / `telegram` / `push` 投递块。
+- 当前配置模型：`deliveries.<id>` 定义 canonical delivery，`sources.<id>.deliveries` 是 keyed map；key 为 delivery ID，value 为该 source 对对应 delivery 的 override。source 侧只允许按 delivery 类型覆写消息子树：file 覆写 `file.content`、push 覆写 `push.request.payload`、email 覆写 `email.message`；空 override 使用 `{}`。
 - **MUST NOT** 恢复 `templates` / `destinations` 等旧结构。
 - **MUST** 保持单一事实源，**MUST NOT** 制造双 shape。
 - 若任务未明确要求迁移兼容，**MUST NOT** 添加历史字段兼容层、别名或迁移提示。

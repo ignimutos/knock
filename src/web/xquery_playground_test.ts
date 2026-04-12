@@ -16,7 +16,7 @@ Deno.test('xquery_playground: mapping 模式请求应转换为 xquerySchema 形�
 
   assertEquals(parsed.source.id, 'playground')
   assertEquals(parsed.source.enabled, true)
-  assertEquals(parsed.source.deliveries, [])
+  assertEquals(parsed.source.deliveries, {})
   assertEquals(parsed.source.http?.url, 'https://example.com/page.html')
   assertEquals(parsed.source.xquery?.entry, { id: 'string(@data-id)', title: 'string(a)' })
   assertEquals(parsed.warnings, [])

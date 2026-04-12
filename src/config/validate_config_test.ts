@@ -1,4 +1,6 @@
 import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
+import { parseWithFirstIssue } from '../zod_utils.ts'
+import { phase1ConfigSchema } from './schema.ts'
 import { validateConfig } from './validate_config.ts'
 import type { AppConfigInput } from './schema.ts'
 
@@ -89,13 +91,201 @@ Deno.test('validateConfig: 新 push.http + push.request + source.http.url shape 
             'User-Agent': 'knock-test',
           },
         },
-        deliveries: ['webhook'],
+        deliveries: {
+          webhook: {
+            payload: {
+              text: 'custom',
+            },
+          },
+        },
       },
     },
   }
 
   validateConfig(input)
 })
+
+Deno.test('validateConfig: source.deliveries keyed map 应通过', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+      telegram: {
+        push: {
+          http: {
+            url: 'https://example.com/hook',
+          },
+          request: {
+            payload: {
+              text: '{{ entry.title }}',
+            },
+          },
+        },
+      },
+      release_email: {
+        email: {
+          smtp: {
+            host: 'smtp.example.com',
+            port: 587,
+            security: 'starttls',
+          },
+          message: {
+            from: 'bot@example.com',
+            to: ['team@example.com'],
+            subject: 'default',
+            text: 'default body',
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          local: {},
+          telegram: {
+            payload: {
+              text: 'custom',
+            },
+          },
+          release_email: {
+            message: {
+              subject: 'custom subject',
+            },
+          },
+        },
+      },
+    },
+  }
+
+  validateConfig(input)
+})
+
+Deno.test('validateConfig: source.deliveries 旧字符串数组应拒绝', () => {
+  const input = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: ['local'],
+      },
+    },
+  } as unknown as AppConfigInput
+
+  assertThrows(() => validateConfig(input), Error, 'source.feed.deliveries 必须是对象')
+})
+
+Deno.test('validateConfig: source.deliveries bare key/null 应拒绝', () => {
+  const input = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          local: null,
+        },
+      },
+    },
+  } as unknown as AppConfigInput
+
+  assertThrows(() => validateConfig(input), Error, 'source.feed.deliveries.local 必须是对象')
+})
+
+Deno.test('phase1ConfigSchema: source.deliveries 旧字符串数组应按 keyed map 契约拒绝', () => {
+  const input = {
+    deliveries: {
+      webhook: {
+        push: {
+          http: {
+            url: 'https://example.com/webhook',
+          },
+        },
+      },
+    },
+    sources: {
+      rust: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: ['webhook'],
+      },
+    },
+  } satisfies Record<string, unknown>
+
+  const err = assertThrows(() => parseWithFirstIssue(phase1ConfigSchema, input, '配置非法'), Error)
+  assertStringIncludes(
+    err.message,
+    'source.rust.deliveries 已迁移为 keyed map，对象 key 必须是 delivery id',
+  )
+})
+
+Deno.test(
+  'validateConfig: source push override payload 必须复用 canonical payload 类型约束',
+  () => {
+    const input = {
+      runtimeDir: '/tmp/runtime',
+      deliveries: {
+        webhook: {
+          push: {
+            http: {
+              url: 'https://example.com/hook',
+            },
+            request: {
+              payload: {
+                text: '{{ entry.title }}',
+              },
+            },
+          },
+        },
+      },
+      sources: {
+        feed: {
+          http: {
+            url: 'https://example.com/feed.xml',
+          },
+          deliveries: {
+            webhook: {
+              payload: 1n,
+            },
+          },
+        },
+      },
+    } as unknown as AppConfigInput
+
+    assertThrows(
+      () => validateConfig(input),
+      Error,
+      'source.feed.deliveries.webhook.payload 配置非法',
+    )
+  },
+)
 
 Deno.test('validateConfig: push.http.method 与 push.request.type 未配置时应使用默认值', () => {
   const input: AppConfigInput = {
@@ -483,7 +673,13 @@ Deno.test('validateConfig: email.smtp + email.message 合法配置应通过', ()
         http: {
           url: 'https://example.com/feed.xml',
         },
-        deliveries: ['release_email'],
+        deliveries: {
+          release_email: {
+            message: {
+              subject: '[override] {{ entry.title }}',
+            },
+          },
+        },
       },
     },
   } as const satisfies AppConfigInput
@@ -579,6 +775,525 @@ Deno.test('validateConfig: email.smtp.security 非法时应报错', () => {
     () => validateConfig(input),
     Error,
     'delivery.release_email.email.smtp.security 配置非法: tls',
+  )
+})
+
+Deno.test('validateConfig: source file override 不允许 path', () => {
+  const input = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          local: {
+            path: 'other.md',
+          },
+        },
+      },
+    },
+  } as unknown as AppConfigInput
+
+  assertThrows(() => validateConfig(input), Error, 'source.feed.deliveries.local.path 非法')
+})
+
+Deno.test('validateConfig: source file override 的空白 content 应报错', () => {
+  const base = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+      },
+    },
+  } as const satisfies AppConfigInput
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              local: {
+                content: '',
+              },
+            },
+          },
+        },
+      }),
+    Error,
+    'source.feed.deliveries.local.content 必填',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              local: {
+                content: '   ',
+              },
+            },
+          },
+        },
+      }),
+    Error,
+    'source.feed.deliveries.local.content 必填',
+  )
+})
+
+Deno.test('validateConfig: source email.message.from 与 subject 的空白覆盖应报错', () => {
+  const base = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      release_email: {
+        email: {
+          smtp: {
+            host: 'smtp.example.com',
+            port: 587,
+            security: 'starttls',
+          },
+          message: {
+            from: 'bot@example.com',
+            to: ['team@example.com'],
+            subject: 'hello',
+            text: 'world',
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+      },
+    },
+  } as const satisfies AppConfigInput
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              release_email: {
+                message: {
+                  from: '',
+                },
+              },
+            },
+          },
+        },
+      }),
+    Error,
+    'source.feed.deliveries.release_email.message.from 必填',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              release_email: {
+                message: {
+                  from: '   ',
+                },
+              },
+            },
+          },
+        },
+      }),
+    Error,
+    'source.feed.deliveries.release_email.message.from 必填',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              release_email: {
+                message: {
+                  subject: '',
+                },
+              },
+            },
+          },
+        },
+      }),
+    Error,
+    'source.feed.deliveries.release_email.message.subject 必填',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              release_email: {
+                message: {
+                  subject: '   ',
+                },
+              },
+            },
+          },
+        },
+      }),
+    Error,
+    'source.feed.deliveries.release_email.message.subject 必填',
+  )
+})
+
+Deno.test('validateConfig: source push payload override 不得绕过 GET/HEAD body 限制', () => {
+  const input = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      webhook: {
+        push: {
+          http: {
+            method: 'HEAD',
+            url: 'https://example.com/hook',
+          },
+          request: {
+            type: 'body',
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          webhook: {
+            payload: {
+              text: 'hello',
+            },
+          },
+        },
+      },
+    },
+  } as const satisfies AppConfigInput
+
+  assertThrows(
+    () => validateConfig(input),
+    Error,
+    'source.feed.deliveries.webhook.payload 配置非法: GET/HEAD 请求不允许 body payload',
+  )
+})
+
+Deno.test('validateConfig: source push override 非法 key 应报错', () => {
+  const base = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      webhook: {
+        push: {
+          http: {
+            url: 'https://example.com/hook',
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+      },
+    },
+  } as const satisfies AppConfigInput
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              webhook: {
+                http: {
+                  url: 'https://example.com/other',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'source.feed.deliveries.webhook.http 非法',
+  )
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              webhook: {
+                request: {
+                  type: 'body',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'source.feed.deliveries.webhook.request 非法',
+  )
+})
+
+Deno.test('validateConfig: source email override 非法 key 应报错', () => {
+  const base = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      release_email: {
+        email: {
+          smtp: {
+            host: 'smtp.example.com',
+            port: 587,
+            security: 'starttls',
+          },
+          message: {
+            from: 'bot@example.com',
+            to: ['team@example.com'],
+            subject: 'hello',
+            text: 'world',
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+      },
+    },
+  } as const satisfies AppConfigInput
+
+  assertThrows(
+    () =>
+      validateConfig({
+        ...base,
+        sources: {
+          feed: {
+            ...base.sources.feed,
+            deliveries: {
+              release_email: {
+                smtp: {
+                  host: 'other.example.com',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'source.feed.deliveries.release_email.smtp 非法',
+  )
+})
+
+Deno.test('validateConfig: source keyed-map override 不接受 Map 等非 plain object', () => {
+  const input = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      webhook: {
+        push: {
+          http: {
+            url: 'https://example.com/hook',
+          },
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          webhook: new Map([['payload', { text: 'hello' }]]),
+        },
+      },
+    },
+  } as unknown as AppConfigInput
+
+  assertThrows(() => validateConfig(input), Error, 'source.feed.deliveries.webhook 必须是对象')
+})
+
+Deno.test(
+  'validateConfig: source email override 的 text/html/headers.* 类型错误应报配置非法',
+  () => {
+    const base = {
+      runtimeDir: '/tmp/runtime',
+      deliveries: {
+        release_email: {
+          email: {
+            smtp: {
+              host: 'smtp.example.com',
+              port: 587,
+              security: 'starttls',
+            },
+            message: {
+              from: 'bot@example.com',
+              to: ['team@example.com'],
+              subject: 'hello',
+              text: 'world',
+            },
+          },
+        },
+      },
+      sources: {
+        feed: {
+          http: {
+            url: 'https://example.com/feed.xml',
+          },
+        },
+      },
+    } as const satisfies AppConfigInput
+
+    const textErr = assertThrows(
+      () =>
+        validateConfig({
+          ...base,
+          sources: {
+            feed: {
+              ...base.sources.feed,
+              deliveries: {
+                release_email: {
+                  message: {
+                    text: 123,
+                  },
+                },
+              },
+            },
+          },
+        } as unknown as AppConfigInput),
+      Error,
+    )
+    assertStringIncludes(
+      textErr.message,
+      'source.feed.deliveries.release_email.message.text 配置非法:',
+    )
+
+    const htmlErr = assertThrows(
+      () =>
+        validateConfig({
+          ...base,
+          sources: {
+            feed: {
+              ...base.sources.feed,
+              deliveries: {
+                release_email: {
+                  message: {
+                    html: true,
+                  },
+                },
+              },
+            },
+          },
+        } as unknown as AppConfigInput),
+      Error,
+    )
+    assertStringIncludes(
+      htmlErr.message,
+      'source.feed.deliveries.release_email.message.html 配置非法:',
+    )
+
+    const headerErr = assertThrows(
+      () =>
+        validateConfig({
+          ...base,
+          sources: {
+            feed: {
+              ...base.sources.feed,
+              deliveries: {
+                release_email: {
+                  message: {
+                    headers: {
+                      'X-Test': 1,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        } as unknown as AppConfigInput),
+      Error,
+    )
+    assertStringIncludes(
+      headerErr.message,
+      'source.feed.deliveries.release_email.message.headers.X-Test 配置非法:',
+    )
+  },
+)
+
+Deno.test('validateConfig: source.deliveries 引用未定义 delivery 时应报错', () => {
+  const input = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          missing: {},
+        },
+      },
+    },
+  } as unknown as AppConfigInput
+
+  assertThrows(
+    () => validateConfig(input),
+    Error,
+    'source.feed.deliveries 引用了未定义 delivery: missing',
   )
 })
 

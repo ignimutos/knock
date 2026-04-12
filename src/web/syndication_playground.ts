@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ResolvedSourceConfig } from '../config/types.ts'
 import {
   byparrSchema,
   sourceHttpSchema,
@@ -26,7 +27,11 @@ const playgroundRequestSchema = z
   .strict()
 
 export interface ParsedSyndicationPlaygroundRequest {
-  source: SourceConfigInput & { id: string; enabled: true; deliveries: [] }
+  source: SourceConfigInput & {
+    id: string
+    enabled: true
+    deliveries: Record<string, Record<string, unknown>>
+  }
   warnings: string[]
 }
 
@@ -54,14 +59,14 @@ export function parseSyndicationPlaygroundRequest(
       ? {
           id: 'playground',
           enabled: true as const,
-          deliveries: [] as [],
+          deliveries: {},
           byparr: parseWithFirstIssue(byparrSchema, { url: request.url }, 'byparr 配置非法'),
           syndication: mapping,
         }
       : {
           id: 'playground',
           enabled: true as const,
-          deliveries: [] as [],
+          deliveries: {},
           http: parseWithFirstIssue(
             sourceHttpSchema,
             {
@@ -92,9 +97,13 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
   const parsed = parseSyndicationPlaygroundRequest(input.request)
   const httpClient = createHttpClient({ fetcher: input.fetcher ?? fetch })
   const runFetchAndParseSource = input.fetchAndParseSourceImpl ?? fetchAndParseSource
+  const resolvedSource: ResolvedSourceConfig = {
+    ...parsed.source,
+    deliveries: [],
+  }
 
   const result = await runFetchAndParseSource({
-    source: parsed.source,
+    source: resolvedSource,
     httpClient,
     timeOptions: {
       timezone: 'UTC',

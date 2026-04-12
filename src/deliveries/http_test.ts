@@ -25,6 +25,28 @@ function getRequestMethod(input: RequestInfo | URL, init?: RequestInit): string 
   return init?.method
 }
 
+function parseLogs(lines: string[]): Array<Record<string, unknown>> {
+  return lines.map((line) => JSON.parse(line) as Record<string, unknown>)
+}
+
+function findHttpFailureLog(
+  logs: Array<Record<string, unknown>>,
+): Record<string, unknown> | undefined {
+  return logs.find((item) => {
+    const scope = (item.scope ?? {}) as Record<string, unknown>
+    const attributes = (item.attributes ?? {}) as Record<string, unknown>
+    return (
+      scope.name === 'delivery.http' &&
+      attributes['delivery.operation'] === 'push' &&
+      attributes['delivery.outcome'] === 'failure'
+    )
+  })
+}
+
+function getAttributes(record: Record<string, unknown> | undefined): Record<string, unknown> {
+  return (record?.attributes ?? {}) as Record<string, unknown>
+}
+
 Deno.test('httpDelivery: body 请求应发送 JSON body 与合并后的 headers', async () => {
   const calls: Array<{
     input: RequestInfo | URL
@@ -427,6 +449,7 @@ Deno.test(
     })
     const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
     assertEquals(Boolean(failureLog), true)
+    assertEquals(failureAttributes['delivery.reason'], 'response_predicate_false')
     assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: status=500')
     assertEquals(JSON.stringify(failureLog).includes('AI 摘要'), false)
     assertEquals(JSON.stringify(failureLog).includes('需要摘要的正文'), false)
@@ -462,6 +485,251 @@ Deno.test('httpDelivery: 成功响应时不应渲染 failure message 模板', as
   })
 
   assertEquals(renderedTemplates, ['{{ ok }}'])
+})
+
+Deno.test('httpDelivery: transport throw 时应记录统一 failure 日志', async () => {
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'delivery.http',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+  const delivery = createHttpDelivery({
+    logger,
+    httpClient: createHttpClient({
+      fetcher: () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:8080')),
+    }),
+  })
+
+  await assertRejects(
+    () =>
+      delivery.push({
+        deliveryId: 'webhook',
+        http: {
+          method: 'POST',
+          url: 'https://example.com/webhook',
+        },
+        request: {
+          type: 'body',
+          payload: {
+            text: 'Hello',
+          },
+        },
+      }),
+    Error,
+    'connect ECONNREFUSED 127.0.0.1:8080',
+  )
+
+  const failureLog = findHttpFailureLog(parseLogs(logs))
+  const failureAttributes = getAttributes(failureLog)
+  assertEquals(Boolean(failureLog), true)
+  assertEquals(failureAttributes['delivery.reason'], 'transport_error')
+  assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: transport_error')
+  assertEquals(JSON.stringify(failureLog).includes('ECONNREFUSED'), false)
+})
+
+Deno.test('httpDelivery: 2xx 且无 response 检查时 invalid JSON 不应导致失败', async () => {
+  const delivery = createHttpDelivery({
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response('{', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+    }),
+  })
+
+  await delivery.push({
+    deliveryId: 'webhook',
+    http: {
+      method: 'POST',
+      url: 'https://example.com/webhook',
+    },
+    request: {
+      type: 'body',
+    },
+  })
+})
+
+Deno.test(
+  'httpDelivery: 需要 response body 时 invalid JSON 应记录 parse failure 日志',
+  async () => {
+    const logs: string[] = []
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'delivery.http',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => logs.push(line),
+      writeWarn: (line: string) => logs.push(line),
+      writeStderr: (line: string) => logs.push(line),
+    })
+    const delivery = createHttpDelivery({
+      logger,
+      httpClient: createHttpClient({
+        fetcher: () =>
+          Promise.resolve(
+            new Response('{', {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          ),
+      }),
+      renderContent: (template, context) => {
+        if (template === '{{ body.ok }}') {
+          return Promise.resolve(String((context.body as { ok?: unknown } | undefined)?.ok ?? ''))
+        }
+        return Promise.resolve(`rendered:${template}`)
+      },
+    })
+
+    await assertRejects(
+      () =>
+        delivery.push({
+          deliveryId: 'webhook',
+          http: {
+            method: 'POST',
+            url: 'https://example.com/webhook',
+          },
+          request: {
+            type: 'body',
+          },
+          response: {
+            predicate: '{{ body.ok }}',
+          },
+        }),
+      Error,
+    )
+
+    const failureLog = findHttpFailureLog(parseLogs(logs))
+    const failureAttributes = getAttributes(failureLog)
+    assertEquals(Boolean(failureLog), true)
+    assertEquals(failureAttributes['delivery.reason'], 'response_parse_error')
+    assertEquals(failureAttributes['http.response.status_code'], 500)
+    assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: response_parse_error')
+  },
+)
+
+Deno.test(
+  'httpDelivery: predicate render throw 时应记录 predicate render failure 日志',
+  async () => {
+    const logs: string[] = []
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'delivery.http',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => logs.push(line),
+      writeWarn: (line: string) => logs.push(line),
+      writeStderr: (line: string) => logs.push(line),
+    })
+    const delivery = createHttpDelivery({
+      logger,
+      httpClient: createHttpClient({
+        fetcher: () =>
+          Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 500 })),
+      }),
+      renderContent: (template) => {
+        if (template === '{{ broken_predicate }}') {
+          return Promise.reject(new Error('predicate render exploded with raw body'))
+        }
+        return Promise.resolve('ignored')
+      },
+    })
+
+    await assertRejects(
+      () =>
+        delivery.push({
+          deliveryId: 'webhook',
+          http: {
+            method: 'POST',
+            url: 'https://example.com/webhook',
+          },
+          request: {
+            type: 'body',
+          },
+          response: {
+            predicate: '{{ broken_predicate }}',
+            message: '{{ body }}',
+          },
+        }),
+      Error,
+      'predicate render exploded with raw body',
+    )
+
+    const failureLog = findHttpFailureLog(parseLogs(logs))
+    const failureAttributes = getAttributes(failureLog)
+    assertEquals(Boolean(failureLog), true)
+    assertEquals(failureAttributes['delivery.reason'], 'response_predicate_render_error')
+    assertEquals(
+      failureAttributes['exception.message'],
+      'HTTP 推送失败: response_predicate_render_error',
+    )
+    assertEquals(JSON.stringify(failureLog).includes('raw body'), false)
+  },
+)
+
+Deno.test('httpDelivery: message render throw 时应记录 message render failure 日志', async () => {
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'delivery.http',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+  const delivery = createHttpDelivery({
+    logger,
+    httpClient: createHttpClient({
+      fetcher: () => Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 500 })),
+    }),
+    renderContent: (template) => {
+      if (template === '{{ always_false }}') return Promise.resolve('false')
+      if (template === '{{ broken_message }}') {
+        return Promise.reject(new Error('message render leaked rendered body'))
+      }
+      return Promise.resolve('ignored')
+    },
+  })
+
+  await assertRejects(
+    () =>
+      delivery.push({
+        deliveryId: 'webhook',
+        http: {
+          method: 'POST',
+          url: 'https://example.com/webhook',
+        },
+        request: {
+          type: 'body',
+        },
+        response: {
+          predicate: '{{ always_false }}',
+          message: '{{ broken_message }}',
+        },
+      }),
+    Error,
+    'message render leaked rendered body',
+  )
+
+  const failureLog = findHttpFailureLog(parseLogs(logs))
+  const failureAttributes = getAttributes(failureLog)
+  assertEquals(Boolean(failureLog), true)
+  assertEquals(failureAttributes['delivery.reason'], 'response_message_render_error')
+  assertEquals(failureAttributes['http.response.status_code'], 500)
+  assertEquals(
+    failureAttributes['exception.message'],
+    'HTTP 推送失败: response_message_render_error',
+  )
+  assertEquals(JSON.stringify(failureLog).includes('rendered body'), false)
 })
 
 Deno.test('httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', async () => {
@@ -532,7 +800,9 @@ Deno.test('httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', as
   const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
   assertEquals(Boolean(failureLog), true)
   assertEquals(failureAttributes['http.response.status_code'], 500)
+  assertEquals(failureAttributes['delivery.reason'], 'http_status_not_ok')
   assertEquals('response_body' in failureAttributes, false)
+  assertEquals(JSON.stringify(failureLog).includes("can't parse entities"), false)
   assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: status=500')
   assertEquals(closeCalls, 1)
 })

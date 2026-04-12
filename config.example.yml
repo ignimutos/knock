@@ -143,7 +143,7 @@ deliveries:
         # 目标 webhook URL（必填）
         url: "${WEBHOOK_URL}"
       request:
-        # 请求载荷编码方式：query / form / body（可选；默认: query）
+        # 请求载荷编码方式：query / form / body（可选；默认: body）
         type: body
         payload:
           text: "{{ entry.title }} => {{ entry.link }}"
@@ -222,13 +222,22 @@ sources:
         User-Agent: knock-example
     # Croner 表达式，支持秒级 cron（可选）
     schedule: "0 */30 * * * *"
-    # 关联的投递目标 ID 列表（可选）
+    # 关联的投递目标 keyed map（可选）；空 override 使用 {}
     deliveries:
-      - local
-      - telegram_webhook
-      - telegram_webhook_md
-      - webhook
-      - release_email
+      local: {}
+      telegram_webhook:
+        payload:
+          text: |
+            <b>[{{ source.id }}] {{ title }}</b>
+
+            {{ content | to_telegram_html }}
+
+            {{ link }}
+      telegram_webhook_md: {}
+      webhook: {}
+      release_email:
+        message:
+          subject: "[release][{{ source.id }}] {{ entry.title }}"
     # 条目过滤表达式；返回 truthy 才会继续投递（可选）
     # match_* 的最后一个布尔参数可反转结果，例如 `{{ title | match_regex: "release", "i", true }}`
     filter: '{{ title | match_regex: "release", "i" }}'
@@ -255,9 +264,9 @@ sources:
     http:
       # 订阅源 URL（必填）
       url: https://example.com/news
-    # 关联的投递目标 ID 列表（可选）
+    # 关联的投递目标 keyed map（可选）
     deliveries:
-      - local
+      local: {}
     # XQuery 提取配置（可选）
     xquery:
       # 每个条目的定位表达式（可选；省略时以 document 为 entry 上下文执行一次）
@@ -294,7 +303,7 @@ sources:
       # 代理 URL（可选；支持协议://用户:密码@主机:端口）
       proxy: http://user:pass@127.0.0.1:8080
     deliveries:
-      - local
+      local: {}
     xquery:
       locate: //article
       entry:
@@ -307,7 +316,7 @@ sources:
     http:
       url: https://example.com/news
     deliveries:
-      - local
+      local: {}
     xquery:
       locate: //article
       feed: |

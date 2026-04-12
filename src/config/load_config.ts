@@ -82,13 +82,13 @@ function expandEnvInConfig(parsed: Record<string, unknown>): Record<string, unkn
 function parseConfigDocument(raw: string): Record<string, unknown> {
   parseWithFirstIssue(rawConfigSyntaxSchema, raw, '配置文件格式非法')
 
-  return expandEnvInConfig(
-    parseWithFirstIssue(
-      phase1ConfigSchema,
-      (parse(raw) ?? {}) as Record<string, unknown>,
-      '配置非法',
-    ),
+  const parsed = parseWithFirstIssue(
+    phase1ConfigSchema,
+    (parse(raw) ?? {}) as Record<string, unknown>,
+    '配置非法',
   )
+
+  return expandEnvInConfig(parsed)
 }
 
 export async function loadConfig(options: LoadConfigOptions = {}): Promise<AppConfigResolved> {
