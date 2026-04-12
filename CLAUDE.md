@@ -60,7 +60,7 @@
 ## Worktree policy
 
 - 功能开发前 **SHOULD** 直接使用 `claude -w <name>` 创建并进入目标 worktree。
-- 将改动合回 `main` 的收尾操作 **SHOULD** 使用本地 `finishing-a-development-branch` finish skill 完成。
+- 将改动合回 `main` 的收尾操作 **SHOULD** 使用本地 `workflow-finish` skill 完成。
 - 非 worktree 环境 **MAY** 进行只读检查、计划阶段工作与其他不依赖 worktree 隔离的操作。
 - `/exit` **MUST NOT** 被描述为自动删除 worktree 或自动合并改动。
 
@@ -127,7 +127,7 @@
 - 对 `fmt` / `fmt:check` / `lint` / `lint:check` / `check` / `test` 这类支持 scoped 输入的 task，agent 直接调用时 **MUST** 传入实际需要检查的文件或目录；只有明确需要默认基线验证时，才 **MAY** 无参调用。
 - 对共享入口、测试基础设施、数据库基础设施、共享运行时边界，或影响面无法可靠枚举的改动，收尾前 **MUST** 运行一次全量 `deno task test`。
 - 对影响面可枚举的局部改动，**SHOULD** 按受影响文件、目录与直接调用边界扩大验证，**MUST NOT** 机械追加全量 `deno task test`；若影响共享边界但不足以要求全量，agent **SHOULD** 显式补跑关联测试文件或目录，**MUST NOT** 依赖 workflow 脚本隐式推断慢测组。
-- 调用本地 `finishing-a-development-branch` finish 脚本时，agent **MUST** 先显式整理并传入 `--path`；这些路径除了直接改动文件外，**SHOULD** 包含需要补跑的关联测试文件或目录。
+- 调用本地 `workflow-finish` 脚本时，agent **MUST** 先显式整理并传入 `--path`；这些路径除了直接改动文件外，**SHOULD** 包含需要补跑的关联测试文件或目录。
 - 典型全量触发项：`deno.json`、`scripts/run-paths.sh`、`src/test_runtime.ts`、`src/main.ts`、`src/core/app.ts`、`src/db/client.ts`、`src/db/schema.ts`、`src/db/migrations/**`、`src/sources/xquery.ts`、`src/sources/source_runtime.ts`。
 - 按改动影响 **MUST / SHOULD** 运行 `deno task check`、`deno task lint:check`、`deno task fmt:check`，以及 `deno task build`（仅 build 受影响时）。
 

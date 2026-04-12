@@ -390,7 +390,8 @@ export async function cleanupChildWorktrees(args: {
   const writeLedgerFn = args.writeLedgerFn ?? writeLedger
   const now = args.now ?? (() => new Date())
 
-  const ledger = await readLedgerFn(args.rootRepoPath)
+  const ledgerRootDir = args.rootRepoPath
+  const ledger = await readLedgerFn(ledgerRootDir)
   const plan = classifyChildCleanupPlan({
     rootSessionId: args.rootSessionId,
     rootWorktreePath: args.rootWorktreePath,
@@ -418,7 +419,7 @@ export async function cleanupChildWorktrees(args: {
     })
   }
 
-  await writeLedgerFn(args.rootRepoPath, nextLedger)
+  await writeLedgerFn(ledgerRootDir, nextLedger)
 
   return {
     candidates: plan.candidates,
@@ -435,25 +436,13 @@ async function main() {
   const rootSessionId = parseFlag(Deno.args, '--root-session-id')?.trim()
 
   if (!worktreePath) {
-    fail(
-      action,
-      'missing_worktree_path',
-      'finishing-a-development-branch cleanup 需要 --worktree-path',
-    )
+    fail(action, 'missing_worktree_path', 'workflow-finish cleanup 需要 --worktree-path')
   }
   if (!rootRepoPath) {
-    fail(
-      action,
-      'missing_root_repo_path',
-      'finishing-a-development-branch cleanup 需要 --root-repo-path',
-    )
+    fail(action, 'missing_root_repo_path', 'workflow-finish cleanup 需要 --root-repo-path')
   }
   if (!featureBranch) {
-    fail(
-      action,
-      'missing_feature_branch',
-      'finishing-a-development-branch cleanup 需要 --feature-branch',
-    )
+    fail(action, 'missing_feature_branch', 'workflow-finish cleanup 需要 --feature-branch')
   }
 
   const normalizedWorktreePath = normalize(resolve(worktreePath))
@@ -565,35 +554,6 @@ async function main() {
     })
   }
 
-  console.log('删除 worktree')
-  const removeWorktree = await runGit(
-    ['worktree', 'remove', '-f', normalizedWorktreePath],
-    normalizedRootRepoPath,
-  )
-  if (removeWorktree.code !== 0) {
-    fail(action, 'worktree_remove_failed', removeWorktree.stderr || '删除 worktree 失败', {
-      rootRepoPath: normalizedRootRepoPath,
-      worktreePath: normalizedWorktreePath,
-      stdout: removeWorktree.stdout,
-      stderr: removeWorktree.stderr,
-      source: removeWorktree.source,
-      featureBranch,
-    })
-  }
-
-  console.log('删除分支')
-  const deleteBranch = await runGit(['branch', '-D', featureBranch], normalizedRootRepoPath)
-  if (deleteBranch.code !== 0) {
-    fail(action, 'branch_delete_failed', deleteBranch.stderr || '删除分支失败', {
-      rootRepoPath: normalizedRootRepoPath,
-      worktreePath: normalizedWorktreePath,
-      featureBranch,
-      stdout: deleteBranch.stdout,
-      stderr: deleteBranch.stderr,
-      source: deleteBranch.source,
-    })
-  }
-
   let childCleanup:
     | {
         status: 'completed'
@@ -624,6 +584,35 @@ async function main() {
       message: error instanceof Error ? error.message : '账本不可用，未执行子代理统一清理',
       results: [],
     }
+  }
+
+  console.log('删除 worktree')
+  const removeWorktree = await runGit(
+    ['worktree', 'remove', '-f', normalizedWorktreePath],
+    normalizedRootRepoPath,
+  )
+  if (removeWorktree.code !== 0) {
+    fail(action, 'worktree_remove_failed', removeWorktree.stderr || '删除 worktree 失败', {
+      rootRepoPath: normalizedRootRepoPath,
+      worktreePath: normalizedWorktreePath,
+      stdout: removeWorktree.stdout,
+      stderr: removeWorktree.stderr,
+      source: removeWorktree.source,
+      featureBranch,
+    })
+  }
+
+  console.log('删除分支')
+  const deleteBranch = await runGit(['branch', '-D', featureBranch], normalizedRootRepoPath)
+  if (deleteBranch.code !== 0) {
+    fail(action, 'branch_delete_failed', deleteBranch.stderr || '删除分支失败', {
+      rootRepoPath: normalizedRootRepoPath,
+      worktreePath: normalizedWorktreePath,
+      featureBranch,
+      stdout: deleteBranch.stdout,
+      stderr: deleteBranch.stderr,
+      source: deleteBranch.source,
+    })
   }
 
   printJson({

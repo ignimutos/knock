@@ -63,7 +63,7 @@ type LedgerEventContext = {
   timestamp?: string
 }
 
-const CONTINUE_RESPONSE = {
+export const CONTINUE_RESPONSE = {
   continue: true,
   suppressOutput: true,
 } as const
@@ -423,6 +423,24 @@ function getString(input: JsonRecord | undefined, key: string): string | undefin
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+function firstDefined<T>(...values: Array<T | undefined>): T | undefined {
+  return values.find((value): value is T => value !== undefined)
+}
+
+function getNestedString(
+  input: JsonRecord | undefined,
+  path: readonly string[],
+): string | undefined {
+  let current: unknown = input
+  for (const segment of path) {
+    if (current === null || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined
+    }
+    current = (current as JsonRecord)[segment]
+  }
+  return typeof current === 'string' && current.length > 0 ? current : undefined
+}
+
 function resolveLedgerPath(repoRoot: string) {
   return join(repoRoot, SUBAGENT_WORKTREE_LEDGER_RELATIVE_PATH)
 }
@@ -438,27 +456,59 @@ function normalizeWorktreePath(input: string) {
   return normalize(resolve(input))
 }
 
-function buildLedgerContext(payload: unknown): LedgerEventContext {
+export function buildLedgerContext(payload: unknown): LedgerEventContext {
   const input = asRecord(payload)
-  const cwd = normalizeMaybeWorktreePath(getString(input, 'cwd'))
-  const worktreePath = [
-    getString(input, 'worktree_path'),
-    getString(input, 'worktreePath'),
-    getString(asRecord(input?.hookSpecificOutput), 'worktreePath'),
-    cwd,
-  ]
-    .map(normalizeMaybeWorktreePath)
-    .find((value): value is string => value !== undefined)
+  const hookEventName = getString(input, 'hook_event_name') ?? getString(input, 'hookEventName')
+  const sessionId = getString(input, 'session_id') ?? getString(input, 'sessionId')
+  const managedCwd = normalizeMaybeWorktreePath(getString(input, 'cwd'))
 
   return {
-    rootSessionId: Deno.env.get('CLAUDE_SESSION_ID')?.trim() || undefined,
-    rootWorktreePath: cwd ?? worktreePath,
-    timestamp: new Date().toISOString(),
+    rootSessionId:
+      Deno.env.get('CLAUDE_SESSION_ID') ??
+      firstDefined(
+        getString(input, 'root_session_id'),
+        getString(input, 'rootSessionId'),
+        getString(input, 'parent_session_id'),
+        getString(input, 'parentSessionId'),
+        getString(input, 'main_session_id'),
+        getString(input, 'mainSessionId'),
+        getNestedString(input, ['root', 'session_id']),
+        getNestedString(input, ['root', 'sessionId']),
+        getNestedString(input, ['parent', 'session_id']),
+        getNestedString(input, ['parent', 'sessionId']),
+      ) ??
+      (hookEventName === 'WorktreeCreate' ? sessionId : undefined),
+    rootWorktreePath:
+      firstDefined(
+        getString(input, 'root_worktree_path'),
+        getString(input, 'rootWorktreePath'),
+        getString(input, 'parent_worktree_path'),
+        getString(input, 'parentWorktreePath'),
+        getString(input, 'main_worktree_path'),
+        getString(input, 'mainWorktreePath'),
+        getNestedString(input, ['root', 'worktree_path']),
+        getNestedString(input, ['root', 'worktreePath']),
+        getNestedString(input, ['parent', 'worktree_path']),
+        getNestedString(input, ['parent', 'worktreePath']),
+      ) ?? (hookEventName === 'WorktreeCreate' ? managedCwd : undefined),
+    timestamp:
+      firstDefined(
+        getString(input, 'timestamp'),
+        getString(input, 'occurred_at'),
+        getString(input, 'occurredAt'),
+        getString(input, 'at'),
+      ) ?? new Date().toISOString(),
   }
 }
 
-function getProjectDir() {
-  return Deno.env.get('CLAUDE_PROJECT_DIR')?.trim() || Deno.cwd()
+export function resolveLedgerRootDir(event?: LedgerEvent) {
+  return (
+    [event?.rootWorktreePath, event?.worktreePath].find(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    ) ??
+    Deno.env.get('CLAUDE_PROJECT_DIR')?.trim() ??
+    Deno.cwd()
+  )
 }
 
 async function readPayload(): Promise<unknown | undefined> {
@@ -471,8 +521,30 @@ async function readPayload(): Promise<unknown | undefined> {
   }
 }
 
-function emitContinueResponse() {
-  console.log(JSON.stringify(CONTINUE_RESPONSE))
+function emitContinueResponse(response = CONTINUE_RESPONSE) {
+  console.log(JSON.stringify(response))
+}
+
+export async function runSubagentWorktreeLedgerHook(
+  payload: unknown,
+  options: {
+    ledgerRootDir?: string
+  } = {},
+) {
+  const event = extractLedgerEventFromHookInput(payload, buildLedgerContext(payload))
+  if (!event) {
+    return CONTINUE_RESPONSE
+  }
+
+  try {
+    const ledgerRootDir = options.ledgerRootDir ?? resolveLedgerRootDir(event)
+    const ledger = await readLedger(ledgerRootDir)
+    await writeLedger(ledgerRootDir, applyLedgerEvent(ledger, event))
+  } catch {
+    // fail-open：账本失败不阻塞 hook
+  }
+
+  return CONTINUE_RESPONSE
 }
 
 async function main() {
@@ -482,21 +554,7 @@ async function main() {
     return
   }
 
-  const event = extractLedgerEventFromHookInput(payload, buildLedgerContext(payload))
-  if (!event) {
-    emitContinueResponse()
-    return
-  }
-
-  try {
-    const repoRoot = getProjectDir()
-    const ledger = await readLedger(repoRoot)
-    await writeLedger(repoRoot, applyLedgerEvent(ledger, event))
-  } catch {
-    // fail-open：账本失败不阻塞 hook
-  }
-
-  emitContinueResponse()
+  emitContinueResponse(await runSubagentWorktreeLedgerHook(payload))
 }
 
 if (import.meta.main) {

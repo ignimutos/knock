@@ -1,9 +1,9 @@
 ---
-name: finishing-a-development-branch
+name: workflow-finish
 description: Use when implementation in a managed git worktree is complete, validation is green, and the next step is local merge-back or cleanup decisions in the knock repository
 ---
 
-# finishing-a-development-branch
+# workflow-finish
 
 这是 knock 仓库对 finish skill 的本地覆写。
 
@@ -27,7 +27,7 @@ description: Use when implementation in a managed git worktree is complete, vali
 2. 显式整理本次改动 diff，并补齐需要一起传入的关联测试文件或目录；调用脚本前必须逐个作为 `--path` 传入。
 3. 调用：
 
-   `deno run --allow-read --allow-write --allow-run --allow-env .claude/skills/finishing-a-development-branch/scripts/finish.ts --message <full-message> --path <path> [--base-branch <branch>]`
+   `deno run --allow-read --allow-write --allow-run --allow-env .claude/skills/workflow-finish/scripts/finish.ts --message <full-message> --path <path> [--base-branch <branch>]`
 
 4. 读取脚本结构化结果并继续：
    - 若返回 `status=needs_attention` 或 `nextAction=repair_loop`，复用 implementer 完成 review -> test -> fix 循环，然后重新生成或确认 commit message，再次调用同一个 `finish.ts`。
@@ -43,7 +43,7 @@ description: Use when implementation in a managed git worktree is complete, vali
 - 必须先调用 `ExitWorktree({ action: "keep" })`。
 - 只有 exit 成功后，才能调用：
 
-  `deno run --allow-read --allow-write --allow-run --allow-env <rootRepoPath>/.claude/skills/finishing-a-development-branch/scripts/cleanup.ts --worktree-path <worktreePath> --root-repo-path <rootRepoPath> --feature-branch <featureBranch>`
+  `deno run --allow-read --allow-write --allow-run --allow-env <rootRepoPath>/.claude/skills/workflow-finish/scripts/cleanup.ts --worktree-path <worktreePath> --root-repo-path <rootRepoPath> --feature-branch <featureBranch>`
 
 - 若 `ExitWorktree({ action: "keep" })` 明确返回 no-op，且明确说明当前没有活动的 worktree session，才允许 root fallback；除此之外不得 fallback。
 - root fallback 时，必须先切回 `rootRepoPath` 再调用 `cleanup.ts`；仅使用绝对脚本路径但仍停留在错误 cwd，不算满足该要求。

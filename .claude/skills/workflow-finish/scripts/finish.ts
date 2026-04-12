@@ -404,7 +404,7 @@ export async function buildVerificationPlan(
   paths: string[],
 ): Promise<VerificationPlan> {
   if (paths.length === 0) {
-    throw new Error('finishing-a-development-branch 需要至少一个 --path')
+    throw new Error('workflow-finish 需要至少一个 --path')
   }
 
   const fmtCheck: TaskSelection = { mode: 'paths', reason: 'scoped_paths', paths }
@@ -542,7 +542,7 @@ async function main() {
   const action = 'finish'
   const message = parseFlag(Deno.args, '--message')?.trim()
   if (!message) {
-    fail(action, 'missing_message', 'finishing-a-development-branch 需要完整 commit message')
+    fail(action, 'missing_message', 'workflow-finish 需要完整 commit message')
   }
 
   const rawPaths = parseRepeatedFlag(Deno.args, '--path')
@@ -550,7 +550,7 @@ async function main() {
     .filter(Boolean)
   const uniquePaths = [...new Set(rawPaths)]
   if (uniquePaths.length === 0) {
-    fail(action, 'missing_paths', 'finishing-a-development-branch 需要至少一个 --path')
+    fail(action, 'missing_paths', 'workflow-finish 需要至少一个 --path')
   }
 
   const worktreePath = await requireGitValue(
@@ -562,7 +562,7 @@ async function main() {
     fail(
       action,
       'finish_requires_worktree',
-      '当前不在 .claude/worktrees/ 下，拒绝执行 finishing-a-development-branch',
+      '当前不在 .claude/worktrees/ 下，拒绝执行 workflow-finish',
       {
         worktreePath,
       },

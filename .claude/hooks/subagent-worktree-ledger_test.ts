@@ -3,6 +3,7 @@ import { assertEquals } from '@std/assert'
 import {
   buildLedgerContext,
   CONTINUE_RESPONSE,
+  resolveLedgerRootDir,
   runSubagentWorktreeLedgerHook,
 } from './subagent-worktree-ledger.ts'
 import { readLedger } from '../lib/subagent_worktree_ledger.ts'
@@ -10,7 +11,7 @@ import { readLedger } from '../lib/subagent_worktree_ledger.ts'
 Deno.test(
   'subagent-worktree-ledger hook: WorktreeCreate 从当前 payload 补齐最小上下文并写入 ledger',
   async () => {
-    const repoRoot = await Deno.makeTempDir()
+    const ledgerRootDir = await Deno.makeTempDir()
     const worktreePath = '/tmp/project/.claude/worktrees/agent-hook-1'
 
     try {
@@ -21,12 +22,12 @@ Deno.test(
           cwd: worktreePath,
           branch: 'feature/hook-ledger',
         },
-        { repoRoot },
+        { ledgerRootDir },
       )
 
       assertEquals(response, CONTINUE_RESPONSE)
 
-      const ledger = await readLedger(repoRoot)
+      const ledger = await readLedger(ledgerRootDir)
       assertEquals(ledger.records.length, 1)
       assertEquals(ledger.events.length, 1)
       assertEquals(ledger.records[0]?.status, 'created')
@@ -37,7 +38,7 @@ Deno.test(
       assertEquals(ledger.events[0]?.hookEventName, 'WorktreeCreate')
       assertEquals(ledger.events[0]?.worktreePath, worktreePath)
     } finally {
-      await Deno.remove(repoRoot, { recursive: true })
+      await Deno.remove(ledgerRootDir, { recursive: true })
     }
   },
 )
@@ -57,7 +58,7 @@ Deno.test('subagent-worktree-ledger hook: 非法 payload 与写入失败都保�
       cwd: '/tmp/project/.claude/worktrees/agent-hook-2',
     },
     {
-      repoRoot: '/proc/claude-hook-ledger-test',
+      ledgerRootDir: '/proc/claude-hook-ledger-test',
     },
   )
 
@@ -100,3 +101,19 @@ Deno.test(
     assertEquals(context.rootWorktreePath, undefined)
   },
 )
+
+Deno.test('subagent-worktree-ledger hook: resolveLedgerRootDir 应回退到 root worktree 路径', () => {
+  assertEquals(
+    resolveLedgerRootDir({
+      rootWorktreePath: '/tmp/project/.claude/worktrees/root-hook-5',
+      worktreePath: '/tmp/project/.claude/worktrees/agent-hook-5',
+      hookEventName: 'SubagentStart',
+      status: 'active',
+      at: '2026-04-12T04:30:00.000Z',
+      rootSessionId: 'root-session-hook-5',
+      agentId: 'agent-hook-5',
+      agentSessionId: 'agent-session-hook-5',
+    }),
+    '/tmp/project/.claude/worktrees/root-hook-5',
+  )
+})
