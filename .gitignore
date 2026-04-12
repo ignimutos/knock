@@ -5,8 +5,8 @@
 *.pyc
 .DS_Store
 .cache/
-.claude/tmp/
 .claude/state/
+.claude/tmp/
 .claude/worktrees/
 .env
 .env.*
@@ -27,5 +27,6 @@ npm/
 runtime/
 target/
 tmp/
+todo.md
 vendor/
 venv/
