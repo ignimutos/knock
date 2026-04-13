@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/fmt-after-write.sh"
+            "command": ".claude/hooks/fmt.sh"
           }
         ]
       }
