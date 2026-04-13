@@ -56,44 +56,45 @@ Deno.test('xquery_playground: 缺少 entry.id 时应沿用既有错误契约', (
   )
 })
 
-Deno.test('xquery_playground: 应将解析后的 request 与 fetcher 委托给 source runtime', async () => {
-  const fetcher = () => Promise.resolve(new Response('ok'))
-  const calls: Array<{ sourceId: string; sourceUrl: string }> = []
+Deno.test(
+  'xquery_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
+  async () => {
+    const calls: Array<{ sourceId: string; sourceUrl: string }> = []
 
-  const result = await evaluatePlayground({
-    request: {
-      url: 'https://example.com/page.html',
-      locate: '//li',
-      entry: { mode: 'mapping', fields: { id: 'string(@data-id)', title: 'string(a)' } },
-    },
-    fetcher,
-    fetchAndParseSourceImpl: ({ source, httpClient }) => {
-      void httpClient
-      calls.push({
-        sourceId: source.id,
-        sourceUrl: source.http?.url ?? '',
-      })
-      return Promise.resolve({
-        payload: '<html></html>',
-        parser: 'xquery' as const,
-        feedMapped: {},
-        entries: [{ mapped: { id: '1', title: 'Hello' } }],
-        timing: { fetchDurationMs: 12, parseDurationMs: 5 },
-      })
-    },
-  })
+    const result = await evaluatePlayground({
+      request: {
+        url: 'https://example.com/page.html',
+        locate: '//li',
+        entry: { mode: 'mapping', fields: { id: 'string(@data-id)', title: 'string(a)' } },
+      },
+      previewExecutor: ({ source }) => {
+        calls.push({
+          sourceId: source.id,
+          sourceUrl: source.http?.url ?? '',
+        })
+        return Promise.resolve({
+          warnings: [],
+          fetchMeta: { ok: true, payloadBytes: 13, fetchDurationMs: 12, parseDurationMs: 5 },
+          parser: 'xquery',
+          rawContent: '<html></html>',
+          feed: {},
+          entries: [{ mapped: { id: '1', title: 'Hello' } }],
+        })
+      },
+    })
 
-  assertEquals(calls, [
-    {
-      sourceId: 'playground',
-      sourceUrl: 'https://example.com/page.html',
-    },
-  ])
-  assertEquals(result.parser, 'xquery')
-  assertEquals(result.rawContent, '<html></html>')
-  assertEquals(result.entries[0].mapped.id, '1')
-  assertEquals(result.fetchMeta.ok, true)
-})
+    assertEquals(calls, [
+      {
+        sourceId: 'playground',
+        sourceUrl: 'https://example.com/page.html',
+      },
+    ])
+    assertEquals(result.parser, 'xquery')
+    assertEquals(result.rawContent, '<html></html>')
+    assertEquals((result.entries[0] as { mapped: { id: string } }).mapped.id, '1')
+    assertEquals(result.fetchMeta.ok, true)
+  },
+)
 
 Deno.test('xquery_playground: 应拒绝 localhost 地址', () => {
   assertThrows(

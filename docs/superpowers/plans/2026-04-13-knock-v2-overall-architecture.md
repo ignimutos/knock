@@ -87,6 +87,7 @@
 ### Task 1: 建立 v2 领域对象与判别联合
 
 **Files:**
+
 - Create: `src/domain/run_profile.ts`
 - Create: `src/domain/source_run.ts`
 - Create: `src/domain/pipeline_item.ts`
@@ -101,38 +102,38 @@
 
 ```ts
 import { assertEquals } from '@std/assert'
-import {
-  createSourceRun,
-  finalizeSourceRun,
-} from './source_run.ts'
+import { createSourceRun, finalizeSourceRun } from './source_run.ts'
 import { createPipelineItem } from './pipeline_item.ts'
 import { createDeliveryAttempt } from './delivery_attempt.ts'
 
-Deno.test('domain: finalizeSourceRun 应按 attempt 汇总 success/partial/failed', () => {
-  const run = createSourceRun({
-    runId: 'run-1',
-    sourceId: 'rust',
-    trigger: 'scheduled',
-    profile: 'production',
-    effectDomain: 'production',
-    scheduledAt: '2026-04-13T09:00:00.000Z',
-    startedAt: '2026-04-13T09:00:01.000Z',
-  })
+Deno.test(
+  'domain: finalizeSourceRun 应按 attempt 汇总 success/partial/failed',
+  () => {
+    const run = createSourceRun({
+      runId: 'run-1',
+      sourceId: 'rust',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      scheduledAt: '2026-04-13T09:00:00.000Z',
+      startedAt: '2026-04-13T09:00:01.000Z',
+    })
 
-  const finalized = finalizeSourceRun(run, {
-    fetchedCount: 4,
-    parsedCount: 4,
-    filteredCount: 1,
-    duplicateItemCount: 1,
-    deliveredCount: 1,
-    failedAttemptCount: 1,
-    skippedCount: 0,
-  })
+    const finalized = finalizeSourceRun(run, {
+      fetchedCount: 4,
+      parsedCount: 4,
+      filteredCount: 1,
+      duplicateItemCount: 1,
+      deliveredCount: 1,
+      failedAttemptCount: 1,
+      skippedCount: 0,
+    })
 
-  assertEquals(finalized.status, 'partial')
-  assertEquals(finalized.counts.deliveredCount, 1)
-  assertEquals(finalized.counts.failedAttemptCount, 1)
-})
+    assertEquals(finalized.status, 'partial')
+    assertEquals(finalized.counts.deliveredCount, 1)
+    assertEquals(finalized.counts.failedAttemptCount, 1)
+  },
+)
 
 Deno.test('domain: preview 与 production effectDomain 必须显式区分', () => {
   const previewItem = createPipelineItem({
@@ -140,7 +141,15 @@ Deno.test('domain: preview 与 production effectDomain 必须显式区分', () =
     sourceRunId: 'run-preview',
     sourceId: 'rust',
     effectDomain: 'preview',
-    normalized: { id: 'entry-1', title: 'Preview', link: '', description: '', content: '', published: '', updated: '' },
+    normalized: {
+      id: 'entry-1',
+      title: 'Preview',
+      link: '',
+      description: '',
+      content: '',
+      published: '',
+      updated: '',
+    },
   })
   const attempt = createDeliveryAttempt({
     attemptId: 'attempt-1',
@@ -188,7 +197,14 @@ export interface SourceRun {
   scheduledAt: string
   startedAt: string
   finishedAt?: string
-  status: 'planned' | 'running' | 'success' | 'partial' | 'failed' | 'skipped' | 'interrupted'
+  status:
+    | 'planned'
+    | 'running'
+    | 'success'
+    | 'partial'
+    | 'failed'
+    | 'skipped'
+    | 'interrupted'
   counts: SourceRunCounts
 }
 
@@ -209,8 +225,17 @@ export interface SummarySourceDefinition {
 
 export type DeliveryDefinition =
   | { kind: 'file'; deliveryId: string; path: string; contentTemplate: string }
-  | { kind: 'push'; deliveryId: string; requestType: 'body'; payloadTemplate: Record<string, unknown> }
-  | { kind: 'email'; deliveryId: string; messageTemplate: Record<string, unknown> }
+  | {
+      kind: 'push'
+      deliveryId: string
+      requestType: 'body'
+      payloadTemplate: Record<string, unknown>
+    }
+  | {
+      kind: 'email'
+      deliveryId: string
+      messageTemplate: Record<string, unknown>
+    }
 ```
 
 - [ ] **Step 4: 跑测试与静态检查**
@@ -228,6 +253,7 @@ git commit -m "refactor: add v2 domain primitives"
 ### Task 2: 建立 v2 facts schema、repositories、read model 与 recovery
 
 **Files:**
+
 - Create: `src/infrastructure/sqlite/schema.ts`
 - Create: `src/infrastructure/sqlite/run_repository.ts`
 - Create: `src/infrastructure/sqlite/item_repository.ts`
@@ -253,64 +279,70 @@ import {
 import { markInterruptedAttempts } from './recovery.ts'
 import { createSourceRunQueryService } from './source_run_query_service.ts'
 
-Deno.test('sqlite v2: query service 应按 run/item/attempt 返回主事实', async () => {
-  const db = createInMemoryDb()
-  await insertSourceRun(db, {
-    runId: 'run-1',
-    sourceId: 'rust',
-    trigger: 'scheduled',
-    profile: 'production',
-    effectDomain: 'production',
-    status: 'running',
-    scheduledAt: '2026-04-13T09:00:00.000Z',
-    startedAt: '2026-04-13T09:00:01.000Z',
-  })
-  await insertPipelineItem(db, {
-    itemId: 'item-1',
-    sourceRunId: 'run-1',
-    sourceId: 'rust',
-    effectDomain: 'production',
-    normalizedJson: '{"id":"entry-1"}',
-    status: 'ready',
-  })
-  await insertDeliveryAttempt(db, {
-    attemptId: 'attempt-1',
-    itemId: 'item-1',
-    sourceRunId: 'run-1',
-    deliveryId: 'archive',
-    channel: 'file',
-    effectDomain: 'production',
-    status: 'planned',
-    plannedAt: '2026-04-13T09:00:02.000Z',
-  })
+Deno.test(
+  'sqlite v2: query service 应按 run/item/attempt 返回主事实',
+  async () => {
+    const db = createInMemoryDb()
+    await insertSourceRun(db, {
+      runId: 'run-1',
+      sourceId: 'rust',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      status: 'running',
+      scheduledAt: '2026-04-13T09:00:00.000Z',
+      startedAt: '2026-04-13T09:00:01.000Z',
+    })
+    await insertPipelineItem(db, {
+      itemId: 'item-1',
+      sourceRunId: 'run-1',
+      sourceId: 'rust',
+      effectDomain: 'production',
+      normalizedJson: '{"id":"entry-1"}',
+      status: 'ready',
+    })
+    await insertDeliveryAttempt(db, {
+      attemptId: 'attempt-1',
+      itemId: 'item-1',
+      sourceRunId: 'run-1',
+      deliveryId: 'archive',
+      channel: 'file',
+      effectDomain: 'production',
+      status: 'planned',
+      plannedAt: '2026-04-13T09:00:02.000Z',
+    })
 
-  const query = createSourceRunQueryService(db)
-  const view = await query.getRun('run-1')
+    const query = createSourceRunQueryService(db)
+    const view = await query.getRun('run-1')
 
-  assertEquals(view?.run.runId, 'run-1')
-  assertEquals(view?.items.length, 1)
-  assertEquals(view?.attempts.length, 1)
-})
+    assertEquals(view?.run.runId, 'run-1')
+    assertEquals(view?.items.length, 1)
+    assertEquals(view?.attempts.length, 1)
+  },
+)
 
-Deno.test('sqlite v2: recovery 应将 planned/running attempts 标记为 interrupted', async () => {
-  const db = createInMemoryDb()
-  await insertDeliveryAttempt(db, {
-    attemptId: 'attempt-2',
-    itemId: 'item-2',
-    sourceRunId: 'run-2',
-    deliveryId: 'telegram',
-    channel: 'push',
-    effectDomain: 'production',
-    status: 'running',
-    plannedAt: '2026-04-13T09:00:02.000Z',
-  })
+Deno.test(
+  'sqlite v2: recovery 应将 planned/running attempts 标记为 interrupted',
+  async () => {
+    const db = createInMemoryDb()
+    await insertDeliveryAttempt(db, {
+      attemptId: 'attempt-2',
+      itemId: 'item-2',
+      sourceRunId: 'run-2',
+      deliveryId: 'telegram',
+      channel: 'push',
+      effectDomain: 'production',
+      status: 'running',
+      plannedAt: '2026-04-13T09:00:02.000Z',
+    })
 
-  await markInterruptedAttempts(db, '2026-04-13T10:00:00.000Z')
-  const query = createSourceRunQueryService(db)
-  const view = await query.getRun('run-2')
+    await markInterruptedAttempts(db, '2026-04-13T10:00:00.000Z')
+    const query = createSourceRunQueryService(db)
+    const view = await query.getRun('run-2')
 
-  assertEquals(view?.attempts[0].status, 'interrupted')
-})
+    assertEquals(view?.attempts[0].status, 'interrupted')
+  },
+)
 ```
 
 - [ ] **Step 2: 运行 sqlite v2 测试，确认当前失败**
@@ -340,8 +372,6 @@ export const pipelineItems = sqliteTable('pipeline_items', {
   sourceId: text('source_id').notNull(),
   effectDomain: text('effect_domain').notNull(),
   normalizedJson: text('normalized_json').notNull(),
-  filterStatus: text('filter_status'),
-  dedupeStatus: text('dedupe_status'),
   status: text('status').notNull(),
 })
 
@@ -363,7 +393,11 @@ export const deliveryAttempts = sqliteTable('delivery_attempts', {
 export async function markInterruptedAttempts(db: DbClient, at: string) {
   await db
     .update(deliveryAttempts)
-    .set({ status: 'interrupted', finishedAt: at, reason: 'process_interrupted' })
+    .set({
+      status: 'interrupted',
+      finishedAt: at,
+      reason: 'process_interrupted',
+    })
     .where(inArray(deliveryAttempts.status, ['planned', 'running']))
 }
 ```
@@ -383,6 +417,7 @@ git commit -m "refactor: add v2 fact storage"
 ### Task 3: 把现有 config resolved shape 组装成 v2 definitions / bindings / policies
 
 **Files:**
+
 - Create: `src/interfaces/config/load_definitions.ts`
 - Test: `src/interfaces/config/load_definitions_test.ts`
 - Modify: `src/config/load_config.ts`
@@ -397,20 +432,32 @@ git commit -m "refactor: add v2 fact storage"
 import { assertEquals } from '@std/assert'
 import { loadDefinitions } from '../interfaces/config/load_definitions.ts'
 
-Deno.test('loadDefinitions: 应将 resolved config 组装成判别联合 SourceDefinition 与 DeliveryBinding', async () => {
-  const definitions = await loadDefinitions({
-    runtimeDir: '/tmp/runtime',
-    configPath: '/root/git/knock/runtime/config.yml',
-  })
+Deno.test(
+  'loadDefinitions: 应将 resolved config 组装成判别联合 SourceDefinition 与 DeliveryBinding',
+  async () => {
+    const definitions = await loadDefinitions({
+      runtimeDir: '/tmp/runtime',
+      configPath: '/root/git/knock/runtime/config.yml',
+    })
 
-  const source = definitions.sources.find((item) => item.sourceId === 'rust')
-  const delivery = definitions.deliveries.find((item) => item.deliveryId === 'archive')
-  const binding = definitions.bindings.find((item) => item.sourceId === 'rust')
+    const source = definitions.sources.find((item) => item.sourceId === 'rust')
+    const delivery = definitions.deliveries.find(
+      (item) => item.deliveryId === 'archive',
+    )
+    const binding = definitions.bindings.find(
+      (item) => item.sourceId === 'rust',
+    )
 
-  assertEquals(source?.kind === 'fetch' || source?.kind === 'summary', true)
-  assertEquals(delivery?.kind === 'file' || delivery?.kind === 'push' || delivery?.kind === 'email', true)
-  assertEquals(binding?.effectDomain, 'production')
-})
+    assertEquals(source?.kind === 'fetch' || source?.kind === 'summary', true)
+    assertEquals(
+      delivery?.kind === 'file' ||
+        delivery?.kind === 'push' ||
+        delivery?.kind === 'email',
+      true,
+    )
+    assertEquals(binding?.effectDomain, 'production')
+  },
+)
 ```
 
 - [ ] **Step 2: 跑 definitions 测试，确认当前失败**
@@ -435,7 +482,9 @@ export interface LoadedDefinitions {
   bindings: DeliveryBinding[]
 }
 
-export async function loadDefinitions(options: LoadConfigOptions): Promise<LoadedDefinitions> {
+export async function loadDefinitions(
+  options: LoadConfigOptions,
+): Promise<LoadedDefinitions> {
   const config = await loadConfig(options)
   const deliveries = config.deliveries.map(toDeliveryDefinition)
   const sources = config.sources.map(toSourceDefinition)
@@ -467,6 +516,7 @@ git commit -m "refactor: add v2 definition assembly"
 ### Task 4: 建立统一 fetched-input / parsed snapshot / RunPlan 与共核 use case 骨架
 
 **Files:**
+
 - Create: `src/application/ports/source_input_gateway.ts`
 - Create: `src/application/ports/source_parser.ts`
 - Create: `src/application/ports/query_service.ts`
@@ -492,35 +542,54 @@ git commit -m "refactor: add v2 definition assembly"
 import { assertEquals } from '@std/assert'
 import { RunSourceUseCase } from './run_source_use_case.ts'
 
-Deno.test('runSourceUseCase: summary 与 fetch source 应共享主生命周期', async () => {
-  const calls: string[] = []
-  const useCase = new RunSourceUseCase({
-    now: () => '2026-04-13T09:00:00.000Z',
-    createRunId: () => 'run-1',
-    sourceInputGateway: {
-      fetch: async (plan) => {
-        calls.push(plan.source.kind)
-        return {
-          kind: plan.source.kind,
-          payloadSummary: { bytes: 10, hash: 'hash-1' },
-          collectedAt: '2026-04-13T09:00:00.000Z',
-        }
+Deno.test(
+  'runSourceUseCase: summary 与 fetch source 应共享主生命周期',
+  async () => {
+    const calls: string[] = []
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T09:00:00.000Z',
+      createRunId: () => 'run-1',
+      sourceInputGateway: {
+        fetch: async (plan) => {
+          calls.push(plan.source.kind)
+          return {
+            kind: plan.source.kind,
+            payloadSummary: { bytes: 10, hash: 'hash-1' },
+            collectedAt: '2026-04-13T09:00:00.000Z',
+          }
+        },
       },
-    },
-    sourceParser: {
-      parse: async (_plan, input) => ({
-        sourceKind: input.kind,
-        parser: input.kind === 'summary' ? 'summary' : 'rss',
-        diagnostics: [],
-        feed: { title: 'Feed', link: '', description: '', generator: '', language: '', published: '' },
-        items: [],
-      }),
-    },
-  })
+      sourceParser: {
+        parse: async (_plan, input) => ({
+          sourceKind: input.kind,
+          parser: input.kind === 'summary' ? 'summary' : 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [],
+        }),
+      },
+    })
 
-  await useCase.plan({ source: { kind: 'summary', sourceId: 'daily', upstreamSourceIds: ['rust'] }, profile: 'preview', effectDomain: 'preview', trigger: 'preview' })
-  assertEquals(calls, ['summary'])
-})
+    await useCase.plan({
+      source: {
+        kind: 'summary',
+        sourceId: 'daily',
+        upstreamSourceIds: ['rust'],
+      },
+      profile: 'preview',
+      effectDomain: 'preview',
+      trigger: 'preview',
+    })
+    assertEquals(calls, ['summary'])
+  },
+)
 ```
 
 - [ ] **Step 2: 跑 use case / source 测试，确认当前失败**
@@ -547,7 +616,11 @@ export interface FetchedSourceInput {
 export interface ParsedSourceSnapshot {
   sourceKind: 'fetch' | 'summary'
   parser: 'rss' | 'atom' | 'json' | 'xquery' | 'summary'
-  diagnostics: Array<{ level: 'info' | 'warn' | 'error'; code: string; message: string }>
+  diagnostics: Array<{
+    level: 'info' | 'warn' | 'error'
+    code: string
+    message: string
+  }>
   feed: UnifiedFeedFields
   items: UnifiedEntryFields[]
 }
@@ -565,12 +638,19 @@ export interface RunPlan {
 
 ```ts
 export class RunSourceUseCase {
-  constructor(private readonly deps: {
-    now: () => string
-    createRunId: () => string
-    sourceInputGateway: { fetch(plan: RunPlan): Promise<FetchedSourceInput> }
-    sourceParser: { parse(plan: RunPlan, input: FetchedSourceInput): Promise<ParsedSourceSnapshot> }
-  }) {}
+  constructor(
+    private readonly deps: {
+      now: () => string
+      createRunId: () => string
+      sourceInputGateway: { fetch(plan: RunPlan): Promise<FetchedSourceInput> }
+      sourceParser: {
+        parse(
+          plan: RunPlan,
+          input: FetchedSourceInput,
+        ): Promise<ParsedSourceSnapshot>
+      }
+    },
+  ) {}
 
   async plan(input: {
     source: SourceDefinition
@@ -608,6 +688,7 @@ git commit -m "refactor: add v2 run planning skeleton"
 ### Task 5: 实现 stages、双层 dedupe、attempt planning 与 executor 边界
 
 **Files:**
+
 - Create: `src/application/ports/run_repository.ts`
 - Create: `src/application/ports/item_repository.ts`
 - Create: `src/application/ports/delivery_attempt_repository.ts`
@@ -745,11 +826,19 @@ for (const item of parsed.items) {
   })
 
   for (const binding of bindings) {
-    if (dedupeResult.deliveryStatuses[binding.deliveryId] === 'duplicate') continue
-    const attemptPlan = await this.renderStage.run({ item, binding, renderContent: this.renderContent })
+    if (dedupeResult.deliveryStatuses[binding.deliveryId] === 'duplicate')
+      continue
+    const attemptPlan = await this.renderStage.run({
+      item,
+      binding,
+      renderContent: this.renderContent,
+    })
     await this.deliveryAttemptRepository.insertPlanned(attemptPlan)
     const attemptResult = await this.deliveryStage.run(attemptPlan)
-    await this.deliveryAttemptRepository.finish(attemptPlan.attemptId, attemptResult)
+    await this.deliveryAttemptRepository.finish(
+      attemptPlan.attemptId,
+      attemptResult,
+    )
   }
 }
 ```
@@ -769,6 +858,7 @@ git commit -m "refactor: add v2 pipeline stages"
 ### Task 6: cut over daemon / preview / summary，删除旧状态模型与旧 runtime API
 
 **Files:**
+
 - Create: `src/interfaces/daemon/start_daemon.ts`
 - Create: `src/interfaces/web/preview_runtime.ts`
 - Test: `src/interfaces/daemon/start_daemon_test.ts`
@@ -800,27 +890,38 @@ import { assertEquals } from '@std/assert'
 import { startDaemon } from '../interfaces/daemon/start_daemon.ts'
 import app from '../../web/main.ts'
 
-Deno.test('startDaemon: 应通过 RunDueSourcesUseCase 驱动 source runs', async () => {
-  const calls: string[] = []
-  await startDaemon({
-    runDueSourcesUseCase: {
-      execute: async () => {
-        calls.push('run-due-sources')
+Deno.test(
+  'startDaemon: 应通过 RunDueSourcesUseCase 驱动 source runs',
+  async () => {
+    const calls: string[] = []
+    await startDaemon({
+      runDueSourcesUseCase: {
+        execute: async () => {
+          calls.push('run-due-sources')
+        },
       },
-    },
-  })
-  assertEquals(calls, ['run-due-sources'])
-})
+    })
+    assertEquals(calls, ['run-due-sources'])
+  },
+)
 
-Deno.test('web preview: preview handler 应走 preview profile 并落 preview domain facts', async () => {
-  const response = await app.fetch(new Request('http://localhost/api/xquery/evaluate', {
-    method: 'POST',
-    body: JSON.stringify({ url: 'https://example.com/feed.xml', mode: 'mapping' }),
-    headers: { 'content-type': 'application/json' },
-  }))
+Deno.test(
+  'web preview: preview handler 应走 preview profile 并落 preview domain facts',
+  async () => {
+    const response = await app.fetch(
+      new Request('http://localhost/api/xquery/evaluate', {
+        method: 'POST',
+        body: JSON.stringify({
+          url: 'https://example.com/feed.xml',
+          mode: 'mapping',
+        }),
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
 
-  assertEquals(response.status, 200)
-})
+    assertEquals(response.status, 200)
+  },
+)
 ```
 
 - [ ] **Step 2: 跑 app/web 测试，确认当前失败**

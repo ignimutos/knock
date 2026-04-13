@@ -7,8 +7,26 @@ import type { AiEntryRuntime } from '../core/ai_runtime.ts'
 import { attachAiEntryRuntime } from '../core/ai_runtime.ts'
 import type { ContentContext, ContentRuntime } from '../core/content_runtime.ts'
 import { attachLogFields } from '../core/logger.ts'
-import type { SourceStateQuery, SummarySourceInput } from '../db/source_state_query.ts'
-import type { FetchedParsedSourceResult, ParsedSourceEntry } from './source_runtime.ts'
+import type {
+  SummaryQueryService,
+  SummarySourceInput,
+} from '../infrastructure/sqlite/summary_query_service.ts'
+
+export interface SummaryParsedEntry {
+  mapped: UnifiedEntryFields
+}
+
+export interface SummaryBuildResult {
+  payload: string
+  timing: {
+    fetchDurationMs: number
+    parseDurationMs: number
+  }
+  feedMapped: UnifiedFeedFields
+  entries: SummaryParsedEntry[]
+  parser: 'summary'
+  observedAt: string
+}
 
 interface SummaryWindow {
   previousCheckpoint?: string
@@ -17,9 +35,11 @@ interface SummaryWindow {
 
 export interface BuildSummarySourceInput {
   source: ResolvedSourceConfig
+  upstreamSourceIds: string[]
   scheduledAt: string
   language: string
-  stateQuery: SourceStateQuery
+  summaryQueryService: SummaryQueryService
+  effectDomain: 'production' | 'preview'
   contentRuntime: ContentRuntime
 }
 
@@ -89,13 +109,14 @@ function buildRuntimeAwareSource(
 
 function buildSummaryPayload(
   source: ResolvedSourceConfig,
+  upstreamSourceIds: string[],
   scheduledAt: string,
   previousCheckpoint?: string,
 ): string {
   return JSON.stringify({
     kind: 'summary',
     sourceId: source.id,
-    sourceIds: source.summary?.sources ?? [],
+    sourceIds: upstreamSourceIds,
     previousCheckpoint: previousCheckpoint ?? null,
     scheduledAt,
   })
@@ -195,22 +216,26 @@ async function renderEntryMapped(
 
 export async function buildSummarySource(
   input: BuildSummarySourceInput,
-): Promise<FetchedParsedSourceResult> {
-  const previousCheckpoint = await input.stateQuery.getSummaryCheckpoint(input.source.id)
+): Promise<SummaryBuildResult> {
+  const previousCheckpoint = await input.summaryQueryService.getSummaryCheckpoint(
+    input.source.id,
+    input.effectDomain,
+  )
   const window: SummaryWindow = {
     previousCheckpoint,
     scheduledAt: input.scheduledAt,
   }
   const summaryInputs = previousCheckpoint
-    ? await input.stateQuery.getSummaryInputs(input.source.summary?.sources ?? [], {
-        after: previousCheckpoint,
-        atOrBefore: input.scheduledAt,
-      })
+    ? await input.summaryQueryService.getSummaryInputs(
+        input.upstreamSourceIds,
+        {
+          after: previousCheckpoint,
+          atOrBefore: input.scheduledAt,
+        },
+        input.effectDomain,
+      )
     : Object.fromEntries(
-        (input.source.summary?.sources ?? []).map((sourceId) => [
-          sourceId,
-          { name: '', feed: {}, entries: [] },
-        ]),
+        input.upstreamSourceIds.map((sourceId) => [sourceId, { name: '', feed: {}, entries: [] }]),
       )
 
   const defaultFeed = buildDefaultFeed(input.source, input.scheduledAt, input.language)
@@ -226,7 +251,7 @@ export async function buildSummarySource(
       )
     : defaultFeed
 
-  const entries: ParsedSourceEntry[] = []
+  const entries: SummaryParsedEntry[] = []
   if (previousCheckpoint) {
     const entryMapped = await renderEntryMapped(
       input.source,
@@ -240,7 +265,12 @@ export async function buildSummarySource(
   }
 
   return {
-    payload: buildSummaryPayload(input.source, input.scheduledAt, previousCheckpoint),
+    payload: buildSummaryPayload(
+      input.source,
+      input.upstreamSourceIds,
+      input.scheduledAt,
+      previousCheckpoint,
+    ),
     timing: {
       fetchDurationMs: 0,
       parseDurationMs: 0,

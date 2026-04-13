@@ -1,13 +1,15 @@
 import { z } from 'zod'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import {
+  executePreviewSource,
+  toPreviewExecutionResult,
+} from '../interfaces/web/preview_runtime.ts'
+import {
   byparrSchema,
   sourceHttpSchema,
   syndicationSchema,
   type SourceConfigInput,
 } from '../config/schema.ts'
-import { createHttpClient } from '../core/http_client.ts'
-import { fetchAndParseSource } from '../sources/source_runtime.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import {
   assertPlaygroundUrlAllowed,
@@ -86,7 +88,19 @@ export function parseSyndicationPlaygroundRequest(
 export interface EvaluateSyndicationPlaygroundInput {
   request: unknown
   fetcher?: typeof fetch
-  fetchAndParseSourceImpl?: typeof fetchAndParseSource
+  previewExecutor?: (input: { source: ResolvedSourceConfig; fetcher?: typeof fetch }) => Promise<{
+    warnings: string[]
+    fetchMeta: {
+      ok: boolean
+      payloadBytes?: number
+      fetchDurationMs?: number
+      parseDurationMs?: number
+    }
+    parser: string
+    rawContent: string
+    feed: unknown
+    entries: unknown[]
+  }>
 }
 
 export function classifySyndicationPlaygroundError(error: unknown): PlaygroundErrorResult {
@@ -95,33 +109,50 @@ export function classifySyndicationPlaygroundError(error: unknown): PlaygroundEr
 
 export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPlaygroundInput) {
   const parsed = parseSyndicationPlaygroundRequest(input.request)
-  const httpClient = createHttpClient({ fetcher: input.fetcher ?? fetch })
-  const runFetchAndParseSource = input.fetchAndParseSourceImpl ?? fetchAndParseSource
   const resolvedSource: ResolvedSourceConfig = {
     ...parsed.source,
     deliveries: [],
   }
 
-  const result = await runFetchAndParseSource({
-    source: resolvedSource,
-    httpClient,
-    timeOptions: {
-      timezone: 'UTC',
-      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-    },
-  })
+  const result = input.previewExecutor
+    ? await input.previewExecutor({
+        source: resolvedSource,
+        fetcher: input.fetcher,
+      })
+    : toPreviewExecutionResult({
+        warnings: parsed.warnings,
+        result: await executePreviewSource({
+          config: {
+            runtimeDir: Deno.cwd(),
+            language: 'zh-CN',
+            timezone: 'UTC',
+            timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+            sqlite: {
+              path: `${Deno.cwd()}/.tmp/playground-preview.db`,
+              busyTimeout: '5s',
+              journalMode: 'WAL',
+              retention: {
+                maxAge: '1d',
+                maxEntriesPerSource: 100,
+                vacuum: 'off',
+              },
+            },
+            ai: undefined,
+            deliveries: [],
+            sources: [resolvedSource],
+            logging: {
+              level: 'info',
+              format: 'json',
+              sinks: {},
+            },
+          },
+          source: resolvedSource,
+          fetcher: input.fetcher,
+        }),
+      })
 
   return {
+    ...result,
     warnings: parsed.warnings,
-    fetchMeta: {
-      ok: true,
-      payloadBytes: result.payload.length,
-      fetchDurationMs: result.timing.fetchDurationMs,
-      parseDurationMs: result.timing.parseDurationMs,
-    },
-    parser: result.parser,
-    rawContent: result.payload,
-    feed: result.feedMapped,
-    entries: result.entries,
   }
 }

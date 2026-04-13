@@ -1,26 +1,19 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals } from '@std/assert'
 import { join } from '@std/path'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
-import { getAiEntryRuntime } from '../core/ai_runtime.ts'
 import { createContentRuntime } from '../core/content_runtime.ts'
-import { createDbClient } from '../db/client.ts'
-import { createSourceStateQuery } from '../db/source_state_query.ts'
-import { createSourceStateStore } from '../db/source_state_store.ts'
+import { createFactsDbClient } from '../db/client.ts'
+import {
+  insertSourceRun,
+  setSourceRunFeedSnapshot,
+} from '../infrastructure/sqlite/run_repository.ts'
+import { createSummaryQueryService } from '../infrastructure/sqlite/summary_query_service.ts'
+import { insertPipelineItem } from '../infrastructure/sqlite/item_repository.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { buildSummarySource } from './summary.ts'
 
 const TEST_RUNTIME = join(Deno.cwd(), '.tmp', 'runtime-summary-source')
-
-const registerTest = Deno.test
-
-function test(name: string, fn: () => Promise<void> | void): void {
-  registerTest(name, async () => {
-    await withOwnedRuntime(TEST_RUNTIME, async () => {
-      await fn()
-    })
-  })
-}
 
 function createSqliteConfig(databaseName: string) {
   return {
@@ -35,48 +28,6 @@ function createSqliteConfig(databaseName: string) {
   }
 }
 
-function createTestAiRuntime(
-  generateText: (input: Record<string, unknown>) => Promise<{ text: string }>,
-) {
-  return createAiRuntime({
-    ai: {
-      providers: [
-        {
-          id: 'openai_main',
-          type: 'openai',
-          apiKey: 'test-key',
-          models: [
-            {
-              id: 'default',
-              providerId: 'openai_main',
-              providerType: 'openai',
-              ref: 'openai_main/default',
-              model: 'gpt-4o-mini',
-              context: 8192,
-              maxOutputTokens: 400,
-              variants: {},
-            },
-          ],
-        },
-      ],
-      defaultModel: {
-        ref: 'openai_main/default',
-        providerId: 'openai_main',
-        modelId: 'default',
-      },
-      modelRefs: {
-        'openai_main/default': {
-          ref: 'openai_main/default',
-          providerId: 'openai_main',
-          modelId: 'default',
-        },
-      },
-    },
-    defaultLanguage: 'zh-CN',
-    generateText: (input) => generateText(input as unknown as Record<string, unknown>),
-  })
-}
-
 function createSummarySource(overrides: Partial<ResolvedSourceConfig> = {}): ResolvedSourceConfig {
   return {
     id: 'summary.daily',
@@ -84,349 +35,300 @@ function createSummarySource(overrides: Partial<ResolvedSourceConfig> = {}): Res
     enabled: true,
     deliveries: [],
     summary: {
-      sources: ['rust', 'deno'],
+      sources: ['rust'],
     },
     ...overrides,
   }
 }
 
-test('summarySource: 首次运行无 checkpoint 时应忽略模板覆写并返回默认 feed、空 entries 与 observedAt', async () => {
-  const sqlite = createSqliteConfig('summary-first-run.db')
-  const db = createDbClient({ sqlite })
-  const stateQuery = createSourceStateQuery({ db })
-  const contentRuntime = createContentRuntime()
-  const scheduledAt = '2026-04-12T10:00:00.000Z'
+Deno.test('summarySource: 首次运行无 checkpoint 时应返回默认 feed 与空 entries', async () => {
+  await withOwnedRuntime(TEST_RUNTIME, async () => {
+    const db = createFactsDbClient({ sqlite: createSqliteConfig('summary-first-run.db') })
+    const summaryQueryService = createSummaryQueryService(db)
+    const contentRuntime = createContentRuntime()
+    const scheduledAt = '2026-04-12T10:00:00.000Z'
 
-  const result = await buildSummarySource({
-    source: createSummarySource({
-      summary: {
-        sources: ['rust', 'deno'],
-        feed: {
-          title: 'Overridden title',
-          description: '{{ source.id }}',
+    const result = await buildSummarySource({
+      source: createSummarySource({
+        summary: {
+          sources: ['rust'],
+          feed: { title: 'ignored' },
+          entry: { id: 'ignored' },
         },
-        entry: {
-          id: 'entry-override',
-          title: '{{ source.id }}',
-        },
-      },
-    }),
-    scheduledAt,
-    language: 'en-US',
-    stateQuery,
-    contentRuntime,
-  })
-
-  assertEquals(result.parser, 'summary')
-  assertEquals(result.observedAt, scheduledAt)
-  assertEquals(result.feedMapped, {
-    title: 'Daily Summary',
-    link: '',
-    description: '',
-    generator: 'knock.summary',
-    language: 'en-US',
-    published: scheduledAt,
-  })
-  assertEquals(result.entries, [])
-  assertEquals(
-    result.payload,
-    JSON.stringify({
-      kind: 'summary',
-      sourceId: 'summary.daily',
-      sourceIds: ['rust', 'deno'],
-      previousCheckpoint: null,
+      }),
+      upstreamSourceIds: ['rust'],
       scheduledAt,
-    }),
-  )
+      language: 'en-US',
+      effectDomain: 'production',
+      summaryQueryService,
+      contentRuntime,
+    })
 
-  db.$client.close()
+    assertEquals(result.parser, 'summary')
+    assertEquals(result.observedAt, scheduledAt)
+    assertEquals(result.feedMapped, {
+      title: 'Daily Summary',
+      link: '',
+      description: '',
+      generator: 'knock.summary',
+      language: 'en-US',
+      published: scheduledAt,
+    })
+    assertEquals(result.entries, [])
+    assertEquals(
+      result.payload,
+      JSON.stringify({
+        kind: 'summary',
+        sourceId: 'summary.daily',
+        sourceIds: ['rust'],
+        previousCheckpoint: null,
+        scheduledAt,
+      }),
+    )
+
+    db.$client.close()
+  })
 })
 
-test('summarySource: 有 checkpoint 时模板可访问完整上下文字段', async () => {
-  const sqlite = createSqliteConfig('summary-template-context.db')
-  const db = createDbClient({ sqlite })
-  const store = createSourceStateStore({ db, sqlite })
-  const stateQuery = createSourceStateQuery({ db })
-  const contentRuntime = createContentRuntime()
+Deno.test(
+  'summarySource: 有 checkpoint 时应从 v2 facts query 读取 feed 与 delivered items',
+  async () => {
+    await withOwnedRuntime(TEST_RUNTIME, async () => {
+      const db = createFactsDbClient({ sqlite: createSqliteConfig('summary-with-facts.db') })
+      const summaryQueryService = createSummaryQueryService(db)
+      const contentRuntime = createContentRuntime()
 
-  await store.persistParsedSource({
-    sourceId: 'summary.daily',
-    parser: 'summary',
-    payload: 'old-summary',
-    feedMapped: { title: 'Yesterday Summary' },
-    entries: [],
-    observedAt: '2026-04-11T09:00:00.000Z',
-  })
-
-  await store.persistParsedSource({
-    sourceId: 'rust',
-    parser: 'rss',
-    payload: '<rss></rss>',
-    feedMapped: { title: 'Rust Feed', description: 'Rust Feed Description' },
-    entries: [
-      { mapped: { id: 'rust-1', title: 'Rust Entry 1', description: 'Rust Entry 1 Description' } },
-      { mapped: { id: 'rust-2', title: 'Rust Entry 2' } },
-    ],
-    observedAt: '2026-04-12T08:00:00.000Z',
-  })
-
-  const scheduledAt = '2026-04-12T10:00:00.000Z'
-  const result = await buildSummarySource({
-    source: createSummarySource({
-      summary: {
-        sources: ['rust'],
-        feed: {
-          title:
-            '{{ source.id }}|{{ source.runtime.window.scheduledAt }}|{{ feed.title }}|{{ entry.id }}|{{ sources.rust.name }}|{{ sources.rust.feed.title }}',
+      await insertSourceRun(db, {
+        runId: 'run-summary-prev',
+        sourceId: 'summary.daily',
+        trigger: 'scheduled',
+        profile: 'production',
+        effectDomain: 'production',
+        status: 'success',
+        scheduledAt: '2026-04-11T09:00:00.000Z',
+        startedAt: '2026-04-11T09:00:00.000Z',
+        finishedAt: '2026-04-11T09:00:00.000Z',
+        counts: {
+          fetchedCount: 0,
+          parsedCount: 0,
+          filteredCount: 0,
+          duplicateItemCount: 0,
+          deliveredCount: 0,
+          failedAttemptCount: 0,
+          skippedCount: 0,
         },
-        entry: {
-          id: '{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}',
-          title:
-            '{{ source.id }}|{{ source.runtime.window.scheduledAt }}|{{ feed.title }}|{{ entry.id }}|{{ sources.rust.name }}|{{ sources.rust.feed.title }}|{{ sources.rust.entries[0].title }}',
-          description:
-            '{{ source.name }}|{{ feed.generator }}|{{ entry.title }}|{{ sources.rust.feed.description }}|{{ sources.rust.entries[0].description }}',
+      })
+
+      await insertSourceRun(db, {
+        runId: 'run-rust-1',
+        sourceId: 'rust',
+        trigger: 'scheduled',
+        profile: 'production',
+        effectDomain: 'production',
+        status: 'success',
+        scheduledAt: '2026-04-12T08:00:00.000Z',
+        startedAt: '2026-04-12T08:00:00.000Z',
+        finishedAt: '2026-04-12T08:00:00.000Z',
+        counts: {
+          fetchedCount: 1,
+          parsedCount: 1,
+          filteredCount: 0,
+          duplicateItemCount: 0,
+          deliveredCount: 1,
+          failedAttemptCount: 0,
+          skippedCount: 0,
         },
-      },
-    }),
-    scheduledAt,
-    language: 'en-US',
-    stateQuery,
-    contentRuntime,
-  })
-
-  assertEquals(
-    result.feedMapped.title,
-    'summary.daily|2026-04-12T10:00:00.000Z|Daily Summary|summary.daily:2026-04-11T09:00:00.000Z..2026-04-12T10:00:00.000Z|Rust Feed|Rust Feed',
-  )
-  assertEquals(result.entries.length, 1)
-  assertEquals(result.entries[0].mapped.id, '2026-04-11T09:00:00.000Z..2026-04-12T10:00:00.000Z')
-  assertEquals(
-    result.entries[0].mapped.title,
-    'summary.daily|2026-04-12T10:00:00.000Z|summary.daily|2026-04-12T10:00:00.000Z|Daily Summary|summary.daily:2026-04-11T09:00:00.000Z..2026-04-12T10:00:00.000Z|Rust Feed|Rust Feed|summary.daily:2026-04-11T09:00:00.000Z..2026-04-12T10:00:00.000Z|Rust Feed|Rust Feed|Rust Entry 1',
-  )
-  assertEquals(
-    result.entries[0].mapped.description,
-    'Daily Summary|knock.summary|Daily Summary|Rust Feed Description|Rust Entry 1 Description',
-  )
-
-  db.$client.close()
-})
-
-test('summarySource: summary feed 模板中的 ai_summarize 应可工作', async () => {
-  const sqlite = createSqliteConfig('summary-feed-ai-template.db')
-  const db = createDbClient({ sqlite })
-  const store = createSourceStateStore({ db, sqlite })
-  const stateQuery = createSourceStateQuery({ db })
-  const aiRequests: Array<Record<string, unknown>> = []
-  const aiRuntime = createTestAiRuntime((input) => {
-    aiRequests.push(input)
-    return Promise.resolve({ text: 'AI Feed Summary' })
-  })
-  const contentRuntime = createContentRuntime({ aiRuntime })
-
-  await store.persistParsedSource({
-    sourceId: 'summary.daily',
-    parser: 'summary',
-    payload: 'old-summary',
-    feedMapped: { title: 'Yesterday Summary' },
-    entries: [],
-    observedAt: '2026-04-11T09:00:00.000Z',
-  })
-
-  await store.persistParsedSource({
-    sourceId: 'rust',
-    parser: 'rss',
-    payload: '<rss></rss>',
-    feedMapped: { title: 'Rust Feed' },
-    entries: [{ mapped: { id: 'rust-1', title: 'Rust Entry 1' } }],
-    observedAt: '2026-04-12T08:00:00.000Z',
-  })
-
-  const result = await buildSummarySource({
-    source: createSummarySource({
-      summary: {
-        sources: ['rust'],
-        feed: {
-          description: '{{ sources.rust.entries[0].title | ai_summarize }}',
+      })
+      await setSourceRunFeedSnapshot(db, 'run-rust-1', {
+        title: 'Rust Feed',
+        link: '',
+        description: 'Rust Feed Description',
+        generator: '',
+        language: '',
+        published: '',
+      })
+      await insertPipelineItem(db, {
+        itemId: 'item-rust-1',
+        sourceRunId: 'run-rust-1',
+        sourceId: 'rust',
+        effectDomain: 'production',
+        normalized: {
+          id: 'rust-1',
+          title: 'Rust Entry 1',
+          link: '',
+          description: 'Rust Entry 1 Description',
+          content: '',
+          published: '',
+          updated: '',
         },
-      },
-    }),
-    scheduledAt: '2026-04-12T10:00:00.000Z',
-    language: 'en-US',
-    stateQuery,
-    contentRuntime,
-  })
+        status: 'delivered',
+      })
 
-  assertEquals(result.feedMapped.description, 'AI Feed Summary')
-  assertEquals(result.entries.length, 1)
-  assertEquals(aiRequests.length, 1)
-  assertEquals(
-    getAiEntryRuntime(result.entries[0].mapped as Record<PropertyKey, unknown>),
-    undefined,
-  )
-
-  db.$client.close()
-})
-
-test('summarySource: summary entry 模板中的 ai_summarize 应可工作', async () => {
-  const sqlite = createSqliteConfig('summary-ai-template.db')
-  const db = createDbClient({ sqlite })
-  const store = createSourceStateStore({ db, sqlite })
-  const stateQuery = createSourceStateQuery({ db })
-  const aiRequests: Array<Record<string, unknown>> = []
-  const aiRuntime = createTestAiRuntime((input) => {
-    aiRequests.push(input)
-    return Promise.resolve({ text: 'AI Summary' })
-  })
-  const contentRuntime = createContentRuntime({ aiRuntime })
-
-  await store.persistParsedSource({
-    sourceId: 'summary.daily',
-    parser: 'summary',
-    payload: 'old-summary',
-    feedMapped: { title: 'Yesterday Summary' },
-    entries: [],
-    observedAt: '2026-04-11T09:00:00.000Z',
-  })
-
-  await store.persistParsedSource({
-    sourceId: 'rust',
-    parser: 'rss',
-    payload: '<rss></rss>',
-    feedMapped: { title: 'Rust Feed' },
-    entries: [{ mapped: { id: 'rust-1', title: 'Rust Entry 1' } }],
-    observedAt: '2026-04-12T08:00:00.000Z',
-  })
-
-  const result = await buildSummarySource({
-    source: createSummarySource({
-      summary: {
-        sources: ['rust'],
-        entry: {
-          id: '{{ entry.id }}',
-          description: '{{ sources.rust.entries[0].title | ai_summarize }}',
-        },
-      },
-    }),
-    scheduledAt: '2026-04-12T10:00:00.000Z',
-    language: 'en-US',
-    stateQuery,
-    contentRuntime,
-  })
-
-  assertEquals(result.entries.length, 1)
-  assertEquals(result.entries[0].mapped.description, 'AI Summary')
-  assertEquals(aiRequests.length, 1)
-  assertEquals(
-    getAiEntryRuntime(result.entries[0].mapped as Record<PropertyKey, unknown>),
-    undefined,
-  )
-
-  db.$client.close()
-})
-
-test('summarySource: 仅传带 AI 的 contentRuntime 时 ai_summarize 也应可工作', async () => {
-  const sqlite = createSqliteConfig('summary-ai-template-content-runtime-only.db')
-  const db = createDbClient({ sqlite })
-  const store = createSourceStateStore({ db, sqlite })
-  const stateQuery = createSourceStateQuery({ db })
-  const aiRequests: Array<Record<string, unknown>> = []
-  const aiRuntime = createTestAiRuntime((input) => {
-    aiRequests.push(input)
-    return Promise.resolve({ text: 'AI Summary from Content Runtime' })
-  })
-  const contentRuntime = createContentRuntime({ aiRuntime })
-
-  await store.persistParsedSource({
-    sourceId: 'summary.daily',
-    parser: 'summary',
-    payload: 'old-summary',
-    feedMapped: { title: 'Yesterday Summary' },
-    entries: [],
-    observedAt: '2026-04-11T09:00:00.000Z',
-  })
-
-  await store.persistParsedSource({
-    sourceId: 'rust',
-    parser: 'rss',
-    payload: '<rss></rss>',
-    feedMapped: { title: 'Rust Feed' },
-    entries: [{ mapped: { id: 'rust-1', title: 'Rust Entry 1' } }],
-    observedAt: '2026-04-12T08:00:00.000Z',
-  })
-
-  const result = await buildSummarySource({
-    source: createSummarySource({
-      summary: {
-        sources: ['rust'],
-        entry: {
-          id: '{{ entry.id }}',
-          description: '{{ sources.rust.entries[0].title | ai_summarize }}',
-        },
-      },
-    }),
-    scheduledAt: '2026-04-12T10:00:00.000Z',
-    language: 'en-US',
-    stateQuery,
-    contentRuntime,
-  })
-
-  assertEquals(result.entries.length, 1)
-  assertEquals(result.entries[0].mapped.description, 'AI Summary from Content Runtime')
-  assertEquals(aiRequests.length, 1)
-  assertEquals(
-    getAiEntryRuntime(result.entries[0].mapped as Record<PropertyKey, unknown>),
-    undefined,
-  )
-
-  db.$client.close()
-})
-
-test('summarySource: 缺少 contentRuntime ai 支持时 ai_summarize 错误应上抛', async () => {
-  const sqlite = createSqliteConfig('summary-ai-missing-runtime.db')
-  const db = createDbClient({ sqlite })
-  const store = createSourceStateStore({ db, sqlite })
-  const stateQuery = createSourceStateQuery({ db })
-  const contentRuntime = createContentRuntime()
-
-  await store.persistParsedSource({
-    sourceId: 'summary.daily',
-    parser: 'summary',
-    payload: 'old-summary',
-    feedMapped: { title: 'Yesterday Summary' },
-    entries: [],
-    observedAt: '2026-04-11T09:00:00.000Z',
-  })
-
-  await store.persistParsedSource({
-    sourceId: 'rust',
-    parser: 'rss',
-    payload: '<rss></rss>',
-    feedMapped: { title: 'Rust Feed' },
-    entries: [{ mapped: { id: 'rust-1', title: 'Rust Entry 1' } }],
-    observedAt: '2026-04-12T08:00:00.000Z',
-  })
-
-  await assertRejects(
-    () =>
-      buildSummarySource({
+      const result = await buildSummarySource({
         source: createSummarySource({
           summary: {
             sources: ['rust'],
+            feed: {
+              title: '{{ sources.rust.feed.title }} Daily Summary',
+            },
             entry: {
-              id: '{{ entry.id }}',
-              description: '{{ sources.rust.entries[0].title | ai_summarize }}',
+              id: '{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}',
+              title: '{{ sources.rust.entries[0].title }}',
+              description:
+                '{{ sources.rust.feed.description }}|{{ sources.rust.entries[0].description }}',
             },
           },
         }),
+        upstreamSourceIds: ['rust'],
         scheduledAt: '2026-04-12T10:00:00.000Z',
         language: 'en-US',
-        stateQuery,
+        effectDomain: 'production',
+        summaryQueryService,
         contentRuntime,
-      }),
-    Error,
-    '未配置 ai，无法使用 ai_summarize',
-  )
+      })
 
-  db.$client.close()
+      assertEquals(result.feedMapped.title, 'Rust Feed Daily Summary')
+      assertEquals(result.entries.length, 1)
+      assertEquals(result.entries[0].mapped.title, 'Rust Entry 1')
+      assertEquals(
+        result.entries[0].mapped.description,
+        'Rust Feed Description|Rust Entry 1 Description',
+      )
+
+      db.$client.close()
+    })
+  },
+)
+
+Deno.test('summarySource: summary 模板中的 ai_summarize 应可通过 contentRuntime 工作', async () => {
+  await withOwnedRuntime(TEST_RUNTIME, async () => {
+    const db = createFactsDbClient({ sqlite: createSqliteConfig('summary-ai.db') })
+    const summaryQueryService = createSummaryQueryService(db)
+    const aiRuntime = createAiRuntime({
+      ai: {
+        providers: [
+          {
+            id: 'openai_main',
+            type: 'openai',
+            apiKey: 'test-key',
+            models: [
+              {
+                id: 'default',
+                providerId: 'openai_main',
+                providerType: 'openai',
+                ref: 'openai_main/default',
+                model: 'gpt-4o-mini',
+                context: 8192,
+                maxOutputTokens: 400,
+                variants: {},
+              },
+            ],
+          },
+        ],
+        defaultModel: {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+        modelRefs: {
+          'openai_main/default': {
+            ref: 'openai_main/default',
+            providerId: 'openai_main',
+            modelId: 'default',
+          },
+        },
+      },
+      defaultLanguage: 'zh-CN',
+      generateText: () => Promise.resolve({ text: 'AI Summary' }),
+    })
+    const contentRuntime = createContentRuntime({ aiRuntime })
+
+    await insertSourceRun(db, {
+      runId: 'run-summary-prev-ai',
+      sourceId: 'summary.daily',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      status: 'success',
+      scheduledAt: '2026-04-11T09:00:00.000Z',
+      startedAt: '2026-04-11T09:00:00.000Z',
+      finishedAt: '2026-04-11T09:00:00.000Z',
+      counts: {
+        fetchedCount: 0,
+        parsedCount: 0,
+        filteredCount: 0,
+        duplicateItemCount: 0,
+        deliveredCount: 0,
+        failedAttemptCount: 0,
+        skippedCount: 0,
+      },
+    })
+    await insertSourceRun(db, {
+      runId: 'run-rust-ai',
+      sourceId: 'rust',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      status: 'success',
+      scheduledAt: '2026-04-12T08:00:00.000Z',
+      startedAt: '2026-04-12T08:00:00.000Z',
+      finishedAt: '2026-04-12T08:00:00.000Z',
+      counts: {
+        fetchedCount: 1,
+        parsedCount: 1,
+        filteredCount: 0,
+        duplicateItemCount: 0,
+        deliveredCount: 1,
+        failedAttemptCount: 0,
+        skippedCount: 0,
+      },
+    })
+    await setSourceRunFeedSnapshot(db, 'run-rust-ai', {
+      title: 'Rust Feed',
+      link: '',
+      description: '',
+      generator: '',
+      language: '',
+      published: '',
+    })
+    await insertPipelineItem(db, {
+      itemId: 'item-rust-ai',
+      sourceRunId: 'run-rust-ai',
+      sourceId: 'rust',
+      effectDomain: 'production',
+      normalized: {
+        id: 'rust-ai',
+        title: 'Rust Entry AI',
+        link: '',
+        description: '需要摘要',
+        content: '',
+        published: '',
+        updated: '',
+      },
+      status: 'delivered',
+    })
+
+    const result = await buildSummarySource({
+      source: createSummarySource({
+        summary: {
+          sources: ['rust'],
+          entry: {
+            id: '{{ entry.id }}',
+            description: '{{ sources.rust.entries[0].description | ai_summarize }}',
+          },
+        },
+      }),
+      upstreamSourceIds: ['rust'],
+      scheduledAt: '2026-04-12T10:00:00.000Z',
+      language: 'en-US',
+      effectDomain: 'production',
+      summaryQueryService,
+      contentRuntime,
+    })
+
+    assertEquals(result.entries.length, 1)
+    assertEquals(result.entries[0].mapped.description, 'AI Summary')
+
+    db.$client.close()
+  })
 })

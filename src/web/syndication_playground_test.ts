@@ -1,5 +1,4 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert'
-import type { FetchAndParseSourceInput } from '../sources/source_runtime.ts'
 import {
   classifySyndicationPlaygroundError,
   evaluateSyndicationPlayground,
@@ -32,7 +31,7 @@ Deno.test('syndication_playground: byparr 模式请求应转换为 byparr source
 })
 
 Deno.test(
-  'syndication_playground: 应将解析后的 request 委托给 source runtime 并透传 rawContent',
+  'syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
   async () => {
     const result = await evaluateSyndicationPlayground({
       request: {
@@ -40,18 +39,17 @@ Deno.test(
         feed: { title: '{{ title }}' },
         entry: { id: '{{ id }}', content: '{{ content }}' },
       },
-      fetcher: () => Promise.resolve(new Response('ok')),
-      fetchAndParseSourceImpl: ({ source, httpClient }: FetchAndParseSourceInput) => {
-        void httpClient
+      previewExecutor: ({ source }) => {
         assertEquals(source.http?.url, 'https://example.com/feed.xml')
         assertEquals(source.syndication?.feed, { title: '{{ title }}' })
         assertEquals(source.syndication?.entry, { id: '{{ id }}', content: '{{ content }}' })
         return Promise.resolve({
-          payload: '<rss></rss>',
-          parser: 'rss' as const,
-          feedMapped: { title: 'Feed' },
+          warnings: [],
+          fetchMeta: { ok: true, payloadBytes: 11, fetchDurationMs: 12, parseDurationMs: 5 },
+          parser: 'rss',
+          rawContent: '<rss></rss>',
+          feed: { title: 'Feed' },
           entries: [{ mapped: { id: '1', content: 'Body' } }],
-          timing: { fetchDurationMs: 12, parseDurationMs: 5 },
         })
       },
     })

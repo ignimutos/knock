@@ -5,6 +5,40 @@ async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
+Deno.test(
+  'syndication api: preview handler 应走 preview profile 并落 preview domain facts',
+  async () => {
+    const calls: Array<Record<string, unknown>> = []
+
+    const response = await handler(
+      new Request('http://localhost/api/syndication/evaluate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://example.com/feed.xml',
+          entry: { id: '{{ id }}' },
+        }),
+      }),
+      {
+        evaluatePlayground: () => {
+          calls.push({ profile: 'preview', effectDomain: 'preview' })
+          return Promise.resolve({
+            warnings: [],
+            fetchMeta: { ok: true },
+            parser: 'rss',
+            rawContent: '<rss></rss>',
+            feed: {},
+            entries: [],
+          })
+        },
+      },
+    )
+
+    assertEquals(response.status, 200)
+    assertEquals(calls, [{ profile: 'preview', effectDomain: 'preview' }])
+  },
+)
+
 Deno.test('syndication api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
   const logs: EvaluateLogMeta[] = []
 

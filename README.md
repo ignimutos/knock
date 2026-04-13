@@ -43,15 +43,25 @@
 
 ```text
 src/main.ts                 CLI 入口
-src/core/app.ts             主流程：抓取、解析、过滤、去重、投递、调度
+src/core/app.ts             daemon 启动薄接口
+src/application/            v2 use cases 与 stage 编排
+src/domain/                 SourceRun / PipelineItem / DeliveryAttempt 主事实
+src/interfaces/             daemon / web / config 接口装配
+src/infrastructure/         sqlite / source / delivery 适配器
 src/config/                 配置加载、校验、解析
-src/sources/                syndication / xquery 数据源解析器
+src/sources/                syndication / xquery / summary 解析能力
 src/deliveries/             file / http / email 投递器
-src/db/                     SQLite 客户端、schema、migration
+src/db/                     SQLite 客户端与旧迁移资产
 runtime/config.yml          默认运行配置
 config.example.yml          提交到仓库的完整参考配置
 Dockerfile                  容器镜像构建
 ```
+
+## 架构概览
+
+- daemon 与 web preview 共享同一套 `RunSourceUseCase` / `PreviewSourceUseCase` 主干。
+- `SourceRun`、`PipelineItem`、`DeliveryAttempt` 是当前 v2 cutover 后的主事实骨架。
+- preview 与 production 共核执行，但通过独立 `profile` / `effectDomain` 隔离事实域。
 
 ## Web Playground
 
@@ -1297,15 +1307,17 @@ http:
 
 ### `summary`
 
-`summary` source 不抓外部输入；它只读取 SQLite 里已经保存的 source state，并按自己的 `schedule` 生成一个汇总结果。
+`summary` source 不抓外部输入；它读取 SQLite facts 里已经保存的 summary checkpoint、feed 与 entry 快照，并按自己的 `schedule` 生成一个汇总结果。
+当前实现里的窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint，窗口内上游 entries 取自 `(previousCheckpoint, scheduledAt]` 区间内已交付 facts。
 
 约束：
 
 - `summary` source 必须配置 `schedule`
 - `summary` 与 `http` / `byparr` / `syndication` / `xquery` 互斥，不能同时配置
 - 窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint
-- 窗口内上游 entries 按 `last_seen_at` 选取，范围是 `(previousCheckpoint, scheduledAt]`
+- 窗口内上游 entries 取自 `(previousCheckpoint, scheduledAt]` 区间内已交付 facts
 - 首次运行没有 checkpoint 时，当前实现只产出默认 feed，不产出 summary entry
+- 当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串
 
 最小示例：
 
@@ -1975,7 +1987,7 @@ deno task test
 ```
 
 ```bash
-deno task test src/core/source_processor_test.ts
+deno task test src/core/app_test.ts src/interfaces/daemon/start_daemon_test.ts
 ```
 
 ```bash
@@ -1991,11 +2003,11 @@ deno task test src/main_test.ts src/core/app_test.ts
 ```
 
 ```bash
-deno task test src/db/client_test.ts src/db/source_state_store_test.ts
+deno task test src/db/client_test.ts src/infrastructure/sqlite/schema_test.ts src/infrastructure/sqlite/source_run_query_service_test.ts
 ```
 
 ```bash
-deno task test src/sources/xquery_test.ts src/sources/source_runtime_test.ts src/web/xquery_playground_test.ts web/routes/api/xquery/evaluate_test.ts
+deno task test src/sources/xquery_test.ts src/web/xquery_playground_test.ts web/routes/api/xquery/evaluate_test.ts
 ```
 
 ### 默认启动（web + daemon）

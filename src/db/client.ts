@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { SqliteConfigResolved } from '../config/types.ts'
 import type { Logger } from '../core/logger.ts'
+import * as factsSchema from '../infrastructure/sqlite/schema.ts'
 import * as schema from './schema.ts'
 
 export interface CreateDbClientOptions {
@@ -17,7 +18,15 @@ export type DbClient = NodeSQLiteDatabase<typeof schema> & {
   $client: DatabaseSync
 }
 
-export function runInTransaction<T>(db: DbClient, operation: () => T): T {
+export type FactsDbClient = NodeSQLiteDatabase<typeof factsSchema> & {
+  $client: DatabaseSync
+}
+
+interface TransactionCapableDb {
+  $client: DatabaseSync
+}
+
+export function runInTransaction<T>(db: TransactionCapableDb, operation: () => T): T {
   db.$client.exec('BEGIN')
   try {
     const result = operation()
@@ -82,4 +91,39 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
   })
 
   return db
+}
+
+export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClient {
+  const { sqlite } = options
+  const { logger } = options
+  const databasePath = sqlite.path
+
+  logger?.info('开始初始化 sqlite facts', {
+    module: 'db.sqlite',
+    'db.operation': 'init_facts_db',
+    'db.outcome': 'start',
+    'db.path': databasePath,
+  })
+
+  Deno.mkdirSync(dirname(databasePath), { recursive: true })
+  const client = new DatabaseSync(databasePath)
+  client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
+  client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
+  factsSchema.initializeSqliteFactsSchema(client)
+  const db = drizzle({ client, schema: factsSchema }) as FactsDbClient
+
+  logger?.info('sqlite facts 初始化完成', {
+    module: 'db.sqlite',
+    'db.operation': 'init_facts_db',
+    'db.outcome': 'success',
+    'db.path': databasePath,
+  })
+
+  return db
+}
+
+export function createInMemoryDb(): FactsDbClient {
+  const client = new DatabaseSync(':memory:')
+  factsSchema.initializeSqliteFactsSchema(client)
+  return drizzle({ client, schema: factsSchema }) as FactsDbClient
 }

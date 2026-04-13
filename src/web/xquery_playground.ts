@@ -1,13 +1,16 @@
 import { z } from 'zod'
-import type { ResolvedSourceConfig } from '../config/types.ts'
+import { join } from '@std/path'
+import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import {
   byparrSchema,
   sourceHttpSchema,
   xquerySchema,
   type SourceConfigInput,
 } from '../config/schema.ts'
-import { createHttpClient } from '../core/http_client.ts'
-import { fetchAndParseSource } from '../sources/source_runtime.ts'
+import {
+  executePreviewSource,
+  toPreviewExecutionResult,
+} from '../interfaces/web/preview_runtime.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 
 const playgroundFieldMappingSchema = z.record(z.string(), z.string())
@@ -147,7 +150,23 @@ export function parsePlaygroundRequest(input: unknown): ParsedPlaygroundRequest 
 export interface EvaluatePlaygroundInput {
   request: unknown
   fetcher?: typeof fetch
-  fetchAndParseSourceImpl?: typeof fetchAndParseSource
+  previewExecutor?: (input: {
+    config: AppConfigResolved
+    source: ResolvedSourceConfig
+    fetcher?: typeof fetch
+  }) => Promise<{
+    warnings: string[]
+    fetchMeta: {
+      ok: boolean
+      payloadBytes?: number
+      fetchDurationMs?: number
+      parseDurationMs?: number
+    }
+    parser: string
+    rawContent: string
+    feed: unknown
+    entries: unknown[]
+  }>
 }
 
 export interface PlaygroundErrorResult {
@@ -281,35 +300,58 @@ export function classifyPlaygroundError(error: unknown): PlaygroundErrorResult {
   )
 }
 
+function createPlaygroundConfig(source: ResolvedSourceConfig): AppConfigResolved {
+  return {
+    runtimeDir: Deno.cwd(),
+    language: 'zh-CN',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    sqlite: {
+      path: join(Deno.cwd(), '.tmp', 'playground-preview.db'),
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '1d',
+        maxEntriesPerSource: 100,
+        vacuum: 'off',
+      },
+    },
+    ai: undefined,
+    deliveries: [],
+    sources: [source],
+    logging: {
+      level: 'info',
+      format: 'json',
+      sinks: {},
+    },
+  }
+}
+
 export async function evaluatePlayground(input: EvaluatePlaygroundInput) {
   const parsed = parsePlaygroundRequest(input.request)
-  const httpClient = createHttpClient({ fetcher: input.fetcher ?? fetch })
-  const runFetchAndParseSource = input.fetchAndParseSourceImpl ?? fetchAndParseSource
   const resolvedSource: ResolvedSourceConfig = {
     ...parsed.source,
     deliveries: [],
   }
+  const config = createPlaygroundConfig(resolvedSource)
 
-  const result = await runFetchAndParseSource({
-    source: resolvedSource,
-    httpClient,
-    timeOptions: {
-      timezone: 'UTC',
-      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-    },
-  })
+  const result = input.previewExecutor
+    ? await input.previewExecutor({
+        config,
+        source: resolvedSource,
+        fetcher: input.fetcher,
+      })
+    : toPreviewExecutionResult({
+        warnings: parsed.warnings,
+        result: await executePreviewSource({
+          config,
+          source: resolvedSource,
+          fetcher: input.fetcher,
+        }),
+      })
 
   return {
+    ...result,
     warnings: parsed.warnings,
-    fetchMeta: {
-      ok: true,
-      payloadBytes: result.payload.length,
-      fetchDurationMs: result.timing.fetchDurationMs,
-      parseDurationMs: result.timing.parseDurationMs,
-    },
-    parser: result.parser,
-    rawContent: result.payload,
-    feed: result.feedMapped,
-    entries: result.entries,
   }
 }

@@ -4,11 +4,11 @@ import {
   type AiModelVariantConfig,
   type AiProviderType,
   type DeliveryConfigInput,
-  type EmailMessageConfig,
+  type EmailMessageConfig as SchemaEmailMessageConfig,
   ENTRY_FIELD_KEYS,
   FEED_FIELD_KEYS,
   type FileDeliveryConfig,
-  type HttpPayload,
+  type HttpPayload as SchemaHttpPayload,
   type LogConsoleSinkConfig as SchemaLogConsoleSinkConfig,
   type LogFormat as SchemaLogFormat,
   type LogLevel as SchemaLogLevel,
@@ -24,6 +24,8 @@ export type LogFormat = SchemaLogFormat
 export type LogConsoleSinkConfig = SchemaLogConsoleSinkConfig
 export type SqliteJournalMode = SchemaSqliteJournalMode
 export type SqliteRetentionVacuumMode = SchemaSqliteRetentionVacuumMode
+export type EmailMessageConfig = SchemaEmailMessageConfig
+export type HttpPayload = SchemaHttpPayload
 
 export interface LoggingConfigResolved {
   level: LogLevel

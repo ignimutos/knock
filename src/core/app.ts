@@ -1,22 +1,9 @@
-import { Cron } from 'croner'
 import { z } from 'zod'
+import type nodemailer from 'nodemailer'
 import { loadConfig } from '../config/load_config.ts'
-import { createDbClient } from '../db/client.ts'
-import { createSourceStateQuery } from '../db/source_state_query.ts'
-import { createSourceStateStore } from '../db/source_state_store.ts'
-import { createDeliveryRuntime } from '../deliveries/delivery_runtime.ts'
-import { createEmailDelivery } from '../deliveries/email.ts'
-import { createFileDelivery } from '../deliveries/file.ts'
-import { createHttpDelivery } from '../deliveries/http.ts'
-import { fetchAndParseSource } from '../sources/source_runtime.ts'
-import { createAiRuntime } from './ai_runtime.ts'
-import { createContentRuntime } from './content_runtime.ts'
-import { createHttpClient } from './http_client.ts'
-import { createLogger } from './logger.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
-import { createScheduler } from './scheduler.ts'
-import { createSourceProcessor } from './source_processor.ts'
-import nodemailer from 'nodemailer'
+import { createDaemonRuntime } from '../interfaces/daemon/create_daemon_runtime.ts'
+import { startDaemon } from '../interfaces/daemon/start_daemon.ts'
 
 export interface StartAppOptions {
   runtimeDir?: string
@@ -84,194 +71,37 @@ function normalizeStartAppInput(options: StartAppOptions = {}): StartAppInput {
   }
 }
 
-/**
- * 启动应用并返回 daemon 模式结果。
- * `schedule` 是 source 唯一调度事实源；当 `keepAlive=true` 时会保持进程常驻。
- */
 export async function startApp(options: StartAppOptions = {}): Promise<StartAppResult> {
   const input = normalizeStartAppInput(options)
-  const httpFetcher = input.httpFetcher
-  const httpProxyClientFactory = input.httpProxyClientFactory
-  const emailTransportFactory = input.emailTransportFactory
-  const httpClient = createHttpClient({
-    fetcher: httpFetcher,
-    proxyClientFactory: httpProxyClientFactory,
-  })
-  const shouldKeepAlive = input.keepAlive
-  const keepAliveSignal = input.keepAliveSignal
-  const shouldRunImmediate = input.immediate
   const config = await loadConfig({
     runtimeDir: input.runtimeDir,
     configPath: input.configPath,
   })
-
-  const logger = createLogger({
-    enabled: config.logging.sinks.console?.type === 'console',
-    level: config.logging.level,
-    format: config.logging.format,
-    module: 'app.startup',
-    component: 'daemon',
-    timezone: config.timezone,
-    timestampFormat: config.timestampFormat,
-    baseFields: {
-      'app.runtime_dir': config.runtimeDir,
-    },
+  const daemon = createDaemonRuntime({
+    config,
+    httpFetcher: input.httpFetcher,
+    httpProxyClientFactory: input.httpProxyClientFactory,
+    emailTransportFactory: input.emailTransportFactory,
+    keepAlive: input.keepAlive,
+    keepAliveSignal: input.keepAliveSignal,
+    immediate: input.immediate,
   })
 
-  const aiRuntime = createAiRuntime({
-    ai: config.ai,
-    defaultLanguage: config.language,
-    logger: logger.child({ module: 'core.ai.runtime' }),
-  })
-  const contentRuntime = createContentRuntime({
-    aiRuntime,
-    logger: logger.child({ module: 'content.render' }),
-  })
-  const db = createDbClient({
-    sqlite: config.sqlite,
-    logger: logger.child({ module: 'db.sqlite' }),
-  })
-  const sourceStateStore = createSourceStateStore({
-    db,
-    sqlite: config.sqlite,
-    logger: logger.child({ module: 'db.sqlite' }),
-  })
-  const sourceStateQuery = createSourceStateQuery({ db })
-  const scheduler = createScheduler(logger.child({ module: 'scheduler.source' }))
-  const fileDelivery = createFileDelivery({
-    runtimeDir: config.runtimeDir,
-    logger: logger.child({ module: 'delivery.file' }),
-  })
-  const httpDelivery = createHttpDelivery({
-    logger: logger.child({ module: 'delivery.http' }),
-    httpClient,
-    renderContent: (template, context) => contentRuntime.renderContent(template, context),
-  })
-  const emailDelivery = createEmailDelivery({
-    logger: logger.child({ module: 'delivery.email' }),
-    createTransport: emailTransportFactory,
-  })
-  const deliveryRuntime = createDeliveryRuntime({
-    logger: logger.child({ module: 'delivery.runtime' }),
-    contentRuntime,
-    fileDelivery,
-    httpDelivery,
-    emailDelivery,
-  })
-  const sourceProcessor = createSourceProcessor({
-    logger,
-    scheduler,
-    sourceRuntime: {
-      fetchAndParse: (source, sourceRuntimeLogger, runtimeOptions) =>
-        fetchAndParseSource({
-          source,
-          httpClient,
-          timeOptions: {
-            timezone: config.timezone,
-            timestampFormat: config.timestampFormat,
-          },
-          aiRuntime,
-          logger: sourceRuntimeLogger,
-          summaryOptions: source.summary
-            ? {
-                scheduledAt: runtimeOptions?.scheduledAt ?? new Date().toISOString(),
-                language: config.language,
-                stateQuery: sourceStateQuery,
-                contentRuntime,
-              }
-            : undefined,
-        }),
-    },
-    contentRuntime,
-    deliveryRuntime,
-    sourceStateStore,
-    aiRuntime,
-  })
+  try {
+    await daemon.recoverInterruptedAttempts()
 
-  const enabledSources = config.sources.filter((source) => source.enabled)
-  const scheduledSources = enabledSources.filter((source) => !!source.schedule)
-
-  logger.info('启动完成', {
-    module: 'app.startup',
-    'app.operation': 'startup',
-    'app.outcome': 'success',
-    'source.count': config.sources.length,
-    'source.enabled_count': enabledSources.length,
-    'source.disabled_count': config.sources.length - enabledSources.length,
-    'delivery.count': config.deliveries.length,
-    'scheduler.scheduled_source_count': scheduledSources.length,
-  })
-
-  if (shouldRunImmediate) {
-    for (const source of enabledSources) {
-      await sourceProcessor.runOnce(source, {
-        scheduledAt: new Date().toISOString(),
-      })
-    }
-    return { mode: 'daemon' }
-  }
-
-  const scheduledJobs: Cron[] = []
-
-  for (const source of config.sources) {
-    if (!source.enabled) {
-      logger.info('source 已禁用，跳过执行', {
-        module: 'scheduler.source',
-        'scheduler.operation': 'run_source',
-        'scheduler.outcome': 'skipped',
-        'source.id': source.id,
-        'scheduler.reason': 'source_disabled',
-      })
-      continue
+    if (input.immediate) {
+      await daemon.runImmediate()
+      return { mode: 'daemon' }
     }
 
-    if (!source.schedule) continue
-
-    logger.info('注册调度任务', {
-      module: 'scheduler.source',
-      'scheduler.operation': 'register_schedule',
-      'scheduler.outcome': 'success',
-      'source.id': source.id,
-      'scheduler.schedule': source.schedule,
+    await startDaemon({
+      runDueSourcesUseCase: daemon.runDueSourcesUseCase,
+      recoverInterruptedAttempts: async () => {},
     })
-
-    scheduledJobs.push(
-      new Cron(source.schedule, { protect: true }, () => {
-        void sourceProcessor
-          .runOnce(source, {
-            scheduledAt: new Date().toISOString(),
-          })
-          .catch(() => {})
-      }),
-    )
+    await daemon.enterDaemon()
+    return { mode: 'daemon' }
+  } finally {
+    daemon.stop()
   }
-
-  const hasScheduledSources = scheduledSources.length > 0
-
-  logger.info('进入长期运行模式', {
-    module: 'app.startup',
-    'app.operation': 'enter_daemon',
-    'app.outcome': 'success',
-    'app.has_schedule': hasScheduledSources,
-  })
-
-  if (shouldKeepAlive) {
-    if (!hasScheduledSources && keepAliveSignal === undefined) {
-      setInterval(() => {}, 2_147_483_647)
-      logger.info('无调度任务，启用空闲保活定时器', {
-        module: 'app.startup',
-        'app.operation': 'keepalive_idle_timer',
-        'app.outcome': 'enabled',
-      })
-    }
-    await (keepAliveSignal ?? new Promise(() => {}))
-  }
-
-  if (!shouldKeepAlive || keepAliveSignal !== undefined) {
-    for (const job of scheduledJobs) {
-      job.stop()
-    }
-  }
-
-  return { mode: 'daemon' }
 }
