@@ -43,10 +43,10 @@
     "turndown": "npm:turndown@^7.2.4",
     "zod": "npm:zod@^4.3.6",
     "ky": "npm:ky@^1.14.3",
-    "nodemailer": "npm:nodemailer@^7.0.5",
-    "ai": "npm:ai@^6.0.156",
-    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^3.0.68",
-    "@ai-sdk/google": "npm:@ai-sdk/google@^3.0.61",
+    "nodemailer": "npm:nodemailer@^7.0.13",
+    "ai": "npm:ai@^6.0.158",
+    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^3.0.69",
+    "@ai-sdk/google": "npm:@ai-sdk/google@^3.0.62",
     "@ai-sdk/openai": "npm:@ai-sdk/openai@^3.0.52"
   },
   "nodeModulesDir": "auto"
