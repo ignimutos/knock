@@ -9,23 +9,54 @@
     "pr": ""
   },
   "permissions": {
-    "allow": [],
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Read",
+      "Glob",
+      "Grep",
+      "LSP",
+      "WebFetch",
+      "WebSearch",
+      "Monitor",
+      "PowerShell",
+      "Skill",
+      "Agent",
+      "AskUserQuestion",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "EnterWorktree",
+      "ExitWorktree",
+      "TaskCreate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
+      "TaskUpdate",
+      "TodoWrite",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "ToolSearch",
+      "ListMcpResourcesTool",
+      "ReadMcpResourceTool",
+      "SendMessage",
+      "TeamCreate",
+      "TeamDelete",
+      "TeamList",
+      "mcp__puppeteer__*",
+      "mcp__playwright__*",
+      "mcp__github__*",
+      "mcp__context7__*",
+      "mcp__claude-mem__*"
+    ],
     "deny": [],
     "defaultMode": "acceptEdits",
     "skipDangerousModePermissionPrompt": true
   },
   "hooks": {
-    "PermissionRequest": [
-      {
-        "matcher": "Bash|Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/permission-request-allow.sh"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -33,50 +64,6 @@
           {
             "type": "command",
             "command": ".claude/hooks/fmt-after-write.sh"
-          }
-        ]
-      }
-    ],
-    "WorktreeCreate": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
-          }
-        ]
-      }
-    ],
-    "WorktreeRemove": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "deno run --allow-read --allow-write --allow-env .claude/hooks/subagent-worktree-ledger.ts"
           }
         ]
       }

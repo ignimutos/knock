@@ -1,4 +1,4 @@
-*.sh
-deno.lock
 *.py
+*.sh
 .prettierignore
+deno.lock
