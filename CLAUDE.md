@@ -104,6 +104,12 @@
 - **MUST NOT** 为引入依赖而加无价值包装层。
 - 新的不可信结构化输入边界 **SHOULD** 在边界处一次性用 `zod` 校验。
 
+## Testing Architecture
+
+- 风险矩阵：`docs/testing/risk-matrix.yml`
+- 规则：`.claude/rules/testing-architecture.md`
+- 门禁 skill：`.claude/skills/test-architecture-guard/SKILL.md`
+
 ## Verification and review
 
 ### Shared / high-risk boundaries
