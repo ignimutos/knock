@@ -4,9 +4,10 @@ import { loadRiskMatrix } from './risk_mapping.ts'
 
 const TEST_DIR = dirname(fromFileUrl(import.meta.url))
 const FIXTURE_DIR = join(TEST_DIR, 'fixtures')
+const CANONICAL_RISK_MATRIX_PATH = join(TEST_DIR, '..', '..', 'docs', 'testing', 'risk-matrix.yml')
 
 Deno.test('risk-mapping: 成功路径应返回合法 shape', async () => {
-  const matrix = await loadRiskMatrix(join(FIXTURE_DIR, 'risk-matrix-valid.yml'))
+  const matrix = await loadRiskMatrix(CANONICAL_RISK_MATRIX_PATH)
 
   assertEquals(matrix.length, 20)
   assertEquals(matrix[0].id, 'R01')
