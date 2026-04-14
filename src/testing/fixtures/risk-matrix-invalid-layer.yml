@@ -146,7 +146,7 @@
   domain: api
   trigger: evaluate endpoint receives invalid request body
   expected_guardrail: endpoint returns stable validation error payload
-  required_layer: contract
+  required_layer: integration
   owner_tests:
     - web/routes/api/syndication/evaluate_test.ts
     - web/routes/api/xquery/evaluate_test.ts

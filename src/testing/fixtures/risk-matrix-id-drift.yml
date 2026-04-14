@@ -142,7 +142,7 @@
   owner_tests:
     - src/interfaces/web/preview_runtime_test.ts
 
-- id: R19
+- id: R20
   domain: api
   trigger: evaluate endpoint receives invalid request body
   expected_guardrail: endpoint returns stable validation error payload
@@ -151,7 +151,7 @@
     - web/routes/api/syndication/evaluate_test.ts
     - web/routes/api/xquery/evaluate_test.ts
 
-- id: R20
+- id: R19
   domain: web
   trigger: playground evaluate malformed input
   expected_guardrail: stable error contract and no side effects
