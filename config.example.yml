@@ -1,39 +1,55 @@
-# 输出与 AI 配置默认使用的语言标签；需为 BCP 47（可选；示例: zh-CN）
+# 输出与 AI 默认语言标签（可选；需为 BCP 47；示例: zh-CN）
 language: zh-CN
 
-# 运行时使用的时区；不配置时默认使用系统时区（可选；默认: 使用系统时区；失败时回退 UTC）
+# 运行时使用的时区（可选；默认: 系统时区；系统时区缺失时回退: UTC）
 timezone: Asia/Shanghai
 
 # 日志与模板输出使用的时间戳格式（可选；默认: yyyy-MM-dd HH:mm:ss）
 timestampFormat: yyyy-MM-dd HH:mm:ss
 
 # AI provider / model 静态配置（可选）
+# - defaultModel 支持两种引用：providerId/modelId 与裸 modelId
+# - 省略 defaultModel 时，按 providers 声明顺序、再按各 models 声明顺序选择首个模型
+# - 裸 modelId 仅在全局唯一时可解析；出现重名时需改用 providerId/modelId
+# - 省略整个 ai 块时，解析结果不包含可用默认模型；模板使用 ai_translate / ai_summarize 会触发校验错误
 ai:
-  # 缺省时按 providers 声明顺序、再按各 models 声明顺序取第一个模型
   defaultModel: openai_main/default
   providers:
     openai_main:
-      # 仅支持 openai / anthropic / gemini
+      # provider 类型：openai / anthropic / gemini
       type: openai
       # 共同字段（可选）
       apiKey: "${OPENAI_API_KEY}"
       baseURL: "https://api.openai.com/v1"
+      # 省略 headers 等价于不附加自定义请求头
       headers:
         X-Trace-Id: "${TRACE_ID}"
-      # provider-specific 选项（openai 仅支持 organization / project）
+      # provider-specific options（可选）
+      # - openai: organization / project
+      # - anthropic: authToken（与 apiKey 互斥）
+      # - gemini: 当前不支持 provider-specific options
+      # - 省略 options 或写 {} 等价于不设置 provider-specific options
       options:
         organization: "${OPENAI_ORG_ID}"
         project: "${OPENAI_PROJECT_ID}"
       models:
         default:
-          # model 必须是静态字面量，不支持 ${ENV_VAR} / Liquid
+          # model 必须是静态字面量；仅支持直接字符串，不支持 ${ENV_VAR} / Liquid
           model: gpt-4o-mini
-          # context / maxOutputTokens 可省略，省略时走内置默认表
+          # context 可省略；省略时按内置默认表回退（先按 model 命中，再按 provider 类型）
+          # maxOutputTokens 可省略；省略时走同一默认回退路径
           temperature: 0.2
-          # model/variant options 当前仅 openai 支持 reasoningEffort / json
+          # model/variant options 当前支持范围：
+          # - openai: reasoningEffort / json
+          # - anthropic / gemini: 仅允许省略或 {}
+          # 省略 options 或写 {} 等价于不设置模型附加选项
           options:
             reasoningEffort: low
             json: false
+          # variants 可省略；省略等价于该模型无变体配置
+          # variant 可覆写 temperature / maxOutputTokens / options
+          # variant 省略 maxOutputTokens 时继承模型 maxOutputTokens
+          # variant 省略 options 时继承模型 options；variant.options 在模型 options 上做浅合并
           variants:
             creative:
               temperature: 0.8
@@ -41,7 +57,9 @@ ai:
                 reasoningEffort: medium
                 json: true
 
-# SQLite 存储配置（可选；默认: 内置默认值）
+# SQLite 存储配置（可选）
+# - 省略整个块时使用内置默认值
+# - 包含 path / busyTimeout / journalMode / retention
 sqlite:
   # SQLite 数据库文件路径（可选；默认: knock.db）
   path: knock.db
@@ -59,6 +77,11 @@ sqlite:
     vacuum: off
 
 # 投递目标定义（可选）
+# - deliveries.<id> 定义 canonical delivery
+# - 每个 delivery 只能配置 file / push / email 三选一
+# - source 通过 sources.<id>.deliveries.<deliveryId> 引用 canonical delivery 并覆写消息子树
+# - source 侧允许覆写字段：file.content / payload / message
+# - source 侧写 {} 等价于引用该 delivery 且不覆写消息内容
 deliveries:
   # 本地文件投递示例
   local:
@@ -86,11 +109,20 @@ deliveries:
   # 通过 push 直连 Telegram Bot API（HTML）示例
   telegram_webhook:
     push:
+      # push 由三部分组成：
+      # - http: 传输层（方法、URL、超时、重试、请求头等）
+      # - request: 请求载荷（编码方式 + payload）
+      # - response: 响应判定（可选）
+      # 省略 request 等价于 request: { type: body }
+      # 省略 http.method 等价于 POST
+      # 省略 response 等价于按 HTTP status 判定成功（2xx 为成功）
       http:
         method: POST
         url: "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
       request:
+        # 载荷编码方式：query / form / body（可选；默认: body）
         type: body
+        # payload 支持对象/数组/标量；内部字符串支持 Liquid
         payload:
           chat_id: "${TELEGRAM_CHAT_ID}"
           parse_mode: "HTML"
@@ -118,18 +150,20 @@ deliveries:
           parse_mode: "MarkdownV2"
           text: |
             {{ content | to_markdown | to_telegram_markdown_v2 }}
+      # 未配置 response，按 HTTP status 直接判定结果
 
   # HTTP / Webhook 投递示例
   webhook:
     push:
       http:
+        # transport 层配置：超时 / 重试 / 请求头 / 代理 / 方法 / URL
         # 超时（可选）
         timeout: 10s
-        # 传输层重试（可选；未配置则禁用重试）
+        # 传输层重试（可选）；省略等价于禁用重试
         retry:
           # 重试次数（可选；默认: 2）
           limit: 2
-          # 触发重试的 HTTP 状态码（可选）
+          # 触发重试的 HTTP 状态码（可选；默认: [408, 429, 500, 502, 503, 504]）
           statusCodes: [408, 429, 500, 502, 503, 504]
           # 超时是否重试（可选；默认: true）
           retryOnTimeout: true
@@ -143,8 +177,10 @@ deliveries:
         # 目标 webhook URL（必填）
         url: "${WEBHOOK_URL}"
       request:
-        # 请求载荷编码方式：query / form / body（可选；默认: body）
+        # payload 编码方式：query / form / body（可选；默认: body）
+        # 省略 request 等价于 { type: body }
         type: body
+        # payload 是消息内容子树；source 侧通过 deliveries.<deliveryId>.payload 覆写
         payload:
           text: "{{ entry.title }} => {{ entry.link }}"
           meta:
@@ -154,6 +190,8 @@ deliveries:
               - release
               - "${WEBHOOK_TAG}"
       response:
+        # response 只负责响应判定与错误文案，不参与 request 构造
+        # 省略 response 等价于按 HTTP status 判定（2xx 为成功）
         # 成功判定表达式（可选）
         predicate: "{{ ok }}"
         # 失败时错误消息模板（可选）
@@ -162,6 +200,10 @@ deliveries:
   # SMTP 邮件投递示例
   release_email:
     email:
+      # email 由两部分组成：
+      # - smtp: 传输与认证
+      # - message: 邮件内容与收件人
+      # source 侧通过 deliveries.<deliveryId>.message 覆写消息子树
       smtp:
         # SMTP 主机（必填；支持 ${ENV_VAR}）
         host: "${SMTP_HOST}"
@@ -170,11 +212,13 @@ deliveries:
         # 安全模式：implicit / starttls / none（必填）
         security: starttls
         # 认证信息（可选；支持 ${ENV_VAR}）
+        # 省略 auth 等价于不发送认证字段
         auth:
           username: "${SMTP_USERNAME}"
           password: "${SMTP_PASSWORD}"
       message:
-        # 下列字段都支持 Liquid；若同一字符串里同时有 ${ENV_VAR} 与 Liquid，会先展开环境变量，再在运行时渲染 Liquid
+        # message 是邮件内容子树；source 侧通过 deliveries.<deliveryId>.message 覆写
+        # 下列字段都支持 Liquid；同一字符串里同时包含 ${ENV_VAR} 与 Liquid 时，先展开环境变量，再渲染 Liquid
         from: "bot+{{ source.id }}@example.com"
         to:
           - "team+{{ entry.id }}@example.com"
@@ -183,6 +227,7 @@ deliveries:
         replyTo:
           - "reply@example.com"
         subject: "[{{ source.id }}] {{ entry.title }}"
+        # text 与 html 至少配置一个
         text: |
           {{ entry.title }}
           {{ entry.link }}
@@ -195,6 +240,13 @@ deliveries:
           X-Knock-Source: "{{ source.id }}"
 
 # 数据源定义（可选）
+# - key 为 source id
+# - source 运行形态：
+#   - 抓取 source：通过 http / byparr 拉取输入（两者二选一）
+#   - summary source：通过 summary 汇总已保存 source state（与 http / byparr / syndication / xquery 互斥）
+# - 抓取 source 的 parser：syndication / xquery 二选一
+# - 抓取 source 同时省略 syndication 与 xquery，等价 syndication: {}
+# - 抓取 source 省略 schedule 时，只在手动触发或 --immediate 下运行
 sources:
   # 标准 Feed 数据源示例（RSS / Atom / JSON Feed）
   deno:
@@ -202,16 +254,17 @@ sources:
     name: Deno releases
     # 是否启用该 source（可选；默认: true）
     enabled: true
+    # 抓取 transport：http / byparr 二选一
     http:
       # 订阅源 URL（必填）
       url: https://github.com/denoland/deno/releases.atom
       # 超时（可选）
       timeout: 5s
-      # 传输层重试（可选；未配置则禁用重试）
+      # 传输层重试（可选）；省略等价于禁用重试
       retry:
         # 重试次数（可选；默认: 2）
         limit: 2
-        # 触发重试的 HTTP 状态码（可选）
+        # 触发重试的 HTTP 状态码（可选；默认: [408, 429, 500, 502, 503, 504]）
         statusCodes: [408, 429, 500, 502, 503, 504]
         # 超时是否重试（可选；默认: true）
         retryOnTimeout: true
@@ -221,8 +274,13 @@ sources:
       headers:
         User-Agent: knock-example
     # Croner 表达式，支持秒级 cron（可选）
+    # 省略 schedule 时，该 source 只在手动触发或 --immediate 下运行
     schedule: "0 */30 * * * *"
-    # 关联的投递目标 keyed map（可选）；空 override 使用 {}
+    # 关联的投递目标 keyed map（可选）
+    # - key 为 delivery id
+    # - value 为该 source 对 canonical delivery 的消息子树覆写
+    # - file delivery 覆写 content，push delivery 覆写 payload，email delivery 覆写 message
+    # - {} 等价于引用 canonical delivery 且不覆写消息内容
     deliveries:
       local: {}
       telegram_webhook:
@@ -238,11 +296,15 @@ sources:
       release_email:
         message:
           subject: "[release][{{ source.id }}] {{ entry.title }}"
-    # 条目过滤表达式；返回 truthy 才会继续投递（可选）
+    # 条目过滤表达式；渲染结果必须为 `true` / `false` 字符串（可选）
     # match_* 的最后一个布尔参数可反转结果，例如 `{{ title | match_regex: "release", "i", true }}`
     filter: '{{ title | match_regex: "release", "i" }}'
+    # parser：syndication / xquery 二选一
+    # 同时省略 syndication 与 xquery 时，等价 syndication: {}
     syndication:
-      # entry 字段映射（可选）
+      # feed/entry 字段映射（可选）
+      # - 未写字段使用解析器默认映射
+      # - 字段值是 Liquid 模板
       entry:
         # 条目唯一 ID
         id: "{{ id }}"
@@ -261,6 +323,7 @@ sources:
 
   # Summary 数据源示例（基于已保存 source state 做窗口汇总）
   daily_summary:
+    # summary 与 http / byparr / syndication / xquery 互斥
     # summary source 必须配置 schedule；它不会抓外部输入
     schedule: "0 0 8 * * *"
     deliveries:
@@ -277,6 +340,7 @@ sources:
       # 参与汇总的上游 source ID 列表（必填）
       sources:
         - deno
+      # 首次运行且无 checkpoint 时，当前实现只产出默认 feed，不产出 summary entry
       # feed 字段模板（可选）
       feed:
         title: "{{ sources.deno.feed.title }} Daily Summary"
@@ -296,13 +360,14 @@ sources:
 
   # XQuery 数据源示例（普通 HTML / XML 页面）
   website_news:
+    # 抓取 transport：http / byparr 二选一
     http:
       # 订阅源 URL（必填）
       url: https://example.com/news
     # 关联的投递目标 keyed map（可选）
     deliveries:
       local: {}
-    # XQuery 提取配置（可选）
+    # parser：syndication / xquery 二选一
     xquery:
       # 每个条目的定位表达式（可选；省略时以 document 为 entry 上下文执行一次）
       locate: //article
@@ -326,6 +391,7 @@ sources:
 
   # Byparr 抓取示例（与 http 同级，二选一）
   website_news_byparr:
+    # 抓取 transport：http / byparr 二选一
     byparr:
       # Byparr API 端点（可选；默认: http://byparr:8191/v1）
       endpoint: http://byparr:8191/v1
@@ -339,6 +405,7 @@ sources:
       proxy: http://user:pass@127.0.0.1:8080
     deliveries:
       local: {}
+    # parser：syndication / xquery 二选一
     xquery:
       locate: //article
       entry:
@@ -352,6 +419,7 @@ sources:
       url: https://example.com/news
     deliveries:
       local: {}
+    # parser：syndication / xquery 二选一
     xquery:
       locate: //article
       feed: |
@@ -365,12 +433,15 @@ sources:
           "link": string(.//a/@href)
         }
 
-# 日志配置（可选；默认: 内置默认值）
+# 日志配置（可选）
+# - 省略整个块时使用内置默认值
+# - logging.format 默认 json
+# - pretty 只影响控制台展示层，不改变底层 JSON record 语义与字段归属
 logging:
   # 日志级别（可选；默认: info；支持: trace | debug | info | warn | error | fatal）
   level: info
   # 日志格式（可选；默认: json；支持: json | pretty）
-  # pretty 只影响控制台展示，不改变底层 JSON 契约。
+  # pretty 只影响控制台展示，不改变底层 JSON 契约
   format: json
   # 日志输出 sinks 配置（可选；默认: 内置默认值）
   sinks:

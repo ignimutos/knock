@@ -1,154 +1,53 @@
 # Knock
 
-一个用 Deno + TypeScript 写的订阅抓取与投递守护进程。
+Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 
-它会按计划抓取 RSS / Atom / JSON Feed，或者用 XQuery 从 HTML/XML
-页面里提取条目；然后把条目统一成一套字段，经过 Liquid
-过滤与模板渲染后，投递到文件、HTTP 或 SMTP 邮件
-接口，并把抓取状态与去重信息保存到 SQLite。
-
-适合这几类场景：
-
-- 盯 GitHub Releases、博客、公告页，并把新内容汇总到 Markdown 文件
-- 把抓取结果推给 webhook、企业微信网关、自动化流程
-- 通过通用 HTTP push 直连 Telegram Bot API
-- 从没有标准 Feed 的网页中，用 XQuery 自己抽取列表项
+它按计划抓取 RSS / Atom / JSON Feed，或通过 XQuery 从 HTML/XML 提取条目；随后统一 feed 与 entry 字段，执行 Liquid 过滤与渲染，并将结果投递到 file、push(HTTP)、email(SMTP) 通道，同时把状态与去重信息写入 SQLite。
 
 ## 功能概览
 
-- **订阅抓取**
-  - RSS
-  - Atom
-  - JSON Feed
-  - XQuery 提取 HTML / XML
-- **统一字段模型**
-  - feed：`title` `link` `description` `generator` `language` `published`
-  - entry：`id` `title` `link` `description` `content` `published` `updated`
-- **模板与过滤**
-  - Liquid 模板渲染
-  - 自定义过滤器：`match_exact` `match_fuzzy` `match_regex` `strip_html`
-    `to_html` `to_markdown` `to_telegram_html` `to_telegram_markdown_v2`
-- **投递目标**
-  - 文件追加写入
-  - HTTP / Webhook 推送
-  - SMTP 邮件发送
-- **运行能力**
-  - cron 调度
-  - 一次性执行模式 `--immediate`
-  - SQLite 去重与保留策略
-  - 结构化 JSON 日志
-  - Docker 运行
-
-## 目录结构
-
-```text
-src/main.ts                 CLI 入口
-src/core/app.ts             daemon 启动薄接口
-src/application/            v2 use cases 与 stage 编排
-src/domain/                 SourceRun / PipelineItem / DeliveryAttempt 主事实
-src/interfaces/             daemon / web / config 接口装配
-src/infrastructure/         sqlite / source / delivery 适配器
-src/config/                 配置加载、校验、解析
-src/sources/                syndication / xquery / summary 解析能力
-src/deliveries/             file / http / email 投递器
-src/db/                     SQLite 客户端与旧迁移资产
-runtime/config.yml          默认运行配置
-config.example.yml          提交到仓库的完整参考配置
-Dockerfile                  容器镜像构建
-```
+- 输入能力：RSS / Atom / JSON Feed、XQuery 页面提取、summary 窗口汇总。
+- 处理链路：字段统一、Liquid 过滤、模板渲染。
+- 投递通道：file、push、email。
+- 运行模式：`all`、`web`、`daemon`，支持 `--immediate` 一次性执行。
+- 状态存储：SQLite 记录 feed、entry、delivery 去重状态。
+- 日志：默认结构化 `json`，支持 `pretty` 控制台展示。
 
 ## 架构概览
 
-- daemon 与 web preview 共享同一套 `RunSourceUseCase` / `PreviewSourceUseCase` 主干。
-- `SourceRun`、`PipelineItem`、`DeliveryAttempt` 是当前 v2 cutover 后的主事实骨架。
-- preview 与 production 共核执行，但通过独立 `profile` / `effectDomain` 隔离事实域。
+### 主干结构
 
-## Web Playground
+```text
+src/main.ts                 CLI 入口与 mode 分流
+src/config/schema.ts        配置契约与校验规则
+src/config/resolve_config.ts 配置解析与默认语义
+src/core/                   daemon 启动与核心流程编排
+src/sources/                syndication / xquery / summary 解析能力
+src/deliveries/             file / push / email 投递能力
+src/db/                     SQLite 客户端、schema 与状态存储
+web/                        网页调试页与 API 路由
+config.example.yml          完整参考配置
+deno.json                   任务脚本入口
+```
 
-- 首页：`/`
-- XQuery Playground：`/xquery`
-- Syndication Playground：`/syndication`
-- XQuery API：`/api/xquery/evaluate`
-- Syndication API：`/api/syndication/evaluate`
+## 快速开始
 
-说明：
-
-- 两个 playground 默认 URL 都为空，需要手动输入。
-- 两个 playground 都支持 `native / byparr` 抓取方式切换，便于对照不同 transport 的请求路径。
-- XQuery Playground 支持命名空间、feed/entry 结构化映射与脚本模式切换，并可查看原始响应内容与结构化 JSON 结果。
-- Syndication Playground 在 feed / entry 标准字段留空时，会保留 syndication runtime 默认映射；点击“填充默认模板”可一键写入标准字段模板，便于从默认行为切换到显式覆盖。
-- Playground 由服务端发起目标 URL 抓取请求，请仅在可信网络环境使用。
-- `/api/xquery/evaluate` 与 `/api/syndication/evaluate` 失败时都会返回更明确的错误 `message`，便于区分请求非法、抓取失败与解析/评估失败等场景。
-- 界面支持主题切换（跟随系统 / 浅色 / 深色），默认跟随系统并在浏览器本地记住你的选择。
-- 若浏览器不支持系统主题检测能力，会自动回退为浅色。
-
-## 工作原理
-
-一次 source 执行时，Knock 大致会做这些事：
-
-1. 读取 `runtime/config.yml`
-2. 抓取 `source.http.url`
-3. 用 `syndication` 或 `xquery` 解析内容
-4. 统一成 feed / entry 字段
-5. 用 `filter` 决定是否跳过条目
-6. 按 delivery 类型渲染内容或请求字段
-7. 检查 SQLite 去重状态
-8. 发送到文件 / HTTP / SMTP 邮件
-9. 记录已投递状态、抓取内容和 entry 元数据
-10. 按 retention 规则清理旧记录
-
-## 快速开始：从零跑起来
-
-下面按**完全从零**的方式写。先做最简单、最容易验证的一种：
-
-- 数据源：GitHub Releases Atom
-- 投递方式：写入本地 Markdown 文件
-- 运行方式：一次性执行
-
-### 1) 安装 Deno
-
-先确认你有 Deno：
+### 1) 准备环境
 
 ```bash
 deno --version
 ```
-
-如果没有，按 Deno 官方方式安装。安装完成后重新执行上面的命令。
-
-### 2) 克隆项目
 
 ```bash
 git clone <你的仓库地址> knock
 cd knock
 ```
 
-### 3) 看一下配置入口
+### 2) 基于参考配置创建配置文件
 
-项目默认使用：
+`config.example.yml` 是仓库内完整参考配置；请基于它裁剪出你的配置文件 `<your-config.yml>`。
 
-- 配置文件：`runtime/config.yml`
-- 运行目录：`runtime/`
-- 默认启动命令：`deno task start`（同时启动 web + daemon）
-- 完整参考配置：`config.example.yml`
-
-其中：
-
-- `config.example.yml` 是仓库内提交的完整参考配置，包含 file /
-  HTTP / xquery / syndication 示例
-- `runtime/config.yml` 是你本地真正要运行的配置入口
-
-如果你不传 `--config` 和 `--runtime_dir`，程序会优先按下面的顺序找运行目录：
-
-1. CLI 参数 `--runtime_dir`
-2. 环境变量 `KNOCK_RUNTIME_DIR`
-3. `--config` 所在目录
-4. 当前工作目录下的 `runtime/`
-
-### 4) 先准备一个最小可用配置
-
-如果你想先看完整参考配置，直接打开仓库根目录下的 `config.example.yml`。
-
-然后再把 `runtime/config.yml` 改成下面这样：
+### 3) 先落地最小 file 链路
 
 ```yml
 sqlite:
@@ -159,9 +58,9 @@ deliveries:
     file:
       path: outputs/releases.md
       content: |
-        ## [{{ title }}]({{ link }})
+        ## [{{ entry.title }}]({{ entry.link }})
 
-        {{ content | strip_html }}
+        {{ entry.content | strip_html }}
 
         ---
 
@@ -173,191 +72,33 @@ sources:
       local: {}
 ```
 
-这份配置的意思：
-
-- 把 SQLite 数据库放在 `runtime/knock.db`
-- 把抓到的新条目追加写到 `runtime/outputs/releases.md`
-- 数据源是 Deno 的 GitHub Releases Atom
-- 不写 `schedule`，所以它只会在你手动执行时跑一次
-- 不写 `syndication` 也没关系，Knock 会默认按 syndication 源解析
-
-> [!TIP]
-> 如果你要配置 HTTP webhook、XQuery、过滤表达式或更完整的字段映射，
-> 请直接参考仓库根目录下的 `config.example.yml`。
-
-### 5) 运行一次
+### 4) 先跑一次即时执行
 
 ```bash
-deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run src/main.ts --mode daemon --config runtime/config.yml --immediate
+deno task daemon --config <your-config.yml> --immediate
 ```
 
-或者用项目自带 task：
+### 5) 启动常驻模式
 
 ```bash
-deno task daemon --config runtime/config.yml --immediate
+deno task start --config <your-config.yml>
 ```
 
-> [!NOTE]
-> `deno task start` 实际执行的是
-> `deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run src/main.ts`。
-> 默认模式是 `--mode all`（同时启动 web + daemon）。
-> 如果你要做一次性 daemon 验证，请用 `deno task daemon --immediate`。
+## 配置设计原则
 
-### 6) 验证结果
+1. `deliveries.<id>` 是 canonical delivery 定义区，`sources.<id>.deliveries` 是 keyed override 区；source 通过 delivery ID 引用并覆写消息子树。
+2. `sources.<id>.deliveries` 只允许覆写 `file.content`、`push.request.payload`、`email.message`。
+3. 覆写合并语义：对象 deep merge、数组整体替换、标量直接替换，v1 不支持 null-delete。
+4. 每个 source 选择一种抓取入口：`http` 或 `byparr`。
+5. 每个 source 选择一种解析器：`syndication` 或 `xquery`；当两者都省略时，运行时语义等价于 `syndication: {}`。
+6. `summary` source 采用互斥模型：启用 `summary` 后，source 进入汇总模式，并使用独立窗口语义。
+7. 配置加载阶段先展开 `${ENV_VAR}`，运行阶段再渲染 Liquid 模板；同一字符串中两者并存时，执行顺序保持为“先 ENV，后 Liquid”。
+8. `sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `runtime_dir` 解析。
 
-你应该能看到这些东西：
-
-- `runtime/knock.db`
-- `runtime/outputs/releases.md`
-
-再打开文件确认内容：
-
-```bash
-ls runtime/data runtime/outputs
-```
-
-如果 `releases.md` 里已经有抓到的标题、链接和正文摘要，说明最小链路已经通了。
-
-### 7) 切换成守护进程模式
-
-给 source 加上 `schedule`：
+## 完整配置模型长这样：
 
 ```yml
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    schedule: '0 */30 * * * *'
-    deliveries:
-      local: {}
-```
-
-然后启动：
-
-```bash
-deno task daemon --config runtime/config.yml
-```
-
-程序会常驻，根据 cron 周期抓取。
-
-> [!TIP]
-> 这里使用的是 `Croner` 语法，支持秒级 cron。上面的 `0 */10 * * * *` 表示“每 10
-> 分钟执行一次，在第 0 秒触发”。
-
----
-
-## Docker 部署
-
-项目自带 `Dockerfile`，镜像同时包含 daemon 与 web 代码（`src/` + `web/` + `vite.config.ts`）。
-
-### 构建镜像
-
-```bash
-docker build -t knock:local .
-```
-
-### 运行容器
-
-```bash
-docker run --rm \
-  -v "$PWD/runtime:/app/runtime" \
-  -e WEBHOOK_URL=https://example.com/webhook \
-  -e WEBHOOK_TOKEN=xxx \
-  -e WEBHOOK_TAG=news \
-  knock:local
-```
-
-容器里默认：
-
-- 工作目录：`/app`
-- 运行目录环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
-- 默认命令：`deno task start`
-
-所以你只要把宿主机的 `runtime/` 挂进去，配置和 SQLite 数据就会持久化。
-
-> [!IMPORTANT]
-> 如果你在配置里用了 `${WEBHOOK_URL}`、`${WEBHOOK_TOKEN}`
-> 之类的占位符，就必须把这些环境变量传进容器、systemd、PM2
-> 或你自己的进程管理器里。这个项目**不会自动读取 `.env`
-> 文件**，它只读取进程环境变量。
-
----
-
-## CLI 用法
-
-入口文件是 `src/main.ts`，支持这些参数：
-
-```bash
-deno run ... src/main.ts [--mode <all|web|daemon>] [--config <path>] [--runtime_dir <dir>] [--immediate] [--web_host <host>] [--web_port <port>]
-```
-
-### 参数说明
-
-#### `--mode <all|web|daemon>`
-
-运行模式。
-
-- `all`：同时启动 web + daemon（默认）
-- `web`：仅启动 web
-- `daemon`：仅启动 daemon
-
-模式约束：
-
-- `web` 模式只接受 `--web_host` / `--web_port`
-- `daemon` 模式只接受 `--config` / `--runtime_dir` / `--immediate`
-
-#### `--config <path>`
-
-指定配置文件路径。
-
-例如：
-
-```bash
-deno task daemon --config runtime/config.yml
-```
-
-#### `--runtime_dir <dir>`
-
-指定运行目录。相对路径文件（SQLite、file delivery
-输出文件）都会相对于这个目录解析。
-
-例如：
-
-```bash
-deno task daemon --config configs/prod.yml --runtime_dir runtime-prod
-```
-
-#### `--immediate`
-
-立即执行一次所有已启用 source，然后退出，不进入常驻调度模式（仅 `daemon` 模式可用）。
-
-适合：
-
-- 首次验证配置
-- 配合 crontab / CI 外部调度
-- 调试模板和过滤逻辑
-
-#### `--web_host <host>` / `--web_port <port>`
-
-Web 服务监听地址与端口（仅 `web` / `all` 模式可用）。
-
-默认监听 `127.0.0.1:8000`。
-
-### 错误处理
-
-CLI 对未知参数和缺少值会直接报错，例如：
-
-- `未知参数: --unknown`
-- `--config 缺少路径参数`
-- `--runtime_dir 缺少目录参数`
-
----
-
-## 配置总览
-
-完整配置模型长这样：
-
-```yml
+language: zh-CN
 timezone: Asia/Shanghai
 timestampFormat: yyyy-MM-dd HH:mm:ss
 
@@ -370,6 +111,16 @@ sqlite:
     maxEntriesPerSource: 1000
     vacuum: off
 
+ai:
+  defaultModel: openai_main/default
+  providers:
+    openai_main:
+      type: openai
+      apiKey: '${OPENAI_API_KEY}'
+      models:
+        default:
+          model: gpt-4o-mini
+
 deliveries:
   local:
     file:
@@ -380,17 +131,11 @@ deliveries:
         {{ content | strip_html }}
 
         ---
-      rotation:
-        enabled: true
-        size: 10m
-        age: 7d
-        backups: 3
-
   telegram_webhook:
     push:
       http:
         method: POST
-        url: 'https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage'
+        url: '${TELEGRAM_WEBHOOK_URL}'
       request:
         type: body
         payload:
@@ -399,32 +144,9 @@ deliveries:
           text: |
             <b>{{ title }}</b>
 
-            {{ content | strip_html }}
+            {{ content | to_telegram_html }}
 
             {{ link }}
-
-  webhook:
-    push:
-      http:
-        method: POST
-        url: '${WEBHOOK_URL}'
-        timeout: 10s
-        headers:
-          Authorization: 'Bearer ${WEBHOOK_TOKEN}'
-      request:
-        type: body
-        payload:
-          text: '{{ entry.title }} => {{ entry.link }}'
-          meta:
-            source: '{{ source.id }}'
-            note: '${WEBHOOK_TAG}: {{ entry.published }}'
-            tags:
-              - release
-              - '${WEBHOOK_TAG}'
-      response:
-        predicate: '{{ ok }}'
-        message: 'webhook failed: {{ status }}'
-
   release_email:
     email:
       smtp:
@@ -432,49 +154,308 @@ deliveries:
         port: 587
         security: starttls
       message:
-        from: 'bot+{{ source.id }}@example.com'
+        from: bot@example.com
         to:
-          - 'team+{{ entry.id }}@example.com'
+          - team@example.com
         subject: '[{{ source.id }}] {{ entry.title }}'
         text: |
           {{ entry.title }}
-          {{ entry.link }}
 
 sources:
   deno:
-    name: Deno releases
-    enabled: true
     http:
       url: https://github.com/denoland/deno/releases.atom
-      timeout: 5s
-      headers:
-        User-Agent: knock-example
     schedule: '0 */30 * * * *'
     deliveries:
       local: {}
       telegram_webhook:
         payload:
+          parse_mode: 'HTML'
           text: |
             <b>[{{ source.id }}] {{ title }}</b>
 
-            {{ content | strip_html }}
+            {{ content | to_telegram_html }}
 
             {{ link }}
-      webhook: {}
       release_email:
         message:
           subject: '[release][{{ source.id }}] {{ entry.title }}'
-    filter: '{{ title | match_regex: "release", "i" }}'
-    syndication:
+  daily_summary:
+    schedule: '0 0 8 * * *'
+    deliveries:
+      local: {}
+    summary:
+      sources:
+        - deno
+      feed:
+        title: '{{ sources.deno.feed.title }} Daily Summary'
       entry:
-        id: '{{ id }}'
-        title: '{{ title }}'
-        link: '{{ link }}'
-        description: '{{ description }}'
-        content: '{{ content }}'
-        published: '{{ published }}'
-        updated: '{{ updated }}'
+        id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}'
+        description: |
+          窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}
+          条目数：{{ sources.deno.entries | size }}
 
+logging:
+  level: info
+  format: json
+  sinks:
+    console:
+      type: console
+```
+
+## 完整键索引
+
+### 顶层键
+
+- `language`
+- `timezone`
+- `timestampFormat`
+- `sqlite.path`
+- `sqlite.busyTimeout`
+- `sqlite.journalMode`
+- `sqlite.retention.maxAge`
+- `sqlite.retention.maxEntriesPerSource`
+- `sqlite.retention.vacuum`
+- `ai`
+- `deliveries`
+- `sources`
+- `logging.level`
+- `logging.format`
+- `logging.sinks.console.type`
+
+### `ai` 键路径
+
+- `ai.defaultModel`
+- `ai.providers.<providerId>.type`
+- `ai.providers.<providerId>.apiKey`
+- `ai.providers.<providerId>.baseURL`
+- `ai.providers.<providerId>.headers.<headerKey>`
+- `ai.providers.<providerId>.options.organization`
+- `ai.providers.<providerId>.options.project`
+- `ai.providers.<providerId>.options.authToken`
+- `ai.providers.<providerId>.models.<modelId>.model`
+- `ai.providers.<providerId>.models.<modelId>.context`
+- `ai.providers.<providerId>.models.<modelId>.temperature`
+- `ai.providers.<providerId>.models.<modelId>.maxOutputTokens`
+- `ai.providers.<providerId>.models.<modelId>.options.reasoningEffort`
+- `ai.providers.<providerId>.models.<modelId>.options.json`
+- `ai.providers.<providerId>.models.<modelId>.variants.<variantId>.temperature`
+- `ai.providers.<providerId>.models.<modelId>.variants.<variantId>.maxOutputTokens`
+- `ai.providers.<providerId>.models.<modelId>.variants.<variantId>.options.reasoningEffort`
+- `ai.providers.<providerId>.models.<modelId>.variants.<variantId>.options.json`
+
+### `deliveries` 键路径
+
+- `deliveries.<deliveryId>.file.path`
+- `deliveries.<deliveryId>.file.content`
+- `deliveries.<deliveryId>.file.rotation.enabled`
+- `deliveries.<deliveryId>.file.rotation.size`
+- `deliveries.<deliveryId>.file.rotation.age`
+- `deliveries.<deliveryId>.file.rotation.backups`
+- `deliveries.<deliveryId>.push.http.method`
+- `deliveries.<deliveryId>.push.http.url`
+- `deliveries.<deliveryId>.push.http.timeout`
+- `deliveries.<deliveryId>.push.http.headers.<headerKey>`
+- `deliveries.<deliveryId>.push.http.proxy`
+- `deliveries.<deliveryId>.push.http.retry.limit`
+- `deliveries.<deliveryId>.push.http.retry.statusCodes[]`
+- `deliveries.<deliveryId>.push.http.retry.retryOnTimeout`
+- `deliveries.<deliveryId>.push.http.retry.backoffLimit`
+- `deliveries.<deliveryId>.push.request.type`
+- `deliveries.<deliveryId>.push.request.payload`
+- `deliveries.<deliveryId>.push.response.predicate`
+- `deliveries.<deliveryId>.push.response.message`
+- `deliveries.<deliveryId>.email.smtp.host`
+- `deliveries.<deliveryId>.email.smtp.port`
+- `deliveries.<deliveryId>.email.smtp.security`
+- `deliveries.<deliveryId>.email.smtp.auth.username`
+- `deliveries.<deliveryId>.email.smtp.auth.password`
+- `deliveries.<deliveryId>.email.message.from`
+- `deliveries.<deliveryId>.email.message.to[]`
+- `deliveries.<deliveryId>.email.message.cc[]`
+- `deliveries.<deliveryId>.email.message.bcc[]`
+- `deliveries.<deliveryId>.email.message.replyTo[]`
+- `deliveries.<deliveryId>.email.message.subject`
+- `deliveries.<deliveryId>.email.message.text`
+- `deliveries.<deliveryId>.email.message.html`
+- `deliveries.<deliveryId>.email.message.headers.<headerKey>`
+
+### `sources` 键路径
+
+- `sources.<sourceId>.name`
+- `sources.<sourceId>.enabled`
+- `sources.<sourceId>.schedule`
+- `sources.<sourceId>.filter`
+- `sources.<sourceId>.deliveries.<deliveryId>`
+- `sources.<sourceId>.deliveries.<deliveryId>.content`（file override）
+- `sources.<sourceId>.deliveries.<deliveryId>.payload`（push override）
+- `sources.<sourceId>.deliveries.<deliveryId>.message`（email override）
+- `sources.<sourceId>.http.url`
+- `sources.<sourceId>.http.timeout`
+- `sources.<sourceId>.http.headers.<headerKey>`
+- `sources.<sourceId>.http.proxy`
+- `sources.<sourceId>.http.retry.limit`
+- `sources.<sourceId>.http.retry.statusCodes[]`
+- `sources.<sourceId>.http.retry.retryOnTimeout`
+- `sources.<sourceId>.http.retry.backoffLimit`
+- `sources.<sourceId>.byparr.endpoint`
+- `sources.<sourceId>.byparr.cmd`
+- `sources.<sourceId>.byparr.url`
+- `sources.<sourceId>.byparr.maxTimeout`
+- `sources.<sourceId>.byparr.proxy`
+- `sources.<sourceId>.syndication.feed.<fieldKey>`
+- `sources.<sourceId>.syndication.entry.<fieldKey>`
+- `sources.<sourceId>.xquery.locate`
+- `sources.<sourceId>.xquery.feed`
+- `sources.<sourceId>.xquery.entry`
+- `sources.<sourceId>.xquery.namespaces.<prefix>`
+- `sources.<sourceId>.summary.sources[]`
+- `sources.<sourceId>.summary.feed.title`
+- `sources.<sourceId>.summary.feed.link`
+- `sources.<sourceId>.summary.feed.description`
+- `sources.<sourceId>.summary.feed.generator`
+- `sources.<sourceId>.summary.feed.language`
+- `sources.<sourceId>.summary.feed.published`
+- `sources.<sourceId>.summary.entry.id`
+- `sources.<sourceId>.summary.entry.title`
+- `sources.<sourceId>.summary.entry.link`
+- `sources.<sourceId>.summary.entry.description`
+- `sources.<sourceId>.summary.entry.content`
+- `sources.<sourceId>.summary.entry.published`
+- `sources.<sourceId>.summary.entry.updated`
+
+## 配置说明
+
+### `sqlite`
+
+- `sqlite.path` 默认 `knock.db`。
+- `sqlite.busyTimeout` 默认 `5s`。
+- `sqlite.journalMode` 支持 `WAL` / `DELETE`，默认 `WAL`。
+- `sqlite.retention.maxAge` 默认 `180d`，`maxEntriesPerSource` 默认 `1000`，`vacuum` 支持 `off` / `afterPrune`。
+
+### `logging`
+
+- `logging.level` 支持 `trace|debug|info|warn|error|fatal`，默认 `info`。
+- `logging.format` 支持 `json|pretty`，默认 `json`。
+- `logging.sinks.console.type` 当前固定 `console`。
+
+### `deliveries`
+
+- 每个 delivery 选择一种目标：`file`、`push`、`email`。
+- `file` 负责本地追加写入，支持 `rotation`。
+- `push` 负责 HTTP 投递，分为 `push.http`（传输层）与 `push.request`（负载层），支持 `response.predicate` 自定义成功判定。
+- `sources.<id>.deliveries` 仅覆写消息子树：file 覆写 `content`，push 覆写 `payload`，email 覆写 `message`。
+
+### `sources`
+
+- `schedule` 使用 Croner 语法，支持秒级表达式。
+- `filter` 需返回 `true/false` 字符串。
+- `syndication` 用于 RSS/Atom/JSON Feed 映射。
+- `xquery` 用于 HTML/XML 提取，`entry.id` 作为稳定主键。
+- `summary` source 不抓外部输入。
+- `summary` source 必须配置 `schedule`。
+- 窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint。
+- 窗口内上游 entries 取自 `(previousCheckpoint, scheduledAt]` 区间内已交付 facts。
+- 模板窗口变量包含 `source.runtime.window.previousCheckpoint` 与 `source.runtime.window.scheduledAt`。
+- 上游汇总对象包含 `sources.<id>.name`、`sources.<id>.feed`、`sources.<id>.entries`。
+- 当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串。
+
+### 高频 Liquid 过滤器
+
+- `match_regex`：正则匹配，适合 source 侧 `filter`。
+- `strip_html`：去标签与空白归一，适合生成文本摘要。
+- `to_telegram_html`：将 HTML 规范化为 Telegram HTML 可发送子集。
+- `to_telegram_markdown_v2`：将 Markdown/纯文本转换为 Telegram MarkdownV2 可发送文本。
+
+## AI 配置
+
+### 用途
+
+`ai` 为 `ai_translate` 和 `ai_summarize` 提供 provider / model 元数据、默认模型与预算参数。
+
+### 最小示例
+
+```yml
+language: zh-CN
+
+ai:
+  defaultModel: openai_main/default
+  providers:
+    openai_main:
+      type: openai
+      apiKey: '${OPENAI_API_KEY}'
+      models:
+        default:
+          model: gpt-4o-mini
+```
+
+### 关键约束
+
+- provider 类型：`openai`、`anthropic`、`gemini`。
+- `defaultModel` 支持 `providerId/modelId` 与裸 `modelId`；裸引用在重名场景需改为全引用。
+- `models.<id>.model` 使用静态字面量。
+- `variants.<id>` 覆写 `temperature`、`maxOutputTokens`、`options`。
+- `anthropic` 的 `apiKey` 与 `options.authToken` 采用互斥关系。
+
+### 常见坑
+
+- 配置里使用 AI 过滤器时，`ai.providers.*.models` 需要可解析模型。
+- `ai.defaultModel` 指向不存在模型会在配置阶段报错。
+- 在 source/filter 或 delivery 模板中使用 AI 过滤器时，参数值使用静态字面量。
+
+## 常用组合示例
+
+### 1) webhook
+
+```yml
+deliveries:
+  webhook:
+    push:
+      http:
+        method: POST
+        url: '${WEBHOOK_URL}'
+        headers:
+          Authorization: 'Bearer ${WEBHOOK_TOKEN}'
+      request:
+        type: body
+        payload:
+          text: '{{ entry.title }} => {{ entry.link }}'
+      response:
+        predicate: '{{ ok }}'
+        message: 'webhook failed: {{ status }}'
+
+sources:
+  deno:
+    http:
+      url: https://github.com/denoland/deno/releases.atom
+    deliveries:
+      webhook: {}
+```
+
+### 2) xquery
+
+```yml
+sources:
+  website_news:
+    http:
+      url: https://example.com/news
+    deliveries:
+      local: {}
+    xquery:
+      locate: //article
+      feed:
+        title: string(//title)
+      entry:
+        id: string(@data-id)
+        title: string(.//h2)
+        link: string(.//a/@href)
+        description: string(.//p)
+```
+
+### 3) summary
+
+```yml
+sources:
   daily_summary:
     schedule: '0 0 8 * * *'
     deliveries:
@@ -492,258 +473,102 @@ sources:
         - deno
       feed:
         title: '{{ sources.deno.feed.title }} Daily Summary'
-        description: '{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}'
       entry:
         id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}'
         title: '{{ sources.deno.feed.title }} Daily Summary'
         description: |
           窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}
           条目数：{{ sources.deno.entries | size }}
-
-  website_news:
-    http:
-      url: https://example.com/news
-    deliveries:
-      local: {}
-    xquery:
-      locate: //article
-      feed:
-        title: string(//title)
-      entry:
-        id: string(@data-id)
-        title: string(.//h2)
-        link: string(.//a/@href)
-        description: string(.//p)
-
-logging:
-  level: info
-  format: json
-  sinks:
-    console:
-      type: console
 ```
 
-下面逐块解释。
+## 网页调试页
 
-## 顶层配置
+- 首页：`/`
+- XQuery Playground：`/xquery`
+- Syndication Playground：`/syndication`
+- API：`POST /api/xquery/evaluate`、`POST /api/syndication/evaluate`
 
-### `language`
+启动方式：
 
-可选的语言标签，要求符合 BCP 47，并会在校验阶段做规范化。
-
-示例：
-
-```yml
-language: zh-CN
+```bash
+deno task start --mode web
 ```
 
-例如输入 `ZH-cn` 会在配置校验后规范化为 `zh-CN`。
+## 命令行用法
 
-### `timezone`
-
-时区名称。用于日期字段格式化和日志时间。
-
-示例：
-
-```yml
-timezone: Asia/Shanghai
+```bash
+deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run src/main.ts \
+  [--mode <all|web|daemon>] \
+  [--config <path>] \
+  [--runtime_dir <dir>] \
+  [--immediate] \
+  [--web_host <host>] \
+  [--web_port <port>]
 ```
 
-如果不写，默认使用系统时区；再不行就回退到 `UTC`。
+### 参数说明
 
-### `timestampFormat`
+- `--mode`：`all`（默认）/`web`/`daemon`
+- `--config`：显式配置文件路径
+- `--runtime_dir`：运行目录
+- `--immediate`：daemon 立即执行一次后退出
+- `--web_host` / `--web_port`：web 监听地址
 
-统一时间格式，使用 Luxon 的格式字符串。
+### mode 参数约束
 
-默认值：
+- `web` 模式：支持 `--web_host`、`--web_port`。
+- `daemon` 模式：支持 `--config`、`--runtime_dir`、`--immediate`。
+- `web` 模式与 `--config` / `--runtime_dir` / `--immediate` 组合会触发参数错误。
+- `daemon` 模式与 `--web_host` / `--web_port` 组合会触发参数错误。
 
-```yml
-timestampFormat: yyyy-MM-dd HH:mm:ss
+### `--config` 与 `--runtime_dir` 优先级与路径解析
+
+`runtime_dir` 决策顺序：
+
+1. CLI `--runtime_dir`
+2. 环境变量 `KNOCK_RUNTIME_DIR`
+3. `--config` 文件所在目录
+4. `当前工作目录/runtime`
+
+`config` 决策顺序：
+
+1. CLI `--config`
+2. `<runtime_dir>/config.yml`
+3. `<runtime_dir>/config.yaml`
+
+路径解析细节：
+
+- CLI 传入的 `--config` 与 `--runtime_dir` 相对路径按当前工作目录解析为绝对路径。
+- `sqlite.path`、`deliveries.*.file.path` 的相对路径按最终 `runtime_dir` 解析。
+- `--config` 与 `--runtime_dir` 同时出现时，配置文件读取位置取 `--config`，运行期相对路径基准取 `--runtime_dir`。
+
+## 容器部署
+
+### 构建
+
+```bash
+docker build -t knock:local .
 ```
 
-这个值会影响：
+### 运行
 
-- feed / entry 默认日期字段的输出格式
-- 结构化日志里的 `timestamp`
-
-### `ai`
-
-用于声明 AI provider / model 元数据，并在运行时为 `ai_translate` / `ai_summarize` 过滤器提供模型选择、预算与调用参数。
-
-示例：
-
-```yml
-ai:
-  defaultModel: openai_main/default
-  providers:
-    openai_main:
-      type: openai
-      apiKey: '${OPENAI_API_KEY}'
-      baseURL: 'https://api.openai.com/v1'
-      headers:
-        X-Trace-Id: '${TRACE_ID}'
-      options:
-        organization: '${OPENAI_ORG_ID}'
-        project: '${OPENAI_PROJECT_ID}'
-      models:
-        default:
-          model: gpt-4o-mini
-          temperature: 0.2
-          variants:
-            creative:
-              temperature: 0.8
+```bash
+docker run --rm \
+  -v "<宿主机持久化目录>:/app/runtime" \
+  -e WEBHOOK_URL=https://example.com/webhook \
+  -e WEBHOOK_TOKEN=xxx \
+  knock:local --config /app/runtime/config.yml
 ```
 
-约束：
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。
 
-- `providers.<id>.type` 仅支持 `openai` / `anthropic` / `gemini`
-- 共同字段收敛为 `type` / `apiKey` / `baseURL` / `headers` / `models` / `options`
-- `openai.options` 仅支持 `organization` / `project`
-- `anthropic.options` 仅支持 `authToken`，且不能与 `apiKey` 同时配置
-- `gemini.options` 当前不支持任何 provider-specific 选项
-- `models.<id>.model` 必须是静态字面量，不支持 `${ENV_VAR}` 或 Liquid
-- `openai.models.<id>.options` / `openai.models.<id>.variants.<id>.options` 当前仅支持 `reasoningEffort` 与 `json`
-- `anthropic` / `gemini` 的 `models.<id>.options` 与 `variants.<id>.options` 当前不支持；配置非空 options 会在配置期直接报错
-- `variants.<id>` 只允许覆盖 `temperature` / `maxOutputTokens` / `options`
-- `defaultModel` 可省略；省略时会按 provider 声明顺序与 model 声明顺序自动选择第一个模型
-- model 引用支持 `providerId/modelId` 与裸 `modelId`；裸引用在跨 provider 重名时会直接报错
+## 日志
 
-当前内置热门模型默认表只收敛 `context` 与 `maxOutputTokens`；未命中具体模型时回退到 provider 默认值。
+默认日志格式为 `json`，字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
 
----
+`pretty` 是控制台展示层，适合本地调试；`json` 适合日志采集与检索。两种格式表达同一条底层记录语义。
 
-## `sqlite` 配置
-
-用于保存：
-
-- 已投递记录（去重）
-- 每个 source 最近抓取到的 feed 内容
-- 每个 entry 的元数据和最近看到时间
-
-### `sqlite.path`
-
-SQLite 文件路径。
-
-- 绝对路径：直接使用
-- 相对路径：相对于 `runtimeDir`
-
-示例：
-
-```yml
-sqlite:
-  path: knock.db
-```
-
-默认值：
-
-```yml
-sqlite:
-  path: knock.db
-```
-
-### `sqlite.busyTimeout`
-
-SQLite busy timeout。
-
-支持单位：
-
-- `ms`
-- `s`
-- `m`
-- `h`
-
-示例：
-
-```yml
-sqlite:
-  busyTimeout: 5s
-```
-
-默认值：`5s`
-
-### `sqlite.journalMode`
-
-可选值：
-
-- `WAL`
-- `DELETE`
-
-默认值：`WAL`
-
-### `sqlite.retention.maxAge`
-
-保留多长时间的历史记录。
-
-支持单位：
-
-- `ms`
-- `s`
-- `m`
-- `h`
-- `d`
-
-示例：
-
-```yml
-sqlite:
-  retention:
-    maxAge: 30d
-```
-
-默认值：`180d`
-
-### `sqlite.retention.maxEntriesPerSource`
-
-每个 source 最多保留多少条 entry 记录。
-
-默认值：`1000`
-
-### `sqlite.retention.vacuum`
-
-可选值：
-
-- `off`
-- `afterPrune`
-
-`afterPrune` 表示发生清理后自动执行 `VACUUM`。
-
-默认值：`off`
-
----
-
----
-
-## `logging` 配置
-
-Knock 默认输出**结构化 JSON 日志**，控制台也支持可选 `pretty` 展示。
-
-### `logging.level`
-
-可选值：
-
-- `trace`
-- `debug`
-- `info`
-- `warn`
-- `error`
-- `fatal`
-
-默认值：`info`
-
-### `logging.format`
-
-当前支持：
-
-- `json`
-- `pretty`
-
-### `logging.sinks.console.type`
-
-当前只支持：
-
-- `console`
-
-示例：
+常用配置入口：
 
 ```yml
 logging:
@@ -753,1390 +578,42 @@ logging:
     console:
       type: console
 ```
-
-默认 `json` 会输出 OTel 风格的结构化字段（当前不是 OTLP JSON），例如：
-
-- `timeUnixNano`
-- `observedTimeUnixNano`
-- `severityText`
-- `severityNumber`
-- `body`
-- `trace_id`
-- `span_id`
-- `trace_flags`
-- `attributes`
-- `resource.attributes`
-- `scope.name`
-
-其中：
-
-- `resource.attributes` 用于资源级上下文
-- `scope.name` 用于标识日志生产者
-- 业务上下文字段会进入 `attributes`
-- `trace_id` / `span_id` / `trace_flags` 仅用于真实 trace 关联；缺失时会直接省略
-- daemon 链路定位优先通过 `source.id`、`source.run_id`、`pipeline.item_id`、`delivery.id`、`web.request_id` 等业务字段完成
-- AI 相关字段按 owner-scoped namespace 记录，例如 `template.ai.provider`、`template.ai.model_ref`；未来 source / delivery 链路中的 AI 字段也应继续跟随所属业务域
-- `pretty` 只是一层展示格式：可着色、拍平部分高频字段、隐藏低频字段，但不会改变底层 JSON 语义
-- `fatal` 已支持配置，但只应用于真正无法继续的进程级/核心运行面场景
-
-另外，日志会对 token、chat id、URL 中的敏感片段做脱敏。
-
----
-
-## `deliveries` 配置
-
-`deliveries` 是“投递方式定义区”。
-
-每个 delivery 都有一个 ID，例如：
-
-- `local`
-- `webhook`
-- `telegram_webhook`
-
-source 通过 `sources.<id>.deliveries` 这个 keyed map 引用这些 delivery ID，并可按 delivery 类型覆写默认消息子树。
-
-一个 delivery 只能配置一种投递目标（`file` / `push` / `email` 三选一）：
-
-- `file`
-- `push`（可配合 `http`）
-- `email`（用于通用 SMTP 发信）
-
-### 1) 文件投递：`deliveries.<id>.file`
-
-示例：
-
-```yml
-deliveries:
-  local:
-    file:
-      path: outputs/releases.md
-      content: |
-        ## [{{ title }}]({{ link }})
-
-        {{ content | strip_html }}
-
-        ---
-```
-
-字段说明：
-
-#### `path`
-
-输出文件路径。
-
-- 绝对路径：直接写
-- 相对路径：相对于 `runtimeDir`
-
-#### `content`
-
-写入内容模板。每次命中一个新
-entry，就会把渲染结果**追加**到文件末尾，并额外加一个换行。
-
-### 文件轮转：`rotation`
-
-```yml
-deliveries:
-  local:
-    file:
-      path: outputs/releases.md
-      content: |
-        ## [{{ title }}]({{ link }})
-
-        {{ content | strip_html }}
-
-        ---
-      rotation:
-        enabled: true
-        size: 10m
-        age: 7d
-        backups: 3
-```
-
-字段说明：
-
-- `enabled`: 是否启用轮转
-- `size`: 文件达到指定大小时轮转，支持 `b` `k` `m` `g`
-- `age`: 文件达到指定年龄时轮转，支持 `ms` `s` `m` `h` `d`
-- `backups`: 最多保留多少个轮转备份
-
-轮转文件名格式类似：
-
-```text
-releases.20260402T110000123Z.md
-```
-
-如果 `enabled: true`，那么至少要配置 `size` 或 `age` 其中一个。
-
-### 2) HTTP 投递：`deliveries.<id>.push`
-
-HTTP delivery 分成两个块：
-
-- `push.http`：HTTP 请求与传输层字段（`url` / `method` / `headers` /
-  `timeout` / `proxy` / `retry`）
-- `push.request`：负载编码字段（`type` / `payload`）
-
-示例：
-
-```yml
-deliveries:
-  webhook:
-    push:
-      http:
-        method: POST
-        url: '${WEBHOOK_URL}'
-        timeout: 10s
-        headers:
-          Authorization: 'Bearer ${WEBHOOK_TOKEN}'
-      request:
-        type: body
-        payload:
-          text: '{{ entry.title }} => {{ entry.link }}'
-      response:
-        predicate: '{{ ok }}'
-        message: 'webhook failed: {{ status }}'
-```
-
-#### `push.http.method`
-
-可选值：
-
-- `GET`
-- `POST`
-- `PUT`
-- `PATCH`
-- `DELETE`
-- `HEAD`
-
-默认值：`POST`。
-
-#### `push.http.url`
-
-目标 URL。
-
-#### `push.http.headers`
-
-HTTP 请求头。
-
-#### `push.http.timeout`
-
-请求超时时间。当前实现会把它应用到 HTTP 客户端传输层。
-
-#### `push.http.retry`
-
-传输层重试配置。**未配置时默认禁用重试**。
-
-字段：
-
-- `limit`：重试次数，默认 `2`
-- `statusCodes`：触发重试的 HTTP 状态码，默认 `[408, 429, 500, 502, 503, 504]`
-- `retryOnTimeout`：超时是否重试，默认 `true`
-- `backoffLimit`：退避上限，默认 `3s`
-
-> [!NOTE]
-> 这里的重试只覆盖 transport 失败（超时、网络异常、命中状态码）。
-> `push.response.predicate` 判定失败不属于 transport retry。
-
-#### `push.http.proxy`
-
-可选，格式为 `protocol://url:port`，至少支持 `http://` 与 `socks5://`。
-
-#### `push.request.type`
-
-可选值：
-
-- `query`：把 payload 编码到 query string
-- `form`：`application/x-www-form-urlencoded`；对象与数组会先转成 JSON 字符串，再作为单个字段发送
-- `body`：写进请求体；对象与数组会保留嵌套结构并整体 JSON 序列化
-
-默认值：`body`。
-
-#### `push.request.payload`
-
-请求负载，可以是：
-
-- 字符串
-- 数字
-- 布尔值
-- `null`
-- 数组
-- 对象
-
-`payload` 中的每个字符串值都会在运行时递归做 Liquid 渲染。
-
-也就是说下面这些位置都可以写模板：
-
-- 顶层字符串值
-- 嵌套对象里的字符串值
-- 数组里的字符串值
-
-例如：
-
-```yml
-request:
-  payload:
-    text: '{{ entry.title }} => {{ entry.link }}'
-    meta:
-      source: '{{ source.id }}'
-      note: '${WEBHOOK_TAG}: {{ entry.published }}'
-      tags:
-        - '{{ feed.title }}'
-        - '${WEBHOOK_TAG}'
-```
-
-如果 `type: body`，上面的嵌套结构会作为 JSON 原样发送。
-
-如果 `type: form`，则对象/数组值会先 JSON 序列化后再作为单个表单字段发送，例如 Telegram 的 `link_preview_options`、`reply_markup`。
-
-如果同一个字符串里同时包含环境变量和 Liquid 模板，那么顺序是：
-
-1. 加载配置时先展开 `${ENV_VAR}`
-2. 实际投递前再渲染 `{{ liquid }}`
-
-> [!IMPORTANT]
-> `GET` 和 `HEAD` 不允许 `type: body` 且带 body payload。
-
-#### `push.response.predicate`
-
-可选。一个 Liquid 表达式，用来判断响应是否成功。
-
-上下文来自 HTTP 响应对象，主要可用字段：
-
-- `status`
-- `ok`
-- `headers`
-- `body`
-
-如果不写，默认规则就是 `response.ok`。
-
-#### `push.response.message`
-
-当判定失败时抛出的错误消息模板。该模板 MAY 决定对外抛出的错误文本，但其渲染结果不会原样写入结构化日志；日志里只保留安全失败摘要。
-
-### 3) SMTP 邮件投递：`deliveries.<id>.email`
-
-`deliveries.<id>.email` 用于通用 SMTP 发信，适合任何能提供 SMTP relay 的邮箱服务。
-
-示例：
-
-```yml
-deliveries:
-  release_email:
-    email:
-      smtp:
-        host: '${SMTP_HOST}'
-        port: 587
-        security: starttls
-        auth:
-          username: '${SMTP_USERNAME}'
-          password: '${SMTP_PASSWORD}'
-      message:
-        from: 'bot+{{ source.id }}@example.com'
-        to:
-          - 'team+{{ entry.id }}@example.com'
-        subject: '[{{ source.id }}] {{ entry.title }}'
-        text: |
-          {{ entry.title }}
-          {{ entry.link }}
-        headers:
-          X-Knock-Source: '{{ source.id }}'
-```
-
-#### `email.smtp.host`
-
-SMTP 主机地址，支持 `${ENV_VAR}`。
-
-#### `email.smtp.port`
-
-SMTP 端口，必须是整数。
-
-#### `email.smtp.security`
-
-可选值：
-
-- `implicit`
-- `starttls`
-- `none`
-
-#### `email.smtp.auth`
-
-可选认证块；若出现则 `username` 与 `password` 都必填，并支持 `${ENV_VAR}`。
-
-#### `email.message.*`
-
-第一版支持这些字段：
-
-- `from`
-- `to`
-- `cc`
-- `bcc`
-- `replyTo`
-- `subject`
-- `text`
-- `html`
-- `headers`
-
-其中：
-
-- `from`、`to`、`subject` 必填
-- `text` 与 `html` 至少配置一个
-- `to` / `cc` / `bcc` / `replyTo` 统一为字符串数组
-- 这些字段都支持 Liquid；若同一字符串里同时包含 `${ENV_VAR}` 与 Liquid，会先展开环境变量，再在投递前渲染 Liquid
-- 地址字段在实际发送前还会做渲染后校验，明显非法的邮箱地址会直接失败，不会继续交给 SMTP 层
-
-> [!TIP]
-> 本地手工验证 SMTP 链路时，推荐把 `host` / `port` 指到 Mailpit 之类的本地 SMTP 捕获器；自动化测试主线仍应使用假 transporter 覆盖失败路径与参数映射。
-
-### 4) Source HTTP transport：`sources.<id>.http`
-
-`sources.<id>.http` 同时承载抓取地址与 transport 语义，字段边界为
-`url` / `headers` / `timeout` / `proxy` / `retry`。
-
-示例：
-
-```yml
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-      headers:
-        User-Agent: knock-example
-      timeout: 5s
-      retry:
-        limit: 2
-        statusCodes: [408, 429, 500, 502, 503, 504]
-        retryOnTimeout: true
-        backoffLimit: 3s
-      proxy: socks5://127.0.0.1:1080
-```
-
-#### `sources.<id>.http.proxy`
-
-支持完整 proxy URL，格式：
-
-`protocol://[username][:password]@host:port`
-
-例如：
-
-- `http://127.0.0.1:8080`
-- `http://user:pass@127.0.0.1:8080`
-- `socks5://127.0.0.1:1080`
-
-### 6) Source Byparr transport：`sources.<id>.byparr`
-
-`sources.<id>.byparr` 用于通过 Byparr 服务抓取渲染后的页面内容。
-
-> [!IMPORTANT]
-> `source` 抓取入口必须二选一：`http` 与 `byparr` 不能同时配置，也不能同时缺失。
-
-字段：
-
-- `endpoint`（可选，默认 `http://byparr:8191/v1`）
-- `cmd`（可选，默认 `request.get`）
-- `url`（必填）
-- `maxTimeout`（可选，默认 `60s`）
-- `proxy`（可选，格式同 `http.proxy`）
-
-示例：
-
-```yml
-sources:
-  website_news:
-    byparr:
-      endpoint: http://byparr:8191/v1
-      cmd: request.get
-      url: https://example.com/news
-      maxTimeout: 60s
-      proxy: http://user:pass@127.0.0.1:8080
-    deliveries:
-      local: {}
-    xquery:
-      locate: //article
-      entry:
-        id: string(@data-id)
-        title: string(.//h2)
-```
-
----
-
-## `sources` 配置
-
-`sources` 是“数据源定义区”。
-
-每个 source 都有一个唯一 ID，例如：
-
-- `deno`
-- `github_releases`
-- `nodeseek`
-
-### 最小示例
-
-```yml
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    deliveries:
-      local: {}
-```
-
-### 完整示例
-
-```yml
-sources:
-  deno:
-    name: Deno releases
-    enabled: true
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-      headers:
-        User-Agent: knock-example
-    schedule: '0 */30 * * * *'
-    deliveries:
-      local: {}
-      telegram_webhook:
-        payload:
-          text: '{{ title }}'
-    filter: '{{ title | match_regex: "release", "i" }}'
-    syndication:
-      feed:
-        title: '{{ title }}'
-      entry:
-        id: '{{ id }}'
-        title: '{{ title }}'
-        description: '{{ description }}'
-```
-
-字段说明：
-
-### `name`
-
-可读名称。可写可不写。
-
-### `enabled`
-
-是否启用。默认 `true`。
-
-### `http.url`
-
-抓取地址，必填。
-
-### `byparr.url`
-
-Byparr 抓取目标地址；当使用 `byparr` transport 时必填。
-
-### `schedule`
-
-cron 表达式。写了就会进入调度模式；不写就只在 `--immediate` 下运行。
-
-### `deliveries`
-
-一个 keyed map，key 是 delivery ID，value 是该 source 对对应 delivery 的 override。
-
-规则：
-
-- file 只能覆写 `content`
-- push 只能覆写 `payload`
-- email 只能覆写 `message`
-- 不需要覆写时使用 `{}`
-- source 侧不能改 transport 层字段，例如 `file.path`、`push.http.*`、`email.smtp.*`
-- merge 语义为：对象 deep merge、数组整体替换、标量直接替换
-- v1 不支持 null-delete；`null` 不能用来删除默认字段
-
-例如：
-
-```yml
-deliveries:
-  local: {}
-  telegram_webhook:
-    payload:
-      text: '{{ title }}'
-  release_email:
-    message:
-      subject: '[{{ source.id }}] {{ entry.title }}'
-```
-
-### `filter`
-
-Liquid 布尔表达式。渲染结果必须是字符串 `true` 或 `false`。
-
-例如只保留标题包含 `release` 的条目：
-
-```yml
-filter: '{{ title | match_regex: "release", "i" }}'
-```
-
-如果返回的不是 `true/false`，程序会报错：
-
-```text
-filter 模板必须返回布尔值 true/false
-```
-
-### `http`
-
-source 拉取请求本身的 HTTP 配置。
-
-当前支持：
-
-- `headers`
-- `timeout`
-- `proxy`
-
-示例：
-
-```yml
-http:
-  headers:
-    Authorization: 'Bearer ${WEBHOOK_TOKEN}'
-    User-Agent: knock-example
-```
-
-### `byparr`
-
-通过 Byparr 服务抓取页面的配置块。
-
-当前支持：
-
-- `endpoint`
-- `cmd`
-- `url`
-- `maxTimeout`
-- `proxy`
-
-> [!IMPORTANT]
-> 每个 source 必须在 `http` 和 `byparr` 中二选一。
-
-### `summary`
-
-`summary` source 不抓外部输入；它读取 SQLite facts 里已经保存的 summary checkpoint、feed 与 entry 快照，并按自己的 `schedule` 生成一个汇总结果。
-当前实现里的窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint，窗口内上游 entries 取自 `(previousCheckpoint, scheduledAt]` 区间内已交付 facts。
-
-约束：
-
-- `summary` source 必须配置 `schedule`
-- `summary` 与 `http` / `byparr` / `syndication` / `xquery` 互斥，不能同时配置
-- 窗口前界取该 summary source 自身上次成功写入的 feed/checkpoint
-- 窗口内上游 entries 取自 `(previousCheckpoint, scheduledAt]` 区间内已交付 facts
-- 首次运行没有 checkpoint 时，当前实现只产出默认 feed，不产出 summary entry
-- 当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串
-
-最小示例：
-
-```yml
-sources:
-  daily_summary:
-    schedule: '0 0 8 * * *'
-    deliveries:
-      local: {}
-    summary:
-      sources:
-        - deno
-      feed:
-        title: '{{ sources.deno.feed.title }} Daily Summary'
-      entry:
-        id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}'
-        title: '{{ sources.deno.feed.title }} Daily Summary'
-        description: |
-          窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}
-          条目数：{{ sources.deno.entries | size }}
-```
-
-第一版模板上下文至少包含：
-
-- `source.runtime.window.previousCheckpoint`
-- `source.runtime.window.scheduledAt`
-- `sources.<id>.name`
-- `sources.<id>.feed`
-- `sources.<id>.entries`
-
-其中 `sources.<id>.entries` 为窗口内命中的上游 entry 列表，`sources.<id>.feed` 为该上游 source 最近保存的 feed 映射结果；当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串，并不是上游 config 里的 `source.name`。
-
-### `syndication`
-
-显式声明该 source 使用 RSS / Atom / JSON Feed 解析器，并定义字段映射。
-
-如果一个 source 既没写 `syndication`，也没写 `xquery`，Knock 会默认按：
-
-```yml
-syndication: {}
-```
-
-处理。
-
-### `xquery`
-
-显式声明该 source 使用 XQuery 解析器。
-
-> [!IMPORTANT]
-> 同一个 source **不能同时配置** `syndication` 和 `xquery`。
-
----
-
-## Syndication 源详解
-
-适用于：
-
-- RSS
-- Atom
-- JSON Feed
-
-Knock 会先自动识别数据格式，再按统一字段输出。
-
-### 默认 feed 字段
-
-- `title`
-- `link`
-- `description`
-- `generator`
-- `language`
-- `published`
-
-### 默认 entry 字段
-
-- `id`
-- `title`
-- `link`
-- `description`
-- `content`
-- `published`
-- `updated`
-
-### 默认回退规则
-
-部分字段有回退逻辑：
-
-- `content` 为空时，可能回退到 `description`
-- `updated` 为空时，可能回退到 `published`
-- 日期默认会按 `timezone + timestampFormat` 格式化
-
-### 映射示例
-
-```yml
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    syndication:
-      feed:
-        title: '{{ title }}'
-      entry:
-        id: '{{ id }}'
-        title: '{{ title }}'
-        description: '{{ content | strip_html }}'
-        content: '{{ content }}'
-        updated: '{{ updated }}'
-```
-
-### 自定义字段
-
-你也可以在映射里声明自定义字段，再让标准字段引用它：
-
-```yml
-entry:
-  id: '{{ id }}'
-  plain_summary: '{{ description | strip_html }}'
-  description: '{{ plain_summary }}'
-```
-
-程序会自动解析依赖顺序；但如果你写成循环依赖，会直接报错：
-
-```text
-存在循环依赖
-```
-
----
-
-## XQuery 源详解
-
-适用于：
-
-- 页面没有 RSS/Atom/JSON Feed
-- 你需要直接从 HTML/XML 中提取列表项
-
-### 基本结构
-
-```yml
-sources:
-  website:
-    http:
-      url: https://example.com/news
-    deliveries:
-      local: {}
-    xquery:
-      locate: //li
-      entry:
-        id: string(@data-id)
-        title: string(a)
-        link: string(a/@href)
-        description: string(.//p)
-```
-
-### 字段说明
-
-#### `locate`
-
-定位条目节点的 XPath / XQuery 表达式。每匹配到一个节点，就执行一次 `entry` 提取。
-
-`locate` 是可选的；省略时会以整个 document 作为上下文执行一次 `entry`。
-
-#### `feed`
-
-提取 feed 级字段，支持两种写法：
-
-1. **对象映射**（`字段名 -> 表达式`）
-2. **脚本字符串**（完整 XQuery 表达式，返回 map）
-
-#### `entry`
-
-提取 entry 级字段，支持两种写法：
-
-1. **对象映射**（`字段名 -> 表达式`）
-2. **脚本字符串**（完整 XQuery 表达式，返回 map）
-
-无论哪种写法，最终都必须产出非空 `id`。
-
-> 这里的 `entry` 是“单条记录提取结构”；运行时结果才是 `entries[]`。
-
-#### `namespaces`
-
-命名空间前缀映射，处理 XHTML/XML 时很有用。
-
-注意：`namespaces` **仅对 `locate` 与对象映射写法生效**；脚本字符串模式不使用它。
-
-示例：
-
-```yml
-xquery:
-  locate: //xh:li
-  namespaces:
-    xh: http://www.w3.org/1999/xhtml
-  entry:
-    id: string(@data-id)
-    title: string(xh:a)
-```
-
-脚本字符串示例：
-
-```yml
-xquery:
-  locate: //li
-  feed: |
-    map {
-      "title": string(//title)
-    }
-  entry: |
-    map {
-      "id": string(@data-id),
-      "title": string(a)
-    }
-```
-
-### 重要限制
-
-XQuery 映射值就是**原生 XPath/XQuery 表达式**，不是 Liquid 模板。
-
-也就是说下面这些旧前缀风格都不能用：
-
-- `template:`
-- `literal:`
-- `xquery:`
-
-### HTML 和 XML 的处理方式
-
-- 文档看起来像 HTML（`<!doctype html>`、`<html>`）时，会按 HTML 解析
-- 其他情况按 XML 解析
-- XHTML 可配合 `namespaces` 正常提取（对象映射模式）
-
----
-
-## 模板上下文
-
-无论是 `filter`，还是 `file.content` / `push.request.payload` / `email.message` 里的模板字符串，可用上下文都来自：
-
-```ts
-{
-  ...entry,
-  entry,
-  feed,
-  source,
-}
-```
-
-也就是说这些写法都可以：
-
-```liquid
-{{ title }}
-{{ entry.title }}
-{{ feed.title }}
-{{ source.id }}
-```
-
-通常你会在模板里用：
-
-- `{{ title }}`
-- `{{ link }}`
-- `{{ content }}`
-- `{{ feed.title }}`
-- `{{ source.id }}`
-
----
-
-## 自定义 Liquid 过滤器
-
-项目内置了这些过滤器。
-
-### `match_exact`
-
-完全匹配。最后一个可选布尔参数可用于反转结果。
-
-```liquid
-{{ title | match_exact: 'Deno 2.0' }}
-{{ title | match_exact: 'Deno 2.0', true }}
-```
-
-### `match_fuzzy`
-
-模糊匹配。最后一个可选布尔参数可用于反转结果。
-
-默认模式是 `both`，还支持：
-
-- `left`：前缀匹配
-- `right`：后缀匹配
-- `both`：包含匹配
-
-参数形式：
-
-- `needle`
-- `needle, true`
-- `needle, mode`
-- `needle, mode, true`
-
-示例：
-
-```liquid
-{{ title | match_fuzzy: 'rc' }}
-{{ title | match_fuzzy: 'rc', true }}
-{{ title | match_fuzzy: 'Release', 'left' }}
-{{ title | match_fuzzy: '.zip', 'right', true }}
-```
-
-### `match_regex`
-
-正则匹配。最后一个可选布尔参数可用于反转结果。
-
-```liquid
-{{ title | match_regex: '^v\\d+\\.\\d+\\.\\d+$' }}
-{{ title | match_regex: 'release', 'i' }}
-{{ title | match_regex: 'release', true }}
-{{ title | match_regex: 'release', 'i', true }}
-```
-
-### `strip_html`
-
-去掉 HTML 标签并压缩空白。
-
-```liquid
-{{ content | strip_html }}
-```
-
-### `to_html`
-
-把 Markdown 转成 HTML。
-
-```liquid
-{{ content | to_html }}
-```
-
-### `to_markdown`
-
-把 HTML 转成 Markdown。
-
-```liquid
-{{ content | to_markdown }}
-```
-
-### `to_telegram_html`
-
-把 HTML 清洗成 Telegram `parse_mode: HTML` 可接受的子集。
-
-- 输入边界：HTML
-- 输出目标：Telegram HTML
-- 以 Telegram 官方文档为准，优先保留官方支持的标签与属性；例如 `<blockquote expandable>`、`<tg-emoji emoji-id="5368324170671202286">👍</tg-emoji>`、`<pre><code class="language-c++">...</code></pre>`
-- 非官方标签、非法属性或不安全链接会自动修正；无法保留语义时会降级为安全文本
-- 不做自动格式探测
-- 官方资料：`https://core.telegram.org/bots/api`、`https://core.telegram.org/api/entities`
-
-```liquid
-{{ content | to_telegram_html }}
-```
-
-### `to_telegram_markdown_v2`
-
-把 Markdown / 纯文本转成 Telegram `parse_mode: MarkdownV2` 可发送文本。
-
-- 输入边界：Markdown / 纯文本
-- 原始 HTML 不应直接传入；若来源是 HTML，先显式链式转换
-- 当前按第三方库现有行为做转换与归一化，不承诺保留输入 MarkdownV2 的原始写法
-- 安全发送优先于 Markdown 语义保真
-- 不做自动格式探测，不支持 Markdown v1
-
-```liquid
-{{ content | to_markdown | to_telegram_markdown_v2 }}
-```
-
-### `ai_translate`
-
-使用 AI 把输入文本翻译为目标语言。
-
-- 仅支持异步渲染路径；同步渲染会直接报错
-- 仅支持命名参数；旧位置参数写法不再兼容
-- 允许参数：`model` / `variant` / `language`
-- `model` / `variant` / `language` 仅接受静态字符串字面量值，不允许 Liquid 变量/表达式
-- 无参数时使用 `ai.defaultModel` 与顶层 `language`
-- `language` 约束属于 prompt 级契约，不是 tokenizer、硬裁剪或后处理层面的强制保证
-- 长文本会按 provider 级保守预算自动分段；优先按段落切分，并带前 300 / 后 150 字符邻近上下文
-- 分段翻译时只输出当前 chunk 的译文，不回写上下文内容
-- 调用失败会直接抛错，不回退原文
-
-```liquid
-{{ content | ai_translate }}
-{{ content | ai_translate: language: 'en' }}
-{{ content | ai_translate: model: 'openai_main/default', variant: 'creative', language: 'ja' }}
-```
-
-### `ai_summarize`
-
-使用 AI 对输入文本做摘要。
-
-- 仅支持异步渲染路径；同步渲染会直接报错
-- 仅支持命名参数；旧位置参数写法不再兼容
-- 允许参数：`model` / `variant` / `language` / `length`
-- `model` / `variant` / `language` 仅接受静态字符串字面量值，不允许 Liquid 变量/表达式
-- `length` 接受正整数或可解析为正整数的字符串字面量，例如 `80`、`'80'`
-- 无参数时使用 `ai.defaultModel`
-- 默认保持输入文本的主语言；显式给出 `language:` 时，直接生成目标语言摘要
-- `language` 约束属于 prompt 级契约，不是 tokenizer、硬裁剪或后处理层面的强制保证
-- `length` 语义为最终摘要的字符数上限；默认值为 200
-- `length` 约束属于 prompt 级契约，不做 tokenizer 限字、生成后硬裁剪或超长重试
-- 长文本会先分段摘要，再做一次总摘要汇总；`length` 只约束最终输出阶段，不提前压缩中间 chunk 摘要
-- 调用失败会直接抛错，不静默吞错
-
-```liquid
-{{ content | ai_summarize }}
-{{ content | ai_summarize: length: 80 }}
-{{ content | ai_summarize: language: 'ja' }}
-{{ content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', length: 80 }}
-```
-
----
 
 ## 去重与状态存储
 
-Knock 的去重不是靠内存，而是落在 SQLite 里。
-
-### `deliveries` 表
-
-按这组键判断“这条 entry 是否已经发到这个投递项”：
-
-- `source_id`
-- `item_id`
-- `target_id`（这里保存的是 `delivery.id`）
-
-只要这组三元组已经标记成 delivered，同一 source 下再次跑到相同
-entry，就不会重复投递。
-
-### `feeds` 表
-
-保存每个 source 最近一次抓取到的原始 payload、payload hash 和映射后的 feed
-文本。
-
-如果 payload hash 没变化，程序不会重复更新 feed 记录。
-
-### `entries` 表
-
-保存每个 source 下每个 entry 的：
-
-- `entry_id`
-- `entry_text`
-- `first_seen_at`
-- `last_seen_at`
-- `updated_at`
-
-如果 payload 没变化，程序仍然会刷新当前 entry 的 `last_seen_at`，方便 retention
-清理。
-
----
-
-## 典型配置示例
-
-## 示例 1：把 GitHub Releases 追加到 Markdown 文件
-
-```yml
-sqlite:
-  path: knock.db
-
-deliveries:
-  local:
-    file:
-      path: outputs/github-releases.md
-      content: |
-        ## [{{ title }}]({{ link }})
-
-        {{ content | strip_html }}
-
-        发布时间：{{ published }}
-
-        ---
-
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    schedule: '0 */30 * * * *'
-    deliveries:
-      local: {}
-```
-
-## 示例 2：通过 push 直连 Telegram Bot API（HTML）
-
-```yml
-deliveries:
-  telegram_webhook:
-    push:
-      http:
-        method: POST
-        url: 'https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage'
-      request:
-        type: body
-        payload:
-          chat_id: '${TELEGRAM_CHAT_ID}'
-          parse_mode: 'HTML'
-          text: |
-            <b>{{ title }}</b>
-
-            {{ content | to_telegram_html }}
-
-            {{ link }}
-
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    deliveries:
-      telegram_webhook:
-        payload:
-          text: |
-            <b>[{{ source.id }}] {{ title }}</b>
-
-            {{ content | to_telegram_html }}
-
-            {{ link }}
-```
-
-## 示例 3：通过 push 直连 Telegram Bot API（MarkdownV2）
-
-当来源内容可能混有标题、正文、链接等多个字段时，推荐先用 Liquid 组装整段消息，再统一做一次 `to_markdown | to_telegram_markdown_v2`，避免逐字段转换后仍遗漏 MarkdownV2 特殊字符。
-
-```yml
-deliveries:
-  telegram_webhook_md:
-    push:
-      http:
-        method: POST
-        url: 'https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage'
-      request:
-        type: body
-        payload:
-          chat_id: '${TELEGRAM_CHAT_ID}'
-          parse_mode: 'MarkdownV2'
-          text: |
-            {% capture tg_text %}
-            {{ title }}
-
-            {{ content }}
-
-            {{ link }}
-            {% endcapture %}
-            {{ tg_text | to_markdown | to_telegram_markdown_v2 }}
-
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    deliveries:
-      telegram_webhook_md: {}
-```
-
-## 示例 3：只推送标题里带 `release` 的版本
-
-```yml
-deliveries:
-  local:
-    file:
-      path: outputs/release.md
-      content: '{{ title }}'
-
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    deliveries:
-      local: {}
-    filter: '{{ title | match_regex: "release", "i" }}'
-```
-
-## 示例 4：推送到 webhook
-
-```yml
-deliveries:
-  webhook:
-    push:
-      http:
-        method: POST
-        url: '${WEBHOOK_URL}'
-        headers:
-          Authorization: 'Bearer ${WEBHOOK_TOKEN}'
-      request:
-        type: body
-        payload:
-          text: '{{ entry.title }} => {{ entry.link }}'
-      response:
-        predicate: '{{ ok }}'
-        message: 'webhook failed: {{ status }}'
-
-sources:
-  deno:
-    http:
-      url: https://github.com/denoland/deno/releases.atom
-    deliveries:
-      webhook: {}
-```
-
-## 示例 5：从普通网页提取条目
-
-```yml
-deliveries:
-  local:
-    file:
-      path: outputs/page-items.md
-      content: |
-        - [{{ title }}]({{ link }})
-
-sources:
-  page_news:
-    http:
-      url: https://example.com/news
-    deliveries:
-      local: {}
-    xquery:
-      locate: //article
-      feed:
-        title: string(//title)
-      entry:
-        id: string(@data-id)
-        title: string(.//h2)
-        link: string(.//a/@href)
-        description: string(.//p)
-```
-
----
-
-## 常用命令
-
-### 类型检查
-
-```bash
-deno task check
-```
-
-```bash
-deno task check src/config
-```
-
-传入路径时会覆盖默认 check 范围，不会继续运行默认入口集合。
-
-### 代码格式化（Prettier）
-
-```bash
-deno task fmt
-```
-
-### 检查格式（Prettier）
-
-```bash
-deno task fmt:check
-```
-
-### lint 修复
-
-```bash
-deno task lint
-```
-
-### lint 校验
-
-```bash
-deno task lint:check
-```
-
-### 测试
-
-开发迭代时优先运行受影响文件或目录的测试；仅当改动命中共享入口、测试基础设施、数据库基础设施、共享运行时边界，或影响面无法可靠枚举时，收尾前才需要运行一次 `deno task test` 全量测试。对影响面可枚举的局部改动，应先跑受影响文件/目录，再按直接调用边界补跑相邻验证。
-
-```bash
-deno task test
-```
-
-```bash
-deno task test src/core/app_test.ts src/interfaces/daemon/start_daemon_test.ts
-```
-
-```bash
-deno task test src/config
-```
-
-传入路径时会覆盖默认测试范围，不会继续运行 `src web` 全量测试。
-
-共享边界改动但尚不足以要求全量时，建议显式传入关联测试文件或目录，而不是依赖脚本自动推断。例如：
-
-```bash
-deno task test src/main_test.ts src/core/app_test.ts
-```
-
-```bash
-deno task test src/db/client_test.ts src/infrastructure/sqlite/schema_test.ts src/infrastructure/sqlite/source_run_query_service_test.ts
-```
-
-```bash
-deno task test src/sources/xquery_test.ts src/web/xquery_playground_test.ts web/routes/api/xquery/evaluate_test.ts
-```
-
-### 默认启动（web + daemon）
-
-```bash
-deno task start
-```
-
-### 仅启动 web
-
-```bash
-deno task web
-```
-
-### 仅启动 daemon
-
-```bash
-deno task daemon
-```
-
-### 一次性执行（daemon）
-
-```bash
-deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run src/main.ts --mode daemon --config runtime/config.yml --immediate
-```
-
----
-
-## 常见问题
-
-### 1. 配置文件找不到
-
-错误类似：
-
-```text
-配置文件不存在: /xxx/runtime/config.yml 或 /xxx/runtime/config.yaml
-```
-
-检查：
-
-- 你传的 `--config` 路径是否正确
-- `--runtime_dir` 是否指到了对的目录
-- 当前目录下是否真的有 `runtime/config.yml`
-
-### 2. 环境变量没传进去
-
-错误类似：
-
-```text
-deliveries.telegram_webhook.push.http.url 引用了未定义环境变量: TELEGRAM_BOT_TOKEN
-```
-
-说明配置里用了 `${TELEGRAM_BOT_TOKEN}`，但当前进程环境里没有这个变量。
-
-### 3. filter 报错
-
-如果你写的是：
-
-```yml
-filter: '{{ title }}'
-```
-
-这会报错，因为 filter 必须返回 `true` 或 `false`。
-
-正确写法应该像这样：
-
-```yml
-filter: '{{ title | match_regex: "release", "i" }}'
-```
-
-### 4. 通过 push 调 Telegram API 失败
-
-先检查：
-
-- `deliveries.<id>.push.http.url` 是否是正确的 Bot API 地址
-- `${TELEGRAM_BOT_TOKEN}` / `${TELEGRAM_CHAT_ID}` 是否注入到了进程环境
-- payload 里是否包含 `chat_id` / `text`
-- 机器人是否已经被拉进目标群/频道，并有发言权限
-
-### 5. HTTP webhook 返回成功码之外的状态
-
-默认情况下，只要不是 `2xx`，就会失败。
-
-如果你的接口有自己的成功语义，就用：
-
-```yml
-response:
-  predicate: '{{ ok }}'
-  message: 'webhook failed: {{ status }}'
-```
-
-自己定义判断逻辑和报错消息。
-
-### 6. source 里 `http` 和 `byparr` 能一起配吗
-
-不能。每个 source 抓取入口必须二选一：
-
-- 配了 `http` 就不能再配 `byparr`
-- 配了 `byparr` 就不能再配 `http`
-- 两者都不配也会报错
-
-### 7. 为什么文件里一直追加，而不是覆盖
-
-这是当前 file delivery 的设计：**追加写入**。适合做日志流、汇总文件、归档文件。
-
-如果你想做“始终只有一份最新快照”，需要改 delivery 逻辑，而不是靠现有配置实现。
-
----
+- `source_runs`：记录每次 source 执行的触发方式、时间窗口、聚合计数与最终状态。
+- `pipeline_items`：记录单次 source run 产出的标准化条目与处理结果。
+- `delivery_attempts`：记录每条条目在每个 delivery 通道上的投递尝试快照与结果。
+- `deduplications`：基于 `deduplication_key` 记录跨运行去重命中，避免重复处理与重复投递。
+
+这四类状态共同保证“增量抓取 + 稳定去重 + 可追溯运行链路”。
 
 ## 生产使用建议
 
-- 先用 `--immediate` 验证，再改成常驻调度
-- SQLite、输出目录都放进持久化存储
-- Telegram Bot Token、chat ID、webhook token 都通过进程环境注入（Telegram 场景使用 push 直连 Bot API）
-- 对外部站点抓取时，必要时在 `sources.<id>.http.headers` 里带上 `User-Agent`
-- 如果输出文件可能无限增长，给 file delivery 配 `rotation`
-- 如果抓取页面不是标准 feed，优先做一个最小 XQuery 原型，先确认 `locate` 和
-  `entry.id` 是稳定的
+1. 先用 `--immediate` 验证配置与模板，再进入常驻调度。
+2. 启动命令显式传入 `--config`，确保进程读取目标配置文件。
+3. 将 SQLite 所在目录与 file delivery 输出目录挂载到宿主持久化存储，保证跨重启保留状态与产物。
+4. 对外抓取源配置稳定 `User-Agent`、合理 `timeout` 与 `retry`。
+5. 将 token、密码、chat id 统一走环境变量注入。
 
----
+## 常见问题
 
-## 当前已知边界
+### 1) 配置文件定位失败
 
-这些不是使用错误，而是项目当前实现本身的边界：
+优先检查启动命令里的 `--config` 路径是否存在且可读；依赖默认发现顺序时，按“命令行用法”章节的 `--config` 与 `--runtime_dir` 路径解析规则逐项核对。
 
-- `logging.sinks.console.type` 当前只支持 `console`
-- HTTP payload 里的模板值最终都会按字符串渲染结果写入请求；如果你需要更细粒度的类型控制，请在 webhook 接收端按约定解析
-- file delivery 是追加写入，不支持覆盖模式
+### 2) 环境变量未注入
 
-如果你准备长期用它，建议先从自己的真实 source 和真实 delivery
-写一份最小配置；需要完整字段说明和参考写法时，再对照仓库根目录下的
-`config.example.yml`，逐步加过滤、轮转、HTTP 回执判断这些细节。
+`${ENV_VAR}` 在加载阶段展开，缺失变量会直接触发配置错误。
+
+### 3) source 入口或解析器冲突
+
+source 使用互斥组合：`http | byparr` 选择其一，`syndication | xquery` 选择其一，`summary` 使用独立汇总模式。
+
+### 4) filter 报错
+
+`filter` 的渲染结果使用 `true/false` 字符串。
+
+### 5) summary 首次运行没有 entry
+
+首次窗口缺少历史 checkpoint，当前实现产出默认 feed；下一次运行会基于 checkpoint 生成 summary entry。
