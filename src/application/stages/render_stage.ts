@@ -1,3 +1,4 @@
+import { attachAiEntryRuntime } from '../../core/ai_runtime.ts'
 import type { UnifiedFeedFields } from '../../config/types.ts'
 import {
   isEmailDeliveryDefinition,
@@ -25,21 +26,29 @@ export class RenderStage {
   constructor(private readonly deps: RenderStageDeps) {}
 
   async run(input: RenderStageInput): Promise<DeliveryAttemptPlan> {
-    const context = {
-      ...input.item.normalized,
-      entry: input.item.normalized,
-      feed: input.feed,
-      item: input.item,
-      source: {
-        id: input.item.sourceId,
-        title: input.feed.title,
-        runtime: {
-          window: {
-            scheduledAt: input.feed.published,
+    const context = attachAiEntryRuntime(
+      {
+        ...input.item.normalized,
+        entry: input.item.normalized,
+        feed: input.feed,
+        item: input.item,
+        source: {
+          id: input.item.sourceId,
+          title: input.feed.title,
+          runtime: {
+            window: {
+              scheduledAt: input.feed.published,
+            },
           },
         },
       },
-    }
+      {
+        sourceId: input.item.sourceId,
+        entryId: input.item.normalized.id || input.item.itemId,
+        sourceRunId: input.item.sourceRunId,
+        cache: new Map(),
+      },
+    )
 
     if (isFileDeliveryDefinition(input.binding.definition)) {
       return {

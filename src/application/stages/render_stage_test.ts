@@ -1,4 +1,5 @@
 import { assertEquals } from '@std/assert'
+import { getAiEntryRuntime } from '../../core/ai_runtime.ts'
 import { createPipelineItem } from '../../domain/pipeline_item.ts'
 import { RenderStage } from './render_stage.ts'
 
@@ -199,6 +200,66 @@ Deno.test('renderStage: 模板上下文应保留顶层 entry 字段别名', asyn
     content: 'Hello|Desc',
     rotation: undefined,
   })
+})
+
+Deno.test('renderStage: 模板上下文应注入 entry 级 AI runtime', async () => {
+  let capturedRuntime: ReturnType<typeof getAiEntryRuntime> | undefined
+
+  const stage = new RenderStage({
+    now: () => '2026-04-13T10:12:30.000Z',
+    createAttemptId: () => 'attempt-ai-runtime',
+    renderContent: (_template, context) => {
+      capturedRuntime = getAiEntryRuntime(context)
+      return Promise.resolve('ok')
+    },
+    renderPayload: (payload) => Promise.resolve(payload),
+  })
+
+  const item = createPipelineItem({
+    itemId: 'item-ai-runtime',
+    sourceRunId: 'run-ai-1',
+    sourceId: 'rust',
+    effectDomain: 'production',
+    normalized: {
+      id: 'entry-ai-runtime',
+      title: 'Hello',
+      link: '',
+      description: '',
+      content: '',
+      published: '',
+      updated: '',
+    },
+  })
+
+  const plan = await stage.run({
+    item,
+    binding: {
+      sourceId: 'rust',
+      deliveryId: 'archive',
+      definition: {
+        kind: 'file',
+        deliveryId: 'archive',
+        path: '/tmp/archive.txt',
+        contentTemplate: '{{ entry.title }}',
+      },
+    },
+    feed: {
+      title: 'Feed',
+      link: '',
+      description: '',
+      generator: '',
+      language: '',
+      published: '',
+    },
+  })
+
+  assertEquals(capturedRuntime, {
+    sourceId: 'rust',
+    entryId: 'entry-ai-runtime',
+    sourceRunId: 'run-ai-1',
+    cache: new Map(),
+  })
+  assertEquals(plan.attemptId, 'attempt-ai-runtime')
 })
 
 Deno.test('renderStage: file 应保留 rotation 配置供 executor 消费', async () => {
