@@ -2,7 +2,7 @@ import { assertStringIncludes } from '@std/assert'
 import { renderToString } from 'preact-render-to-string'
 import IndexPage from './index.tsx'
 
-Deno.test('web pages: 首页应包含 XQuery 与 Syndication Playground 入口', () => {
+Deno.test('[contract] web pages: 首页应包含 XQuery 与 Syndication Playground 入口', () => {
   const html = renderToString(IndexPage())
 
   assertStringIncludes(html, 'XQuery Playground')

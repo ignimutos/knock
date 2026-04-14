@@ -5,7 +5,7 @@ import {
   parseSyndicationPlaygroundRequest,
 } from './syndication_playground.ts'
 
-Deno.test('syndication_playground: 空 mapping 时应保留 runtime 默认行为', () => {
+Deno.test('[contract] syndication_playground: 空 mapping 时应保留 runtime 默认行为', () => {
   const parsed = parseSyndicationPlaygroundRequest({
     runtime: 'native',
     url: 'https://example.com/feed.xml',
@@ -18,7 +18,7 @@ Deno.test('syndication_playground: 空 mapping 时应保留 runtime 默认行为
   assertEquals(parsed.source.syndication, {})
 })
 
-Deno.test('syndication_playground: byparr 模式请求应转换为 byparr source', () => {
+Deno.test('[contract] syndication_playground: byparr 模式请求应转换为 byparr source', () => {
   const parsed = parseSyndicationPlaygroundRequest({
     runtime: 'byparr',
     url: 'https://example.com/feed.xml',
@@ -31,7 +31,7 @@ Deno.test('syndication_playground: byparr 模式请求应转换为 byparr source
 })
 
 Deno.test(
-  'syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
+  '[flow] syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
   async () => {
     const result = await evaluateSyndicationPlayground({
       request: {
@@ -62,7 +62,7 @@ Deno.test(
   },
 )
 
-Deno.test('syndication_playground: 应拒绝 localhost 地址', () => {
+Deno.test('[contract] syndication_playground: 应拒绝 localhost 地址', () => {
   assertThrows(
     () =>
       parseSyndicationPlaygroundRequest({
@@ -74,7 +74,7 @@ Deno.test('syndication_playground: 应拒绝 localhost 地址', () => {
   )
 })
 
-Deno.test('syndication_playground: classify 应将抓取失败映射为 fetch', () => {
+Deno.test('[contract] syndication_playground: classify 应将抓取失败映射为 fetch', () => {
   const classified = classifySyndicationPlaygroundError(
     new Error('[source] 抓取失败 source=playground status=404'),
   )
@@ -85,17 +85,20 @@ Deno.test('syndication_playground: classify 应将抓取失败映射为 fetch', 
   assertEquals(classified.message, '抓取失败: HTTP 404')
 })
 
-Deno.test('syndication_playground: evaluate 遇到非 2xx 响应时应保留底层抓取错误', async () => {
-  await assertRejects(
-    () =>
-      evaluateSyndicationPlayground({
-        request: {
-          url: 'https://example.com/feed.xml',
-          entry: { id: '{{ id }}' },
-        },
-        fetcher: () => Promise.resolve(new Response('not found', { status: 404 })),
-      }),
-    Error,
-    '[source] 抓取失败 source=playground status=404',
-  )
-})
+Deno.test(
+  '[contract] syndication_playground: evaluate 遇到非 2xx 响应时应保留底层抓取错误',
+  async () => {
+    await assertRejects(
+      () =>
+        evaluateSyndicationPlayground({
+          request: {
+            url: 'https://example.com/feed.xml',
+            entry: { id: '{{ id }}' },
+          },
+          fetcher: () => Promise.resolve(new Response('not found', { status: 404 })),
+        }),
+      Error,
+      '[source] 抓取失败 source=playground status=404',
+    )
+  },
+)

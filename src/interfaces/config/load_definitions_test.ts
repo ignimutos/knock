@@ -17,7 +17,7 @@ function test(name: string, fn: () => Promise<void> | void): void {
   })
 }
 
-test('loadDefinitions: 应将 resolved config 组装成判别联合 SourceDefinition 与 DeliveryBinding', async () => {
+test('[contract] loadDefinitions: 应将 resolved config 组装成判别联合 SourceDefinition 与 DeliveryBinding', async () => {
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 

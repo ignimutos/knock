@@ -2,7 +2,7 @@ import { assertStringIncludes } from '@std/assert'
 import { renderToString } from 'preact-render-to-string'
 import SyndicationPage from './syndication.tsx'
 
-Deno.test('web pages: Syndication 页应包含 transport、填充按钮与结果面板', () => {
+Deno.test('[contract] web pages: Syndication 页应包含 transport、填充按钮与结果面板', () => {
   const html = renderToString(SyndicationPage())
   assertStringIncludes(html, 'Syndication Playground')
   assertStringIncludes(html, 'name="runtime"')
@@ -16,7 +16,7 @@ Deno.test('web pages: Syndication 页应包含 transport、填充按钮与结果
   assertStringIncludes(html, '预览模式')
 })
 
-Deno.test('web pages: Syndication 页应保留脚本钩子与结果面板节点', () => {
+Deno.test('[contract] web pages: Syndication 页应保留脚本钩子与结果面板节点', () => {
   const html = renderToString(SyndicationPage())
   assertStringIncludes(html, 'id="syn-form"')
   assertStringIncludes(html, 'id="syn-submit"')
