@@ -256,9 +256,15 @@ def _hits_high_risk_boundary(changed_paths: List[str]) -> bool:
     return False
 
 
+def _is_checkable_path(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return normalized.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"))
+
+
 def _verification_commands(changed_paths: List[str]) -> List[List[str]]:
     commands: List[List[str]] = []
     changed_test_files = [path for path in changed_paths if _is_test_file(path)]
+    checkable_paths = [path for path in changed_paths if _is_checkable_path(path)]
     has_test_related_changes = bool(changed_test_files)
     has_high_risk_changes = _hits_high_risk_boundary(changed_paths)
 
@@ -268,8 +274,10 @@ def _verification_commands(changed_paths: List[str]) -> List[List[str]]:
     if has_test_related_changes:
         commands.append(["deno", "task", "test", *changed_test_files])
 
+    if checkable_paths:
+        commands.append(["deno", "task", "check", *checkable_paths])
+
     if changed_paths:
-        commands.append(["deno", "task", "check", *changed_paths])
         commands.append(["deno", "task", "fmt:check", *changed_paths])
 
     if has_high_risk_changes:

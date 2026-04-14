@@ -126,6 +126,25 @@ class GuardTests(unittest.TestCase):
                 self.assertEqual(result["gate"], "passed")
                 self.assertIn("deno task test", executed)
 
+    def test_scoped_check_skips_non_code_paths(self) -> None:
+        executed = []
+
+        def runner(command):
+            executed.append(" ".join(command))
+            return (0, "")
+
+        result = run_guard(
+            changed_paths=["src/core/logger_test.ts", "docs/testing/risk-matrix.yml"],
+            check_risk_mapping=lambda _: {"ok": True, "missing": []},
+            check_shared_entrypoint=lambda _: {"ok": True, "missing": []},
+            command_runner=runner,
+        )
+
+        self.assertEqual(result["gate"], "passed")
+        self.assertIn("deno task test src/core/logger_test.ts", executed)
+        self.assertIn("deno task check src/core/logger_test.ts", executed)
+        self.assertTrue(all("docs/testing/risk-matrix.yml" not in cmd or "fmt:check" in cmd for cmd in executed))
+
 
 if __name__ == "__main__":
     unittest.main()
