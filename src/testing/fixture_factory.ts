@@ -3,7 +3,7 @@ export interface SourceFixture {
   type: 'syndication'
   url: string
   enabled: boolean
-  deliveries: string[]
+  deliveries: Record<string, Record<string, unknown>>
   http: {
     method: 'GET' | 'POST'
     headers: Record<string, string>
@@ -18,7 +18,7 @@ export function createSourceFixture(overrides: Partial<SourceFixture> = {}): Sou
     type: 'syndication',
     url: 'https://example.com/feed.xml',
     enabled: true,
-    deliveries: [],
+    deliveries: {},
     http: {
       method: 'GET',
       headers: {},
