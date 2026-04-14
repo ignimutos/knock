@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
+// 风险映射: R11 R16
 import { resolveConfig } from '../config/resolve_config.ts'
 import { validateConfig } from '../config/validate_config.ts'
 import type { AppConfigInput } from '../config/schema.ts'

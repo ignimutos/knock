@@ -1,4 +1,5 @@
 import { assertEquals } from '@std/assert'
+// 风险映射: R06 R07 R09
 import {
   isFetchSourceDefinition,
   isSummarySourceDefinition,

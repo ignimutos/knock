@@ -1,6 +1,7 @@
 import { assertEquals } from '@std/assert'
 import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilities.ts'
 
+// 风险映射: R03 R04
 // 关键字段白名单测试：以下任一条件成立的输入字段必须登记到 capabilities.ts
 // 1. 支持 ${ENV}
 // 2. 支持 Liquid

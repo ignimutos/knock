@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
 import { dirname, fromFileUrl, join } from '@std/path'
 import { createLogger } from '../core/logger.ts'
-import { prepareOwnedRuntime, withOwnedRuntime } from '../test_runtime.ts'
+import { withOwnedRuntime } from '../test_runtime.ts'
 import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
@@ -20,8 +20,6 @@ function test(name: string, fn: () => Promise<void> | void): void {
 }
 
 test('loadConfig: 应递归展开配置中的环境变量字符串', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.set('KNOCK_TEST_WEBHOOK_URL', 'https://example.com/webhook')
   Deno.env.set('KNOCK_TEST_WEBHOOK_TOKEN', 'env-token')
   Deno.env.set('KNOCK_TEST_SOURCE_URL', 'https://example.com/feed.xml')
@@ -83,8 +81,6 @@ sources:
 })
 
 test('loadConfig: 支持环境变量展开的 email.from 应成功展开', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.set('KNOCK_TEST_EMAIL_URL', 'https://example.com/template')
 
   try {
@@ -117,8 +113,6 @@ sources: {}
 })
 
 test('loadConfig: source.deliveries keyed map 应保留普通声明顺序并映射到 resolved delivery', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   await Deno.writeTextFile(
     join(TEST_RUNTIME, 'config.yml'),
     `
@@ -154,8 +148,6 @@ sources:
 })
 
 test('R04 loadConfig: 缺失环境变量时应报出配置路径', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.delete('KNOCK_TEST_MISSING_TOKEN')
 
   await Deno.writeTextFile(
@@ -179,8 +171,6 @@ sources: {}
 })
 
 test('R03 loadConfig: 加载成功和失败都应记录结构化日志', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   const logs: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -307,8 +297,6 @@ sources:
 })
 
 test('loadConfig: 应递归展开 email 配置中的环境变量字符串', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.set('KNOCK_TEST_SMTP_HOST', 'smtp.example.com')
   Deno.env.set('KNOCK_TEST_SMTP_USER', 'mailer')
   Deno.env.set('KNOCK_TEST_SMTP_PASS', 'secret')
@@ -351,8 +339,6 @@ sources: {}
 })
 
 test('loadConfig: summary.feed 与 summary.entry 中允许环境变量展开，与 capability 保持一致', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.set('KNOCK_TEST_SUMMARY_TITLE', 'Daily Summary From Env')
   Deno.env.set('KNOCK_TEST_SUMMARY_DESC_PREFIX', '窗口')
   Deno.env.set('KNOCK_TEST_SUMMARY_ENTRY_TITLE', 'Deno Daily')
@@ -411,8 +397,6 @@ sources:
 })
 
 test('loadConfig: AI defaultModel 禁止环境变量展开，与 validateConfig 保持一致', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.set('KNOCK_TEST_DEFAULT_MODEL', 'main/mini')
 
   try {
@@ -440,8 +424,6 @@ sources: {}
 })
 
 test('loadConfig: provider-specific options 允许 ENV 但不允许 Liquid，与 validateConfig 保持一致', async () => {
-  await prepareOwnedRuntime(TEST_RUNTIME)
-
   Deno.env.set('KNOCK_TEST_OPENAI_ORG', 'org-demo')
   Deno.env.set('KNOCK_TEST_OPENAI_PROJECT', 'proj-demo')
   Deno.env.set('KNOCK_TEST_ANTHROPIC_AUTH', 'anthropic-token')

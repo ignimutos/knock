@@ -1,4 +1,5 @@
 import { assertEquals, assertNotStrictEquals } from '@std/assert'
+// 风险映射: R03 R04 R17
 import { resolveConfig } from './resolve_config.ts'
 import { validateConfig } from './validate_config.ts'
 import type { AppConfigInput } from './schema.ts'

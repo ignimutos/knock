@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
+// 风险映射: R11 R16
 import { getAiEntryRuntime } from './ai_runtime.ts'
 import {
   createContentRuntime,
