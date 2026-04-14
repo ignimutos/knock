@@ -1,7 +1,10 @@
 import { assertEquals } from '@std/assert'
 import { createEmailDeliveryExecutor } from './email_delivery_executor.ts'
 
-Deno.test('emailDeliveryExecutor: 应只消费 rendered plan 的 smtp/message', async () => {
+// risk-id: R07
+// layer: unit
+
+Deno.test('[unit] emailDeliveryExecutor: 应只消费 rendered plan 的 smtp/message', async () => {
   const calls: Array<Record<string, unknown>> = []
   const executor = createEmailDeliveryExecutor({
     delivery: {

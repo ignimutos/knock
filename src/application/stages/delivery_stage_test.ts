@@ -2,6 +2,9 @@ import { assertEquals } from '@std/assert'
 import type { DeliveryAttemptPlan } from '../ports/delivery_executor.ts'
 import { DeliveryStage } from './delivery_stage.ts'
 
+// risk-id: R07
+// layer: unit
+
 function createPlan(): DeliveryAttemptPlan {
   return {
     attemptId: 'attempt-1',
@@ -20,7 +23,7 @@ function createPlan(): DeliveryAttemptPlan {
   }
 }
 
-Deno.test('deliveryStage: 成功结果应生成 attempt 终态时间', async () => {
+Deno.test('[unit] deliveryStage: 成功结果应生成 attempt 终态时间', async () => {
   const seenPlans: DeliveryAttemptPlan[] = []
   const stage = new DeliveryStage({
     now: (() => {
@@ -43,7 +46,7 @@ Deno.test('deliveryStage: 成功结果应生成 attempt 终态时间', async () 
   assertEquals(result.finishedAt, '2026-04-13T10:20:02.000Z')
 })
 
-Deno.test('deliveryStage: 失败细节应主归属 attempt', async () => {
+Deno.test('[unit] deliveryStage: 失败细节应主归属 attempt', async () => {
   const stage = new DeliveryStage({
     now: (() => {
       const values = ['2026-04-13T10:21:01.000Z', '2026-04-13T10:21:02.000Z']

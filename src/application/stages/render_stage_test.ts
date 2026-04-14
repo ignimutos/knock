@@ -3,7 +3,10 @@ import { getAiEntryRuntime } from '../../core/ai_runtime.ts'
 import { createPipelineItem } from '../../domain/pipeline_item.ts'
 import { RenderStage } from './render_stage.ts'
 
-Deno.test('renderStage: 应生成带 rendered snapshot 的 attempt plan', async () => {
+// risk-id: R07
+// layer: unit
+
+Deno.test('[unit] renderStage: 应生成带 rendered snapshot 的 attempt plan', async () => {
   const stage = new RenderStage({
     now: () => '2026-04-13T10:10:00.000Z',
     createAttemptId: () => 'attempt-1',
@@ -73,7 +76,7 @@ Deno.test('renderStage: 应生成带 rendered snapshot 的 attempt plan', async 
   })
 })
 
-Deno.test('renderStage: 模板上下文应提供 canonical source 字段', async () => {
+Deno.test('[unit] renderStage: 模板上下文应提供 canonical source 字段', async () => {
   const stage = new RenderStage({
     now: () => '2026-04-13T10:12:00.000Z',
     createAttemptId: () => 'attempt-source',
@@ -142,7 +145,7 @@ Deno.test('renderStage: 模板上下文应提供 canonical source 字段', async
   })
 })
 
-Deno.test('renderStage: 模板上下文应保留顶层 entry 字段别名', async () => {
+Deno.test('[unit] renderStage: 模板上下文应保留顶层 entry 字段别名', async () => {
   const stage = new RenderStage({
     now: () => '2026-04-13T10:12:15.000Z',
     createAttemptId: () => 'attempt-entry-alias',
@@ -202,7 +205,7 @@ Deno.test('renderStage: 模板上下文应保留顶层 entry 字段别名', asyn
   })
 })
 
-Deno.test('renderStage: 模板上下文应注入 entry 级 AI runtime', async () => {
+Deno.test('[unit] renderStage: 模板上下文应注入 entry 级 AI runtime', async () => {
   let capturedRuntime: ReturnType<typeof getAiEntryRuntime> | undefined
 
   const stage = new RenderStage({
@@ -262,7 +265,7 @@ Deno.test('renderStage: 模板上下文应注入 entry 级 AI runtime', async ()
   assertEquals(plan.attemptId, 'attempt-ai-runtime')
 })
 
-Deno.test('renderStage: file 应保留 rotation 配置供 executor 消费', async () => {
+Deno.test('[unit] renderStage: file 应保留 rotation 配置供 executor 消费', async () => {
   const stage = new RenderStage({
     now: () => '2026-04-13T10:12:30.000Z',
     createAttemptId: () => 'attempt-rotation',
@@ -325,7 +328,7 @@ Deno.test('renderStage: file 应保留 rotation 配置供 executor 消费', asyn
   })
 })
 
-Deno.test('renderStage: push/email 应携带 executor 所需 transport 配置', async () => {
+Deno.test('[unit] renderStage: push/email 应携带 executor 所需 transport 配置', async () => {
   const stage = new RenderStage({
     now: () => '2026-04-13T10:11:00.000Z',
     createAttemptId: () => 'attempt-2',
@@ -447,95 +450,98 @@ Deno.test('renderStage: push/email 应携带 executor 所需 transport 配置', 
   })
 })
 
-Deno.test('renderStage: email 应渲染 from/to/cc/bcc/replyTo/headers 等全部模板字段', async () => {
-  const stage = new RenderStage({
-    now: () => '2026-04-13T10:11:30.000Z',
-    createAttemptId: () => 'attempt-email-full',
-    renderContent: (template, context) => {
-      const entry = context.entry as { title?: string }
-      const source = context.source as { id?: string }
-      return Promise.resolve(
-        template
-          .replace('{{ entry.title }}', entry.title ?? '')
-          .replace('{{ source.id }}', source.id ?? ''),
-      )
-    },
-    renderPayload: (payload) => Promise.resolve(payload),
-  })
+Deno.test(
+  '[unit] renderStage: email 应渲染 from/to/cc/bcc/replyTo/headers 等全部模板字段',
+  async () => {
+    const stage = new RenderStage({
+      now: () => '2026-04-13T10:11:30.000Z',
+      createAttemptId: () => 'attempt-email-full',
+      renderContent: (template, context) => {
+        const entry = context.entry as { title?: string }
+        const source = context.source as { id?: string }
+        return Promise.resolve(
+          template
+            .replace('{{ entry.title }}', entry.title ?? '')
+            .replace('{{ source.id }}', source.id ?? ''),
+        )
+      },
+      renderPayload: (payload) => Promise.resolve(payload),
+    })
 
-  const item = createPipelineItem({
-    itemId: 'item-email-full',
-    sourceRunId: 'run-1',
-    sourceId: 'rust',
-    effectDomain: 'production',
-    normalized: {
-      id: 'entry-email-full',
-      title: 'Hello',
-      link: '',
-      description: 'Desc',
-      content: '',
-      published: '',
-      updated: '',
-    },
-  })
-
-  const plan = await stage.run({
-    item,
-    feed: {
-      title: 'Feed',
-      link: '',
-      description: '',
-      generator: '',
-      language: '',
-      published: '',
-    },
-    binding: {
+    const item = createPipelineItem({
+      itemId: 'item-email-full',
+      sourceRunId: 'run-1',
       sourceId: 'rust',
-      deliveryId: 'mailer',
-      definition: {
-        kind: 'email',
+      effectDomain: 'production',
+      normalized: {
+        id: 'entry-email-full',
+        title: 'Hello',
+        link: '',
+        description: 'Desc',
+        content: '',
+        published: '',
+        updated: '',
+      },
+    })
+
+    const plan = await stage.run({
+      item,
+      feed: {
+        title: 'Feed',
+        link: '',
+        description: '',
+        generator: '',
+        language: '',
+        published: '',
+      },
+      binding: {
+        sourceId: 'rust',
         deliveryId: 'mailer',
+        definition: {
+          kind: 'email',
+          deliveryId: 'mailer',
+          smtp: {
+            host: 'smtp.example.com',
+            port: 587,
+            security: 'starttls',
+          },
+          messageTemplate: {
+            from: 'bot+{{ source.id }}@example.com',
+            to: ['ops+{{ source.id }}@example.com'],
+            cc: ['cc+{{ source.id }}@example.com'],
+            bcc: ['bcc+{{ source.id }}@example.com'],
+            replyTo: ['reply+{{ source.id }}@example.com'],
+            subject: '{{ entry.title }}',
+            text: 'Desc',
+            headers: {
+              'X-Source': '{{ source.id }}',
+            },
+          },
+        },
+      },
+    })
+
+    assertEquals(plan.renderedSnapshot, {
+      channel: 'email',
+      payload: {
         smtp: {
           host: 'smtp.example.com',
           port: 587,
           security: 'starttls',
         },
-        messageTemplate: {
-          from: 'bot+{{ source.id }}@example.com',
-          to: ['ops+{{ source.id }}@example.com'],
-          cc: ['cc+{{ source.id }}@example.com'],
-          bcc: ['bcc+{{ source.id }}@example.com'],
-          replyTo: ['reply+{{ source.id }}@example.com'],
-          subject: '{{ entry.title }}',
+        message: {
+          from: 'bot+rust@example.com',
+          to: ['ops+rust@example.com'],
+          cc: ['cc+rust@example.com'],
+          bcc: ['bcc+rust@example.com'],
+          replyTo: ['reply+rust@example.com'],
+          subject: 'Hello',
           text: 'Desc',
           headers: {
-            'X-Source': '{{ source.id }}',
+            'X-Source': 'rust',
           },
         },
       },
-    },
-  })
-
-  assertEquals(plan.renderedSnapshot, {
-    channel: 'email',
-    payload: {
-      smtp: {
-        host: 'smtp.example.com',
-        port: 587,
-        security: 'starttls',
-      },
-      message: {
-        from: 'bot+rust@example.com',
-        to: ['ops+rust@example.com'],
-        cc: ['cc+rust@example.com'],
-        bcc: ['bcc+rust@example.com'],
-        replyTo: ['reply+rust@example.com'],
-        subject: 'Hello',
-        text: 'Desc',
-        headers: {
-          'X-Source': 'rust',
-        },
-      },
-    },
-  })
-})
+    })
+  },
+)

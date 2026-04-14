@@ -3,6 +3,10 @@ import type { SyndicationSourceConfig } from '../config/schema.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
 import { parseSyndicationSource } from './syndication.ts'
 
+// risk-id: R01
+// risk-id: R02
+// layer: contract
+
 function createTestAiRuntime(
   generateText: (input: Record<string, unknown>) => Promise<{ text: string }>,
 ) {
@@ -45,7 +49,7 @@ function createTestAiRuntime(
   })
 }
 
-Deno.test('syndication: RSS 默认输出扩展 unified 字段', async () => {
+Deno.test('[contract] R02 syndication: RSS 默认输出扩展 unified 字段', async () => {
   const xml = `
 <rss>
   <channel>
@@ -85,7 +89,7 @@ Deno.test('syndication: RSS 默认输出扩展 unified 字段', async () => {
   assertEquals(parsed.entries[0].mapped.updated, '2026-01-02 03:04:05')
 })
 
-Deno.test('syndication: Atom 默认字段支持 content 与 updated 回退', async () => {
+Deno.test('[contract] syndication: Atom 默认字段支持 content 与 updated 回退', async () => {
   const xml = `
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title> Releases </title>
@@ -108,7 +112,7 @@ Deno.test('syndication: Atom 默认字段支持 content 与 updated 回退', asy
   assertEquals(parsed.entries[0].mapped.updated, '2026-03-26 00:00:00')
 })
 
-Deno.test('syndication: JSON Feed 默认字段支持 content 与 updated 回退', async () => {
+Deno.test('[contract] syndication: JSON Feed 默认字段支持 content 与 updated 回退', async () => {
   const payload = JSON.stringify({
     version: 'https://jsonfeed.org/version/1.1',
     title: ' Example Feed ',
@@ -136,36 +140,39 @@ Deno.test('syndication: JSON Feed 默认字段支持 content 与 updated 回退'
   assertEquals(parsed.entries[0].mapped.updated, '2026-03-20 00:00:00')
 })
 
-Deno.test('syndication: 显式 entry mapping 不应用默认 date format 与 fallback', async () => {
-  const payload = JSON.stringify({
-    version: 'https://jsonfeed.org/version/1.1',
-    items: [
-      {
-        id: 'j-1',
-        summary: 'summary text',
-        content_text: 'body text',
-        date_published: '2026-03-20T00:00:00Z',
+Deno.test(
+  '[contract] syndication: 显式 entry mapping 不应用默认 date format 与 fallback',
+  async () => {
+    const payload = JSON.stringify({
+      version: 'https://jsonfeed.org/version/1.1',
+      items: [
+        {
+          id: 'j-1',
+          summary: 'summary text',
+          content_text: 'body text',
+          date_published: '2026-03-20T00:00:00Z',
+        },
+      ],
+    })
+
+    const parsed = await parseSyndicationSource(payload, {
+      entry: {
+        id: '{{ id }}',
+        description: '{{ description }}',
+        content: '{{ content }}',
+        published: '{{ published }}',
+        updated: '{{ updated }}',
       },
-    ],
-  })
+    })
 
-  const parsed = await parseSyndicationSource(payload, {
-    entry: {
-      id: '{{ id }}',
-      description: '{{ description }}',
-      content: '{{ content }}',
-      published: '{{ published }}',
-      updated: '{{ updated }}',
-    },
-  })
+    assertEquals(parsed.entries[0].mapped.description, 'summary text')
+    assertEquals(parsed.entries[0].mapped.content, 'body text')
+    assertEquals(parsed.entries[0].mapped.published, '2026-03-20T00:00:00Z')
+    assertEquals(parsed.entries[0].mapped.updated, '')
+  },
+)
 
-  assertEquals(parsed.entries[0].mapped.description, 'summary text')
-  assertEquals(parsed.entries[0].mapped.content, 'body text')
-  assertEquals(parsed.entries[0].mapped.published, '2026-03-20T00:00:00Z')
-  assertEquals(parsed.entries[0].mapped.updated, '')
-})
-
-Deno.test('syndication: Atom entry mapping 支持读取 feed', async () => {
+Deno.test('[contract] syndication: Atom entry mapping 支持读取 feed', async () => {
   const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><title>Releases</title><entry><id>e-1</id><title>v1.0.0</title><link href="https://example.com/r/1" /><summary>first</summary><published>2026-03-24T00:00:00Z</published></entry></feed>`
 
   const parsed = await parseSyndicationSource(xml, {
@@ -186,7 +193,7 @@ Deno.test('syndication: Atom entry mapping 支持读取 feed', async () => {
   assertEquals(parsed.entries[0].mapped.description, 'Releases')
 })
 
-Deno.test('syndication: feed mapping 不可反向读取 entry', async () => {
+Deno.test('[contract] syndication: feed mapping 不可反向读取 entry', async () => {
   const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><title>Releases</title><entry><id>e-1</id><title>v1.0.0</title></entry></feed>`
 
   const parsed = await parseSyndicationSource(xml, {
@@ -201,7 +208,7 @@ Deno.test('syndication: feed mapping 不可反向读取 entry', async () => {
   assertEquals(parsed.feed.title, '')
 })
 
-Deno.test('syndication: 共享 runtime filter 可用于映射', async () => {
+Deno.test('[contract] syndication: 共享 runtime filter 可用于映射', async () => {
   const xml = `
 <rss>
   <channel>
@@ -225,7 +232,7 @@ Deno.test('syndication: 共享 runtime filter 可用于映射', async () => {
   assertEquals(parsed.entries[0].mapped.description, 'true')
 })
 
-Deno.test('syndication: 共享 runtime filter 支持反转匹配映射', async () => {
+Deno.test('[contract] syndication: 共享 runtime filter 支持反转匹配映射', async () => {
   const xml = `
 <rss>
   <channel>
@@ -249,7 +256,7 @@ Deno.test('syndication: 共享 runtime filter 支持反转匹配映射', async (
   assertEquals(parsed.entries[0].mapped.description, 'false')
 })
 
-Deno.test('syndication: 自定义字段支持无序引用', async () => {
+Deno.test('[contract] syndication: 自定义字段支持无序引用', async () => {
   const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><title>Releases</title><entry><id>e-1</id><title>v1.0.0</title><summary>first</summary></entry></feed>`
 
   const mapping = {
@@ -268,7 +275,7 @@ Deno.test('syndication: 自定义字段支持无序引用', async () => {
   assertEquals(parsed.entries[0].mapped.description, 'first')
 })
 
-Deno.test('syndication: 自定义字段循环依赖时报错', async () => {
+Deno.test('[contract] syndication: 自定义字段循环依赖时报错', async () => {
   const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>e-1</id><title>v1.0.0</title></entry></feed>`
 
   const mapping = {
@@ -284,7 +291,7 @@ Deno.test('syndication: 自定义字段循环依赖时报错', async () => {
   await assertRejects(async () => await parseSyndicationSource(xml, mapping), Error, '存在循环依赖')
 })
 
-Deno.test('syndication: 自定义字段中间节点可使用 ai filter 且保持依赖顺序', async () => {
+Deno.test('[contract] syndication: 自定义字段中间节点可使用 ai filter 且保持依赖顺序', async () => {
   const xml = `<rss><channel><item><guid>g-1</guid><title>Hello</title><description>hello world</description></item></channel></rss>`
   const aiRequests: Array<Record<string, unknown>> = []
   const aiRuntime = createTestAiRuntime((input) => {
@@ -314,7 +321,7 @@ Deno.test('syndication: 自定义字段中间节点可使用 ai filter 且保持
   assertEquals(String(aiRequests[0].prompt ?? '').includes('hello world'), true)
 })
 
-Deno.test('syndication: feed 与 entry mapping 中可使用 ai filter', async () => {
+Deno.test('[contract] syndication: feed 与 entry mapping 中可使用 ai filter', async () => {
   const xml = `<rss><channel><title>Feed Title</title><item><guid>g-1</guid><title>Hello</title><description>entry body</description></item></channel></rss>`
   const aiRequests: Array<Record<string, unknown>> = []
   const aiRuntime = createTestAiRuntime((input) => {
@@ -345,7 +352,7 @@ Deno.test('syndication: feed 与 entry mapping 中可使用 ai filter', async ()
   assertEquals(aiRequests.length, 2)
 })
 
-Deno.test('syndication: ai filter 失败应正确上抛', async () => {
+Deno.test('[contract] syndication: ai filter 失败应正确上抛', async () => {
   const xml = `<rss><channel><item><guid>g-1</guid><description>entry body</description></item></channel></rss>`
   const aiRuntime = createTestAiRuntime(() => Promise.reject(new Error('AI exploded')))
 
@@ -370,7 +377,7 @@ Deno.test('syndication: ai filter 失败应正确上抛', async () => {
   )
 })
 
-Deno.test('syndication: 非法 match_fuzzy mode 会报错', async () => {
+Deno.test('[contract] syndication: 非法 match_fuzzy mode 会报错', async () => {
   const xml = `
 <rss>
   <channel>
@@ -393,7 +400,7 @@ Deno.test('syndication: 非法 match_fuzzy mode 会报错', async () => {
   )
 })
 
-Deno.test('syndication: Atom summary 实体展开超过默认限制时仍可解析', async () => {
+Deno.test('[contract] syndication: Atom summary 实体展开超过默认限制时仍可解析', async () => {
   const repeatedHtml = '&lt;p&gt;release&lt;/p&gt;'.repeat(1001)
   const xml = `
 <feed xmlns="http://www.w3.org/2005/Atom">

@@ -1,7 +1,10 @@
 import { assertEquals } from '@std/assert'
 import { DeduplicationStage } from './deduplication_stage.ts'
 
-Deno.test('deduplicationStage: item 与 delivery 应分开判定', async () => {
+// risk-id: R12
+// layer: unit
+
+Deno.test('[unit] deduplicationStage: item 与 delivery 应分开判定', async () => {
   const stage = new DeduplicationStage({
     repository: {
       isItemDuplicate: ({ effectDomain }) => Promise.resolve(effectDomain === 'preview'),
@@ -24,7 +27,7 @@ Deno.test('deduplicationStage: item 与 delivery 应分开判定', async () => {
   assertEquals(result.deliveryStatuses.telegram, 'new')
 })
 
-Deno.test('deduplicationStage: item duplicate 时应短路所有 delivery', async () => {
+Deno.test('[unit] deduplicationStage: item duplicate 时应短路所有 delivery', async () => {
   const stage = new DeduplicationStage({
     repository: {
       isItemDuplicate: () => Promise.resolve(true),
@@ -49,7 +52,7 @@ Deno.test('deduplicationStage: item duplicate 时应短路所有 delivery', asyn
   })
 })
 
-Deno.test('deduplicationStage: 判定阶段不应提前注册 fingerprint', async () => {
+Deno.test('[unit] deduplicationStage: 判定阶段不应提前注册 fingerprint', async () => {
   let itemRegisters = 0
   let deliveryRegisters = 0
 

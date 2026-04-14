@@ -2,8 +2,11 @@ import { assertEquals } from '@std/assert'
 import type { PreviewSourceUseCaseDeps } from './preview_source_use_case.ts'
 import { PreviewSourceUseCase } from './preview_source_use_case.ts'
 
+// risk-id: R18
+// layer: contract
+
 Deno.test(
-  'previewSourceUseCase: preview profile 应生成 effectDomain=preview 的 RunPlan',
+  '[contract] previewSourceUseCase: preview profile 应生成 effectDomain=preview 的 RunPlan',
   async () => {
     const deps: PreviewSourceUseCaseDeps = {
       runSourceUseCase: {

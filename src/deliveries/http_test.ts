@@ -5,6 +5,9 @@ import { createHttpClient } from '../core/http_client.ts'
 import { createLogger } from '../core/logger.ts'
 import { createHttpDelivery } from './http.ts'
 
+// risk-id: R07
+// layer: contract
+
 function getRequestClient(init: RequestInit | undefined): Deno.HttpClient | undefined {
   return (init as (RequestInit & { client?: Deno.HttpClient }) | undefined)?.client
 }
@@ -47,7 +50,7 @@ function getAttributes(record: Record<string, unknown> | undefined): Record<stri
   return (record?.attributes ?? {}) as Record<string, unknown>
 }
 
-Deno.test('httpDelivery: body 请求应发送 JSON body 与合并后的 headers', async () => {
+Deno.test('[contract] httpDelivery: body 请求应发送 JSON body 与合并后的 headers', async () => {
   const calls: Array<{
     input: RequestInfo | URL
     init?: RequestInit
@@ -113,7 +116,7 @@ Deno.test('httpDelivery: body 请求应发送 JSON body 与合并后的 headers'
   assertEquals(getRequestClient(calls[0].init), undefined)
 })
 
-Deno.test('httpDelivery: query 请求应把 payload 编码到 query string', async () => {
+Deno.test('[contract] httpDelivery: query 请求应把 payload 编码到 query string', async () => {
   const calls: Array<RequestInfo | URL> = []
 
   const delivery = createHttpDelivery({
@@ -147,7 +150,7 @@ Deno.test('httpDelivery: query 请求应把 payload 编码到 query string', asy
   assertStringIncludes(url, 'ok=true')
 })
 
-Deno.test('httpDelivery: form 请求应默认设置 form content-type', async () => {
+Deno.test('[contract] httpDelivery: form 请求应默认设置 form content-type', async () => {
   const calls: Array<{ input: RequestInfo | URL; init?: RequestInit; body: string }> = []
 
   const delivery = createHttpDelivery({
@@ -188,7 +191,7 @@ Deno.test('httpDelivery: form 请求应默认设置 form content-type', async ()
   )
 })
 
-Deno.test('httpDelivery: query payload 非对象/字符串时应报错', async () => {
+Deno.test('[contract] httpDelivery: query payload 非对象/字符串时应报错', async () => {
   const delivery = createHttpDelivery({
     httpClient: createHttpClient({
       fetcher: () => Promise.resolve(new Response('ok', { status: 200 })),
@@ -213,7 +216,7 @@ Deno.test('httpDelivery: query payload 非对象/字符串时应报错', async (
   )
 })
 
-Deno.test('httpDelivery: form payload 非对象时应报错', async () => {
+Deno.test('[contract] httpDelivery: form payload 非对象时应报错', async () => {
   const delivery = createHttpDelivery({
     httpClient: createHttpClient({
       fetcher: () => Promise.resolve(new Response('ok', { status: 200 })),
@@ -239,7 +242,7 @@ Deno.test('httpDelivery: form payload 非对象时应报错', async () => {
 })
 
 Deno.test(
-  'httpDelivery: 配置 http proxy 时应把 client 注入 fetch init 并在完成后关闭',
+  '[contract] httpDelivery: 配置 http proxy 时应把 client 注入 fetch init 并在完成后关闭',
   async () => {
     const calls: Array<RequestInit | undefined> = []
     const createHttpClientCalls: Array<Parameters<typeof Deno.createHttpClient>[0]> = []
@@ -290,7 +293,7 @@ Deno.test(
 )
 
 Deno.test(
-  'httpDelivery: 配置 socks5 proxy 时应把 client 注入 fetch init 并在完成后关闭',
+  '[contract] httpDelivery: 配置 socks5 proxy 时应把 client 注入 fetch init 并在完成后关闭',
   async () => {
     const calls: Array<RequestInit | undefined> = []
     const createHttpClientCalls: Array<Parameters<typeof Deno.createHttpClient>[0]> = []
@@ -341,7 +344,7 @@ Deno.test(
 )
 
 Deno.test(
-  'httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链且日志不泄露模板结果',
+  '[contract] httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链且日志不泄露模板结果',
   async () => {
     const aiCalls: Array<Record<string, unknown>> = []
     const logs: string[] = []
@@ -456,7 +459,7 @@ Deno.test(
   },
 )
 
-Deno.test('httpDelivery: 成功响应时不应渲染 failure message 模板', async () => {
+Deno.test('[contract] httpDelivery: 成功响应时不应渲染 failure message 模板', async () => {
   const renderedTemplates: string[] = []
   const delivery = createHttpDelivery({
     httpClient: createHttpClient({
@@ -487,7 +490,7 @@ Deno.test('httpDelivery: 成功响应时不应渲染 failure message 模板', as
   assertEquals(renderedTemplates, ['{{ ok }}'])
 })
 
-Deno.test('httpDelivery: transport throw 时应记录统一 failure 日志', async () => {
+Deno.test('[contract] httpDelivery: transport throw 时应记录统一 failure 日志', async () => {
   const logs: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -532,33 +535,36 @@ Deno.test('httpDelivery: transport throw 时应记录统一 failure 日志', asy
   assertEquals(JSON.stringify(failureLog).includes('ECONNREFUSED'), false)
 })
 
-Deno.test('httpDelivery: 2xx 且无 response 检查时 invalid JSON 不应导致失败', async () => {
-  const delivery = createHttpDelivery({
-    httpClient: createHttpClient({
-      fetcher: () =>
-        Promise.resolve(
-          new Response('{', {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        ),
-    }),
-  })
+Deno.test(
+  '[contract] httpDelivery: 2xx 且无 response 检查时 invalid JSON 不应导致失败',
+  async () => {
+    const delivery = createHttpDelivery({
+      httpClient: createHttpClient({
+        fetcher: () =>
+          Promise.resolve(
+            new Response('{', {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          ),
+      }),
+    })
 
-  await delivery.push({
-    deliveryId: 'webhook',
-    http: {
-      method: 'POST',
-      url: 'https://example.com/webhook',
-    },
-    request: {
-      type: 'body',
-    },
-  })
-})
+    await delivery.push({
+      deliveryId: 'webhook',
+      http: {
+        method: 'POST',
+        url: 'https://example.com/webhook',
+      },
+      request: {
+        type: 'body',
+      },
+    })
+  },
+)
 
 Deno.test(
-  'httpDelivery: 需要 response body 时 invalid JSON 应记录 parse failure 日志',
+  '[contract] httpDelivery: 需要 response body 时 invalid JSON 应记录 parse failure 日志',
   async () => {
     const logs: string[] = []
     const logger = createLogger({
@@ -617,7 +623,7 @@ Deno.test(
 )
 
 Deno.test(
-  'httpDelivery: predicate render throw 时应记录 predicate render failure 日志',
+  '[contract] httpDelivery: predicate render throw 时应记录 predicate render failure 日志',
   async () => {
     const logs: string[] = []
     const logger = createLogger({
@@ -675,64 +681,68 @@ Deno.test(
   },
 )
 
-Deno.test('httpDelivery: message render throw 时应记录 message render failure 日志', async () => {
-  const logs: string[] = []
-  const logger = createLogger({
-    enabled: true,
-    level: 'info',
-    module: 'delivery.http',
-    now: () => new Date('2026-03-24T21:45:12.345Z'),
-    writeStdout: (line: string) => logs.push(line),
-    writeWarn: (line: string) => logs.push(line),
-    writeStderr: (line: string) => logs.push(line),
-  })
-  const delivery = createHttpDelivery({
-    logger,
-    httpClient: createHttpClient({
-      fetcher: () => Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 500 })),
-    }),
-    renderContent: (template) => {
-      if (template === '{{ always_false }}') return Promise.resolve('false')
-      if (template === '{{ broken_message }}') {
-        return Promise.reject(new Error('message render leaked rendered body'))
-      }
-      return Promise.resolve('ignored')
-    },
-  })
-
-  await assertRejects(
-    () =>
-      delivery.push({
-        deliveryId: 'webhook',
-        http: {
-          method: 'POST',
-          url: 'https://example.com/webhook',
-        },
-        request: {
-          type: 'body',
-        },
-        response: {
-          predicate: '{{ always_false }}',
-          message: '{{ broken_message }}',
-        },
+Deno.test(
+  '[contract] httpDelivery: message render throw 时应记录 message render failure 日志',
+  async () => {
+    const logs: string[] = []
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'delivery.http',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => logs.push(line),
+      writeWarn: (line: string) => logs.push(line),
+      writeStderr: (line: string) => logs.push(line),
+    })
+    const delivery = createHttpDelivery({
+      logger,
+      httpClient: createHttpClient({
+        fetcher: () =>
+          Promise.resolve(new Response(JSON.stringify({ ok: false }), { status: 500 })),
       }),
-    Error,
-    'message render leaked rendered body',
-  )
+      renderContent: (template) => {
+        if (template === '{{ always_false }}') return Promise.resolve('false')
+        if (template === '{{ broken_message }}') {
+          return Promise.reject(new Error('message render leaked rendered body'))
+        }
+        return Promise.resolve('ignored')
+      },
+    })
 
-  const failureLog = findHttpFailureLog(parseLogs(logs))
-  const failureAttributes = getAttributes(failureLog)
-  assertEquals(Boolean(failureLog), true)
-  assertEquals(failureAttributes['delivery.reason'], 'response_message_render_error')
-  assertEquals(failureAttributes['http.response.status_code'], 500)
-  assertEquals(
-    failureAttributes['exception.message'],
-    'HTTP 推送失败: response_message_render_error',
-  )
-  assertEquals(JSON.stringify(failureLog).includes('rendered body'), false)
-})
+    await assertRejects(
+      () =>
+        delivery.push({
+          deliveryId: 'webhook',
+          http: {
+            method: 'POST',
+            url: 'https://example.com/webhook',
+          },
+          request: {
+            type: 'body',
+          },
+          response: {
+            predicate: '{{ always_false }}',
+            message: '{{ broken_message }}',
+          },
+        }),
+      Error,
+      'message render leaked rendered body',
+    )
 
-Deno.test('httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', async () => {
+    const failureLog = findHttpFailureLog(parseLogs(logs))
+    const failureAttributes = getAttributes(failureLog)
+    assertEquals(Boolean(failureLog), true)
+    assertEquals(failureAttributes['delivery.reason'], 'response_message_render_error')
+    assertEquals(failureAttributes['http.response.status_code'], 500)
+    assertEquals(
+      failureAttributes['exception.message'],
+      'HTTP 推送失败: response_message_render_error',
+    )
+    assertEquals(JSON.stringify(failureLog).includes('rendered body'), false)
+  },
+)
+
+Deno.test('[flow] R07 httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志', async () => {
   const logs: string[] = []
   let closeCalls = 0
   const proxyClient = {

@@ -1,8 +1,11 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { SourceParserGateway } from './source_parser_gateway.ts'
 
+// risk-id: R14
+// layer: contract
+
 Deno.test(
-  'sourceParserGateway: 应以 RunPlan.source.parser 为准，不得静默回落到其他 parser',
+  '[contract] sourceParserGateway: 应以 RunPlan.source.parser 为准，不得静默回落到其他 parser',
   async () => {
     const gateway = new SourceParserGateway({
       resolveSourceConfig: () => ({
@@ -52,7 +55,7 @@ Deno.test(
   },
 )
 
-Deno.test('sourceParserGateway: xquery 结果应归一化为统一 feed/item 字段', async () => {
+Deno.test('[flow] R14 sourceParserGateway: xquery 结果应归一化为统一 feed/item 字段', async () => {
   const gateway = new SourceParserGateway({
     resolveSourceConfig: () => ({
       id: 'rust',
@@ -118,7 +121,7 @@ Deno.test('sourceParserGateway: xquery 结果应归一化为统一 feed/item 字
   assertEquals(parsed.items[0]?.updated, '')
 })
 
-Deno.test('sourceParserGateway: xquery 字符串 map 结果中的额外键应被裁掉', async () => {
+Deno.test('[contract] sourceParserGateway: xquery 字符串 map 结果中的额外键应被裁掉', async () => {
   const gateway = new SourceParserGateway({
     resolveSourceConfig: () => ({
       id: 'rust',
@@ -168,7 +171,7 @@ Deno.test('sourceParserGateway: xquery 字符串 map 结果中的额外键应被
 })
 
 Deno.test(
-  'sourceParserGateway: summary 上游列表应以 RunPlan.source.upstreamSourceIds 为准',
+  '[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.upstreamSourceIds 为准',
   async () => {
     let seenSourceIds: string[] | undefined
 

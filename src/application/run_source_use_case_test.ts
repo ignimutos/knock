@@ -8,6 +8,9 @@ import type { SourceParser } from './ports/source_parser.ts'
 import type { SourceInputGateway } from './ports/source_input_gateway.ts'
 import { RunSourceUseCase } from './run_source_use_case.ts'
 
+// risk-id: R07
+// layer: contract
+
 function createUseCaseWithRecorder(calls: string[]) {
   const sourceInputGateway: SourceInputGateway = {
     fetch: (plan) => {
@@ -51,7 +54,7 @@ function createUseCaseWithRecorder(calls: string[]) {
   })
 }
 
-Deno.test('runSourceUseCase: summary 与 fetch source 应共享主生命周期入口', async () => {
+Deno.test('[contract] runSourceUseCase: summary 与 fetch source 应共享主生命周期入口', async () => {
   const calls: string[] = []
   const useCase = createUseCaseWithRecorder(calls)
 
@@ -88,7 +91,7 @@ Deno.test('runSourceUseCase: summary 与 fetch source 应共享主生命周期�
   ])
 })
 
-Deno.test('runSourceUseCase: 应生成可复用的 RunPlan 并保留 bindings', async () => {
+Deno.test('[contract] runSourceUseCase: 应生成可复用的 RunPlan 并保留 bindings', async () => {
   const useCase = createUseCaseWithRecorder([])
   const bindings: DeliveryBinding[] = [
     {
@@ -126,7 +129,7 @@ Deno.test('runSourceUseCase: 应生成可复用的 RunPlan 并保留 bindings', 
 })
 
 Deno.test(
-  'runSourceUseCase: 双层 dedupe、rendered snapshot 与 attempt 失败归属应串成最小主链',
+  '[flow] R07 runSourceUseCase: 双层 dedupe、rendered snapshot 与 attempt 失败归属应串成最小主链',
   async () => {
     const createdRuns: SourceRun[] = []
     const insertedItems: PipelineItem[] = []
@@ -319,7 +322,7 @@ Deno.test(
 )
 
 Deno.test(
-  'runSourceUseCase: source filter 命中时应落 filtered，而不是继续进入 dedupe/delivery',
+  '[contract] runSourceUseCase: source filter 命中时应落 filtered，而不是继续进入 dedupe/delivery',
   async () => {
     const itemStatuses: Array<{
       itemId: string
@@ -439,7 +442,7 @@ Deno.test(
   },
 )
 
-Deno.test('runSourceUseCase: summary source 也应接入 filter 主链', async () => {
+Deno.test('[contract] runSourceUseCase: summary source 也应接入 filter 主链', async () => {
   const itemStatuses: Array<{
     itemId: string
     status: PipelineItem['status']
@@ -538,7 +541,7 @@ Deno.test('runSourceUseCase: summary source 也应接入 filter 主链', async (
   ])
 })
 
-Deno.test('runSourceUseCase: run insert 后主链抛错时应收口 failed 终态', async () => {
+Deno.test('[contract] runSourceUseCase: run insert 后主链抛错时应收口 failed 终态', async () => {
   const runStatuses: string[] = []
 
   const useCase = new RunSourceUseCase({
@@ -619,7 +622,7 @@ Deno.test('runSourceUseCase: run insert 后主链抛错时应收口 failed 终�
 })
 
 Deno.test(
-  'runSourceUseCase: item 为 new 但全部 delivery duplicate 时应保持 item-level 语义分离',
+  '[contract] runSourceUseCase: item 为 new 但全部 delivery duplicate 时应保持 item-level 语义分离',
   async () => {
     const itemStatuses: Array<{
       itemId: string

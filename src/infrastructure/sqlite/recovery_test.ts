@@ -5,8 +5,11 @@ import { insertSourceRun } from './run_repository.ts'
 import { markInterruptedAttempts } from './recovery.ts'
 import { createSourceRunQueryService } from './source_run_query_service.ts'
 
+// risk-id: R10
+// layer: contract
+
 Deno.test(
-  'sqlite v2: recovery 应将 planned/running attempts 标记为 interrupted 并终结受影响 run',
+  '[contract] R10 sqlite v2: recovery 应将 planned/running attempts 标记为 interrupted 并终结受影响 run',
   async () => {
     const db = createInMemoryDb()
 
@@ -75,30 +78,32 @@ Deno.test(
   },
 )
 
-Deno.test('sqlite v2: recovery 失败时应回滚 attempt 更新，避免 run/attempt 失配', async () => {
-  const db = createInMemoryDb()
+Deno.test(
+  '[contract] sqlite v2: recovery 失败时应回滚 attempt 更新，避免 run/attempt 失配',
+  async () => {
+    const db = createInMemoryDb()
 
-  await insertSourceRun(db, {
-    runId: 'run-rollback',
-    sourceId: 'rust',
-    trigger: 'scheduled',
-    profile: 'production',
-    effectDomain: 'production',
-    status: 'running',
-    scheduledAt: '2026-04-13T10:40:00.000Z',
-    startedAt: '2026-04-13T10:40:01.000Z',
-    counts: {
-      fetchedCount: 0,
-      parsedCount: 0,
-      filteredCount: 0,
-      duplicateItemCount: 0,
-      deliveredCount: 0,
-      failedAttemptCount: 0,
-      skippedCount: 0,
-    },
-  })
+    await insertSourceRun(db, {
+      runId: 'run-rollback',
+      sourceId: 'rust',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      status: 'running',
+      scheduledAt: '2026-04-13T10:40:00.000Z',
+      startedAt: '2026-04-13T10:40:01.000Z',
+      counts: {
+        fetchedCount: 0,
+        parsedCount: 0,
+        filteredCount: 0,
+        duplicateItemCount: 0,
+        deliveredCount: 0,
+        failedAttemptCount: 0,
+        skippedCount: 0,
+      },
+    })
 
-  await db.$client.exec(`
+    await db.$client.exec(`
     INSERT INTO pipeline_items (
       item_id,
       source_run_id,
@@ -116,32 +121,33 @@ Deno.test('sqlite v2: recovery 失败时应回滚 attempt 更新，避免 run/at
     )
   `)
 
-  await insertDeliveryAttempt(db, {
-    attemptId: 'attempt-rollback',
-    itemId: 'item-rollback',
-    sourceRunId: 'run-rollback',
-    deliveryId: 'telegram',
-    channel: 'push',
-    effectDomain: 'production',
-    status: 'running',
-    plannedAt: '2026-04-13T10:40:02.000Z',
-    startedAt: '2026-04-13T10:40:03.000Z',
-    attemptNumber: 1,
-  })
+    await insertDeliveryAttempt(db, {
+      attemptId: 'attempt-rollback',
+      itemId: 'item-rollback',
+      sourceRunId: 'run-rollback',
+      deliveryId: 'telegram',
+      channel: 'push',
+      effectDomain: 'production',
+      status: 'running',
+      plannedAt: '2026-04-13T10:40:02.000Z',
+      startedAt: '2026-04-13T10:40:03.000Z',
+      attemptNumber: 1,
+    })
 
-  db.$client.exec(
-    "CREATE TRIGGER fail_source_run_interrupt BEFORE UPDATE ON source_runs BEGIN SELECT RAISE(ABORT, 'boom'); END;",
-  )
+    db.$client.exec(
+      "CREATE TRIGGER fail_source_run_interrupt BEFORE UPDATE ON source_runs BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+    )
 
-  await assertRejects(() => markInterruptedAttempts(db, '2026-04-13T10:40:30.000Z'))
+    await assertRejects(() => markInterruptedAttempts(db, '2026-04-13T10:40:30.000Z'))
 
-  const query = createSourceRunQueryService(db)
-  const view = await query.getRun('run-rollback')
+    const query = createSourceRunQueryService(db)
+    const view = await query.getRun('run-rollback')
 
-  assertExists(view)
-  assertEquals(view.run.status, 'running')
-  assertEquals(view.run.finishedAt, undefined)
-  assertEquals(view.attempts[0]?.status, 'running')
-  assertEquals(view.attempts[0]?.reason, undefined)
-  assertEquals(view.attempts[0]?.finishedAt, undefined)
-})
+    assertExists(view)
+    assertEquals(view.run.status, 'running')
+    assertEquals(view.run.finishedAt, undefined)
+    assertEquals(view.attempts[0]?.status, 'running')
+    assertEquals(view.attempts[0]?.reason, undefined)
+    assertEquals(view.attempts[0]?.finishedAt, undefined)
+  },
+)
