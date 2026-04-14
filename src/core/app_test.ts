@@ -1,36 +1,23 @@
 import { assertEquals, assertRejects } from '@std/assert'
-import { emptyDir, ensureDir } from '@std/fs'
 import { join } from '@std/path'
-import { cleanupOwnedRuntime } from '../test_runtime.ts'
+import { withOwnedRuntime } from '../test_runtime.ts'
 import { startApp } from './app.ts'
 
 const registerTest = Deno.test
-let currentOwnedRuntimeDirs: string[] | null = null
 
 function test(name: string, fn: () => Promise<void> | void): void {
-  registerTest(name, async () => {
-    const previousOwnedRuntimeDirs = currentOwnedRuntimeDirs
-    const ownedRuntimeDirs: string[] = []
-    currentOwnedRuntimeDirs = ownedRuntimeDirs
-    try {
-      await fn()
-    } finally {
-      currentOwnedRuntimeDirs = previousOwnedRuntimeDirs
-      const uniqueOwnedRuntimeDirs = [...new Set(ownedRuntimeDirs)]
-      for (const runtimeDir of uniqueOwnedRuntimeDirs.reverse()) {
-        await cleanupOwnedRuntime(runtimeDir)
-      }
-    }
-  })
+  const layeredName = name.startsWith('[') ? name : `[flow] ${name}`
+  registerTest(layeredName, fn)
 }
 
-function getTestRuntime(testName: string): string {
-  const runtimeDir = join(Deno.cwd(), '.tmp', `runtime-app-${testName}`)
-  currentOwnedRuntimeDirs?.push(runtimeDir)
-  return runtimeDir
+function withAppRuntime(
+  testName: string,
+  run: (runtimeDir: string) => Promise<void>,
+): Promise<void> {
+  return withOwnedRuntime(join(Deno.cwd(), '.tmp', `runtime-app-${testName}`), run)
 }
 
-test('app: 启动入口应拒绝非法 keepAlive 类型', async () => {
+test('[contract] app: 启动入口应拒绝非法 keepAlive 类型', async () => {
   await assertRejects(
     () => startApp({ keepAlive: 'yes' as never }),
     Error,
@@ -38,7 +25,7 @@ test('app: 启动入口应拒绝非法 keepAlive 类型', async () => {
   )
 })
 
-test('app: 启动入口应拒绝非法 runtimeDir 类型', async () => {
+test('[contract] app: 启动入口应拒绝非法 runtimeDir 类型', async () => {
   await assertRejects(
     () => startApp({ runtimeDir: 123 as never }),
     Error,
@@ -46,7 +33,7 @@ test('app: 启动入口应拒绝非法 runtimeDir 类型', async () => {
   )
 })
 
-test('app: 启动入口应拒绝非法 httpProxyClientFactory 类型', async () => {
+test('[contract] app: 启动入口应拒绝非法 httpProxyClientFactory 类型', async () => {
   await assertRejects(
     () => startApp({ httpProxyClientFactory: 'not-fn' as never }),
     Error,
@@ -54,39 +41,35 @@ test('app: 启动入口应拒绝非法 httpProxyClientFactory 类型', async () 
   )
 })
 
-test('app: 未传 immediate 时入口模型应显式视为 false', async () => {
-  const testRuntime = getTestRuntime('default-immediate-false')
-  await emptyDir(testRuntime)
-  await ensureDir(testRuntime)
-
-  await Deno.writeTextFile(
-    join(testRuntime, 'config.yml'),
-    `
+test('[flow] R15 app: 未传 immediate 时入口模型应显式视为 false', async () => {
+  await withAppRuntime('default-immediate-false', async (testRuntime) => {
+    await Deno.writeTextFile(
+      join(testRuntime, 'config.yml'),
+      `
 sources: {}
 `,
-  )
+    )
 
-  const result = await startApp({ runtimeDir: testRuntime, keepAlive: false })
-  assertEquals(result.mode, 'daemon')
+    const result = await startApp({ runtimeDir: testRuntime, keepAlive: false })
+    assertEquals(result.mode, 'daemon')
+  })
 })
 
-test('app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果', async () => {
-  const testRuntime = getTestRuntime('immediate-v2-daemon')
-  await emptyDir(testRuntime)
-  await ensureDir(testRuntime)
-
-  await Deno.writeTextFile(
-    join(testRuntime, 'config.yml'),
-    `
+test('[flow] R15 app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果', async () => {
+  await withAppRuntime('immediate-v2-daemon', async (testRuntime) => {
+    await Deno.writeTextFile(
+      join(testRuntime, 'config.yml'),
+      `
 sources: {}
 `,
-  )
+    )
 
-  const result = await startApp({
-    runtimeDir: testRuntime,
-    keepAlive: false,
-    immediate: true,
+    const result = await startApp({
+      runtimeDir: testRuntime,
+      keepAlive: false,
+      immediate: true,
+    })
+
+    assertEquals(result.mode, 'daemon')
   })
-
-  assertEquals(result.mode, 'daemon')
 })

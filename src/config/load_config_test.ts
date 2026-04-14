@@ -1,8 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
-import { emptyDir, ensureDir } from '@std/fs'
 import { dirname, fromFileUrl, join } from '@std/path'
 import { createLogger } from '../core/logger.ts'
-import { withOwnedRuntime } from '../test_runtime.ts'
+import { prepareOwnedRuntime, withOwnedRuntime } from '../test_runtime.ts'
 import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
@@ -12,7 +11,8 @@ const README_PATH = join(PROJECT_ROOT, 'README.md')
 const registerTest = Deno.test
 
 function test(name: string, fn: () => Promise<void> | void): void {
-  registerTest(name, async () => {
+  const layeredName = name.startsWith('[') ? name : `[contract] ${name}`
+  registerTest(layeredName, async () => {
     await withOwnedRuntime(TEST_RUNTIME, async () => {
       await fn()
     })
@@ -20,8 +20,7 @@ function test(name: string, fn: () => Promise<void> | void): void {
 }
 
 test('loadConfig: 应递归展开配置中的环境变量字符串', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.set('KNOCK_TEST_WEBHOOK_URL', 'https://example.com/webhook')
   Deno.env.set('KNOCK_TEST_WEBHOOK_TOKEN', 'env-token')
@@ -84,8 +83,7 @@ sources:
 })
 
 test('loadConfig: 支持环境变量展开的 email.from 应成功展开', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.set('KNOCK_TEST_EMAIL_URL', 'https://example.com/template')
 
@@ -119,8 +117,7 @@ sources: {}
 })
 
 test('loadConfig: source.deliveries keyed map 应保留普通声明顺序并映射到 resolved delivery', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   await Deno.writeTextFile(
     join(TEST_RUNTIME, 'config.yml'),
@@ -156,9 +153,8 @@ sources:
   )
 })
 
-test('loadConfig: 缺失环境变量时应报出配置路径', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+test('R04 loadConfig: 缺失环境变量时应报出配置路径', async () => {
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.delete('KNOCK_TEST_MISSING_TOKEN')
 
@@ -182,9 +178,8 @@ sources: {}
   assertStringIncludes(err.message, 'KNOCK_TEST_MISSING_TOKEN')
 })
 
-test('loadConfig: 加载成功和失败都应记录结构化日志', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+test('R03 loadConfig: 加载成功和失败都应记录结构化日志', async () => {
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   const logs: string[] = []
   const logger = createLogger({
@@ -312,8 +307,7 @@ sources:
 })
 
 test('loadConfig: 应递归展开 email 配置中的环境变量字符串', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.set('KNOCK_TEST_SMTP_HOST', 'smtp.example.com')
   Deno.env.set('KNOCK_TEST_SMTP_USER', 'mailer')
@@ -357,8 +351,7 @@ sources: {}
 })
 
 test('loadConfig: summary.feed 与 summary.entry 中允许环境变量展开，与 capability 保持一致', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.set('KNOCK_TEST_SUMMARY_TITLE', 'Daily Summary From Env')
   Deno.env.set('KNOCK_TEST_SUMMARY_DESC_PREFIX', '窗口')
@@ -418,8 +411,7 @@ sources:
 })
 
 test('loadConfig: AI defaultModel 禁止环境变量展开，与 validateConfig 保持一致', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.set('KNOCK_TEST_DEFAULT_MODEL', 'main/mini')
 
@@ -448,8 +440,7 @@ sources: {}
 })
 
 test('loadConfig: provider-specific options 允许 ENV 但不允许 Liquid，与 validateConfig 保持一致', async () => {
-  await emptyDir(TEST_RUNTIME)
-  await ensureDir(TEST_RUNTIME)
+  await prepareOwnedRuntime(TEST_RUNTIME)
 
   Deno.env.set('KNOCK_TEST_OPENAI_ORG', 'org-demo')
   Deno.env.set('KNOCK_TEST_OPENAI_PROJECT', 'proj-demo')

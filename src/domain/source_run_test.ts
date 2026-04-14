@@ -4,7 +4,7 @@ import { createPipelineItem } from './pipeline_item.ts'
 import { createRunPlan } from './run_plan.ts'
 import { createSourceRun, finalizeSourceRun } from './source_run.ts'
 
-Deno.test('domain: finalizeSourceRun 应按 attempt 汇总 success/partial/failed', () => {
+Deno.test('[unit] domain: finalizeSourceRun 应按 attempt 汇总 success/partial/failed', () => {
   const run = createSourceRun({
     runId: 'run-1',
     sourceId: 'rust',
@@ -55,7 +55,7 @@ Deno.test('domain: finalizeSourceRun 应按 attempt 汇总 success/partial/faile
   assertEquals(failedRun.status, 'failed')
 })
 
-Deno.test('domain: preview 与 production effectDomain 必须显式区分', () => {
+Deno.test('[unit] domain: preview 与 production effectDomain 必须显式区分', () => {
   const previewItem = createPipelineItem({
     itemId: 'item-preview',
     sourceRunId: 'run-preview',
@@ -112,7 +112,7 @@ Deno.test('domain: preview 与 production effectDomain 必须显式区分', () =
 })
 
 Deno.test(
-  'domain: finalizeSourceRun 应将无投递且有跳过事实的 run 归类为 skipped 并写入 finishedAt',
+  '[unit] domain: finalizeSourceRun 应将无投递且有跳过事实的 run 归类为 skipped 并写入 finishedAt',
   () => {
     const run = createSourceRun({
       runId: 'run-skipped',
@@ -142,7 +142,7 @@ Deno.test(
 )
 
 Deno.test(
-  'domain: createSourceRun 应拒绝 preview profile 与 production effectDomain 的非法组合',
+  '[unit] domain: createSourceRun 应拒绝 preview profile 与 production effectDomain 的非法组合',
   () => {
     assertThrows(() =>
       createSourceRun({
@@ -158,7 +158,7 @@ Deno.test(
   },
 )
 
-Deno.test('domain: createRunPlan 应拒绝非 preview profile 搭配 preview trigger', () => {
+Deno.test('[unit] domain: createRunPlan 应拒绝非 preview profile 搭配 preview trigger', () => {
   assertThrows(() =>
     createRunPlan({
       runId: 'run-plan-invalid-trigger',
@@ -177,37 +177,40 @@ Deno.test('domain: createRunPlan 应拒绝非 preview profile 搭配 preview tri
   )
 })
 
-Deno.test('domain: createRunPlan 应拒绝 binding.deliveryId 与 definition.deliveryId 漂移', () => {
-  assertThrows(() =>
-    createRunPlan({
-      runId: 'run-plan-invalid-binding-delivery-id',
-      source: {
-        kind: 'fetch',
-        sourceId: 'rust',
-        fetcher: 'http',
-        parser: 'syndication',
-      },
-      profile: 'production',
-      effectDomain: 'production',
-      trigger: 'scheduled',
-      scheduledAt: '2026-04-13T09:31:00.000Z',
-      bindings: [
-        {
+Deno.test(
+  '[unit] domain: createRunPlan 应拒绝 binding.deliveryId 与 definition.deliveryId 漂移',
+  () => {
+    assertThrows(() =>
+      createRunPlan({
+        runId: 'run-plan-invalid-binding-delivery-id',
+        source: {
+          kind: 'fetch',
           sourceId: 'rust',
-          deliveryId: 'archive',
-          definition: {
-            kind: 'file',
-            deliveryId: 'telegram',
-            path: '/tmp/out.txt',
-            contentTemplate: 'hello',
-          },
+          fetcher: 'http',
+          parser: 'syndication',
         },
-      ],
-    }),
-  )
-})
+        profile: 'production',
+        effectDomain: 'production',
+        trigger: 'scheduled',
+        scheduledAt: '2026-04-13T09:31:00.000Z',
+        bindings: [
+          {
+            sourceId: 'rust',
+            deliveryId: 'archive',
+            definition: {
+              kind: 'file',
+              deliveryId: 'telegram',
+              path: '/tmp/out.txt',
+              contentTemplate: 'hello',
+            },
+          },
+        ],
+      }),
+    )
+  },
+)
 
-Deno.test('domain: delivery attempt 终态必须与 finishedAt 基本一致', () => {
+Deno.test('[unit] domain: delivery attempt 终态必须与 finishedAt 基本一致', () => {
   assertThrows(() =>
     assertDeliveryAttemptInvariant({
       attemptId: 'attempt-invalid-finished-at',
@@ -223,7 +226,7 @@ Deno.test('domain: delivery attempt 终态必须与 finishedAt 基本一致', ()
   )
 })
 
-Deno.test('domain: delivery attempt 非终态不得携带 finishedAt', () => {
+Deno.test('[unit] domain: delivery attempt 非终态不得携带 finishedAt', () => {
   assertThrows(() =>
     assertDeliveryAttemptInvariant({
       attemptId: 'attempt-invalid-running',
@@ -240,7 +243,7 @@ Deno.test('domain: delivery attempt 非终态不得携带 finishedAt', () => {
   )
 })
 
-Deno.test('domain: failed attempt 即使伴随 skipped/filter 事实也应归类为 failed', () => {
+Deno.test('[unit] domain: failed attempt 即使伴随 skipped/filter 事实也应归类为 failed', () => {
   const run = createSourceRun({
     runId: 'run-failed-with-skips',
     sourceId: 'rust',
@@ -265,7 +268,7 @@ Deno.test('domain: failed attempt 即使伴随 skipped/filter 事实也应归类
   assertEquals(failedRun.status, 'failed')
 })
 
-Deno.test('domain: 多个 delivery attempt 成功不应受 parsedCount 限制误伤', () => {
+Deno.test('[unit] domain: 多个 delivery attempt 成功不应受 parsedCount 限制误伤', () => {
   const run = createSourceRun({
     runId: 'run-multi-delivery-success',
     sourceId: 'rust',
@@ -291,7 +294,7 @@ Deno.test('domain: 多个 delivery attempt 成功不应受 parsedCount 限制误
   assertEquals(successRun.counts.deliveredCount, 2)
 })
 
-Deno.test('domain: delivery attemptNumber 必须是整数', () => {
+Deno.test('[unit] domain: delivery attemptNumber 必须是整数', () => {
   assertThrows(() =>
     assertDeliveryAttemptInvariant({
       attemptId: 'attempt-invalid-attempt-number',
@@ -307,7 +310,7 @@ Deno.test('domain: delivery attemptNumber 必须是整数', () => {
   )
 })
 
-Deno.test('domain: renderedSnapshot.channel 必须与 attempt.channel 一致', () => {
+Deno.test('[unit] domain: renderedSnapshot.channel 必须与 attempt.channel 一致', () => {
   assertThrows(() =>
     assertDeliveryAttemptInvariant({
       attemptId: 'attempt-invalid-rendered-channel',

@@ -11,7 +11,7 @@ import {
   type DeliveryDefinition,
 } from './delivery_definition.ts'
 
-Deno.test('domain: SourceDefinition 判别联合应区分 fetch 与 summary', () => {
+Deno.test('[unit] domain: SourceDefinition 判别联合应区分 fetch 与 summary', () => {
   const fetchSource: SourceDefinition = {
     kind: 'fetch',
     sourceId: 'rust',
@@ -30,7 +30,7 @@ Deno.test('domain: SourceDefinition 判别联合应区分 fetch 与 summary', ()
   assertEquals(isFetchSourceDefinition(summarySource), false)
 })
 
-Deno.test('domain: DeliveryDefinition 判别联合应区分 file/push/email', () => {
+Deno.test('[unit] domain: DeliveryDefinition 判别联合应区分 file/push/email', () => {
   const fileDelivery: DeliveryDefinition = {
     kind: 'file',
     deliveryId: 'archive',

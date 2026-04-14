@@ -61,7 +61,7 @@ function withMockedError(buildStack: () => string, run: () => void): void {
   }
 }
 
-Deno.test('logger: enabled=false 时不输出日志', () => {
+Deno.test('[contract] R11 logger: enabled=false 时不输出日志', () => {
   const stdout: string[] = []
   const stderr: string[] = []
 
@@ -81,7 +81,7 @@ Deno.test('logger: enabled=false 时不输出日志', () => {
   assertEquals(stderr.length, 0)
 })
 
-Deno.test('logger: level=warn 时过滤 info 但保留 warn/error/fatal', () => {
+Deno.test('[contract] R11 logger: level=warn 时过滤 info 但保留 warn/error/fatal', () => {
   const stdout: string[] = []
   const stderr: string[] = []
 
@@ -117,7 +117,7 @@ Deno.test('logger: level=warn 时过滤 info 但保留 warn/error/fatal', () => 
   assertEquals(fatalRecord.severityNumber, 21)
 })
 
-Deno.test('logger: 默认输出为严格 OTel JSON 并包含基础字段', () => {
+Deno.test('[contract] R11 logger: 默认输出为严格 OTel JSON 并包含基础字段', () => {
   const stdout: string[] = []
   const instant = new Date('2026-03-24T21:45:12.345Z')
 
@@ -170,7 +170,7 @@ Deno.test('logger: 默认输出为严格 OTel JSON 并包含基础字段', () =>
   assertEquals('level' in record, false)
 })
 
-Deno.test('logger: 应优先从调用栈补全 code.* 属性且 run_id 不冒充 trace_id', () => {
+Deno.test('[contract] R11 logger: 应优先从调用栈补全 code.* 属性且 run_id 不冒充 trace_id', () => {
   const stdout: string[] = []
 
   const logger = createLogger({
@@ -205,7 +205,7 @@ Deno.test('logger: 应优先从调用栈补全 code.* 属性且 run_id 不冒充
   assertStringIncludes(String(attributes['code.function.name'] ?? ''), 'emitFromNamedFunction')
 })
 
-Deno.test('logger: 无函数名栈帧时仍输出 code.filepath 与 code.line.number', () => {
+Deno.test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath 与 code.line.number', () => {
   const stdout: string[] = []
   const lineNumber = 245
 
@@ -232,39 +232,42 @@ Deno.test('logger: 无函数名栈帧时仍输出 code.filepath 与 code.line.nu
   assertEquals('code.function.name' in attributes, false)
 })
 
-Deno.test('logger: async 路径栈帧 fallback 时仍输出 code.filepath 与 code.line.number', () => {
-  const stdout: string[] = []
-  const lineNumber = 312
+Deno.test(
+  '[contract] R11 logger: async 路径栈帧 fallback 时仍输出 code.filepath 与 code.line.number',
+  () => {
+    const stdout: string[] = []
+    const lineNumber = 312
 
-  withMockedError(
-    () =>
-      [
-        'Error',
-        '    at getCodeAttributes (/src/core/logger.ts:331:1)',
-        `    at async ${fromFileUrl(import.meta.url)}:${lineNumber}:1`,
-      ].join('\n'),
-    () => {
-      const logger = createLogger({
-        enabled: true,
-        level: 'info',
-        module: 'app.startup',
-        now: () => new Date('2026-03-24T21:45:12.345Z'),
-        writeStdout: (line: string) => stdout.push(line),
-      })
+    withMockedError(
+      () =>
+        [
+          'Error',
+          '    at getCodeAttributes (/src/core/logger.ts:331:1)',
+          `    at async ${fromFileUrl(import.meta.url)}:${lineNumber}:1`,
+        ].join('\n'),
+      () => {
+        const logger = createLogger({
+          enabled: true,
+          level: 'info',
+          module: 'app.startup',
+          now: () => new Date('2026-03-24T21:45:12.345Z'),
+          writeStdout: (line: string) => stdout.push(line),
+        })
 
-      logger.info('async 栈帧', { operation: 'locate', outcome: 'success' })
-    },
-  )
+        logger.info('async 栈帧', { operation: 'locate', outcome: 'success' })
+      },
+    )
 
-  assertEquals(stdout.length, 1)
-  const record = parseRecord(stdout[0])
-  const attributes = getAttributes(record)
-  assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
-  assertEquals(attributes['code.line.number'], lineNumber)
-  assertEquals('code.function.name' in attributes, false)
-})
+    assertEquals(stdout.length, 1)
+    const record = parseRecord(stdout[0])
+    const attributes = getAttributes(record)
+    assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
+    assertEquals(attributes['code.line.number'], lineNumber)
+    assertEquals('code.function.name' in attributes, false)
+  },
+)
 
-Deno.test('logger: ext 内部 runtime frame 应降级而不是误记为业务调用点', () => {
+Deno.test('[contract] R11 logger: ext 内部 runtime frame 应降级而不是误记为业务调用点', () => {
   const stdout: string[] = []
 
   withMockedError(
@@ -292,7 +295,7 @@ Deno.test('logger: ext 内部 runtime frame 应降级而不是误记为业务调
   assertEquals('code.function.name' in attributes, false)
 })
 
-Deno.test('logger: 归一化后的 self-frame 应被过滤并继续查找下一条业务帧', () => {
+Deno.test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继续查找下一条业务帧', () => {
   const stdout: string[] = []
   const lineNumber = 366
 
@@ -324,7 +327,7 @@ Deno.test('logger: 归一化后的 self-frame 应被过滤并继续查找下一�
   assertEquals('code.function.name' in attributes, false)
 })
 
-Deno.test('logger: 缓存不会把上一条调用点误复用到下一条不同 stack line', () => {
+Deno.test('[contract] R11 logger: 缓存不会把上一条调用点误复用到下一条不同 stack line', () => {
   const stdout: string[] = []
   const firstLineNumber = 401
   const secondLineNumber = 402
@@ -358,7 +361,7 @@ Deno.test('logger: 缓存不会把上一条调用点误复用到下一条不同 
   assertEquals(secondAttributes['code.line.number'], secondLineNumber)
 })
 
-Deno.test('logger: 有界缓存 helper 达到上限时应淘汰最旧 key', () => {
+Deno.test('[contract] R11 logger: 有界缓存 helper 达到上限时应淘汰最旧 key', () => {
   const boundedCache = new Map<string, number>()
 
   loggerModule.setBoundedMapEntry(boundedCache, 'first', 1, 2)
@@ -378,7 +381,7 @@ Deno.test('logger: 有界缓存 helper 达到上限时应淘汰最旧 key', () =
   ])
 })
 
-Deno.test('logger: Windows 风格分隔符归一化后 self-frame 仍会被过滤', () => {
+Deno.test('[contract] R11 logger: Windows 风格分隔符归一化后 self-frame 仍会被过滤', () => {
   const stdout: string[] = []
   const lineNumber = 544
   const windowsLoggerModulePath = 'C:\\repo\\src\\core\\logger.ts'
@@ -411,7 +414,7 @@ Deno.test('logger: Windows 风格分隔符归一化后 self-frame 仍会被过�
   assertEquals('code.function.name' in attributes, false)
 })
 
-Deno.test('logger: 栈解析失败时不中断日志输出', () => {
+Deno.test('[contract] R11 logger: 栈解析失败时不中断日志输出', () => {
   const stdout: string[] = []
 
   withMockedError(
@@ -439,7 +442,7 @@ Deno.test('logger: 栈解析失败时不中断日志输出', () => {
   assertEquals('code.function.name' in attributes, false)
 })
 
-Deno.test('logger: format=pretty 时应通过 @logtape/pretty 渲染并保持脱敏', () => {
+Deno.test('[contract] R11 logger: format=pretty 时应通过 @logtape/pretty 渲染并保持脱敏', () => {
   const stdout: string[] = []
 
   const logger = createLogger({
@@ -479,62 +482,68 @@ Deno.test('logger: format=pretty 时应通过 @logtape/pretty 渲染并保持脱
   assertEquals(stdout[1].includes('user:pass@'), false)
 })
 
-Deno.test('logger: module 只有一个事实源并写入 scope.name，业务字段进入 attributes', () => {
-  const stdout: string[] = []
+Deno.test(
+  '[contract] R11 logger: module 只有一个事实源并写入 scope.name，业务字段进入 attributes',
+  () => {
+    const stdout: string[] = []
 
-  const logger = createLogger({
-    enabled: true,
-    level: 'info',
-    module: 'app.startup',
-    now: () => new Date('2026-03-24T21:45:12.345Z'),
-    writeStdout: (line: string) => stdout.push(line),
-  })
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'app.startup',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => stdout.push(line),
+    })
 
-  logger.info('解析完成', {
-    module: 'source.parse.rss',
-    operation: 'parse',
-    outcome: 'success',
-    itemCount: 2,
-  })
+    logger.info('解析完成', {
+      module: 'source.parse.rss',
+      operation: 'parse',
+      outcome: 'success',
+      itemCount: 2,
+    })
 
-  assertEquals(stdout.length, 1)
-  const record = parseRecord(stdout[0])
-  const attributes = getAttributes(record)
-  assertEquals(getScopeName(record), 'source.parse.rss')
-  assertEquals(attributes.item_count, 2)
-  assertEquals('itemCount' in attributes, false)
-  assertEquals('module' in record, false)
-})
+    assertEquals(stdout.length, 1)
+    const record = parseRecord(stdout[0])
+    const attributes = getAttributes(record)
+    assertEquals(getScopeName(record), 'source.parse.rss')
+    assertEquals(attributes.item_count, 2)
+    assertEquals('itemCount' in attributes, false)
+    assertEquals('module' in record, false)
+  },
+)
 
-Deno.test('logger: child 应保留 resource 并把 HTTP 语义字段写入标准 attributes', () => {
-  const stdout: string[] = []
+Deno.test(
+  '[contract] R11 logger: child 应保留 resource 并把 HTTP 语义字段写入标准 attributes',
+  () => {
+    const stdout: string[] = []
 
-  const logger = createLogger({
-    enabled: true,
-    level: 'info',
-    module: 'app.startup',
-    component: 'web',
-    now: () => new Date('2026-03-24T21:45:12.345Z'),
-    writeStdout: (line: string) => stdout.push(line),
-  }).child({ module: 'web.api.xquery.evaluate', route: '/api/xquery/evaluate' })
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'app.startup',
+      component: 'web',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => stdout.push(line),
+    }).child({ module: 'web.api.xquery.evaluate', route: '/api/xquery/evaluate' })
 
-  logger.info('API 请求开始', { operation: 'request', outcome: 'start', method: 'POST' })
+    logger.info('API 请求开始', { operation: 'request', outcome: 'start', method: 'POST' })
 
-  assertEquals(stdout.length, 1)
-  const record = parseRecord(stdout[0])
-  const attributes = getAttributes(record)
-  const resourceAttributes = getResourceAttributes(record)
+    assertEquals(stdout.length, 1)
+    const record = parseRecord(stdout[0])
+    const attributes = getAttributes(record)
+    const resourceAttributes = getResourceAttributes(record)
 
-  assertEquals(getScopeName(record), 'web.api.xquery.evaluate')
-  assertEquals(record.body, 'API 请求开始')
-  assertEquals(resourceAttributes['knock.component'], 'web')
-  assertEquals(attributes.operation, 'request')
-  assertEquals(attributes.outcome, 'start')
-  assertEquals(attributes['http.request.method'], 'POST')
-  assertEquals(attributes['http.route'], '/api/xquery/evaluate')
-})
+    assertEquals(getScopeName(record), 'web.api.xquery.evaluate')
+    assertEquals(record.body, 'API 请求开始')
+    assertEquals(resourceAttributes['knock.component'], 'web')
+    assertEquals(attributes.operation, 'request')
+    assertEquals(attributes.outcome, 'start')
+    assertEquals(attributes['http.request.method'], 'POST')
+    assertEquals(attributes['http.route'], '/api/xquery/evaluate')
+  },
+)
 
-Deno.test('logger: null 字段应直接省略而不是序列化为空字符串', () => {
+Deno.test('[contract] R11 logger: null 字段应直接省略而不是序列化为空字符串', () => {
   const stdout: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -559,7 +568,7 @@ Deno.test('logger: null 字段应直接省略而不是序列化为空字符串',
   assertEquals(attributes['source.id'], 'rust')
 })
 
-Deno.test('logger: nested object 内部的 null 与 undefined 字段应被省略', () => {
+Deno.test('[contract] R11 logger: nested object 内部的 null 与 undefined 字段应被省略', () => {
   const stdout: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -596,7 +605,7 @@ Deno.test('logger: nested object 内部的 null 与 undefined 字段应被省略
   assertEquals('drop_undefined' in nested, false)
 })
 
-Deno.test('logger: array 元素应保留旧标量语义', () => {
+Deno.test('[contract] R11 logger: array 元素应保留旧标量语义', () => {
   const stdout: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -617,7 +626,7 @@ Deno.test('logger: array 元素应保留旧标量语义', () => {
   assertEquals(attributes['pipeline.values'], ['', null, 'rust', 1])
 })
 
-Deno.test('logger: 敏感字段与敏感内容应在 OTel attributes 中继续脱敏', () => {
+Deno.test('[contract] R11 logger: 敏感字段与敏感内容应在 OTel attributes 中继续脱敏', () => {
   const stderr: string[] = []
 
   const logger = createLogger({

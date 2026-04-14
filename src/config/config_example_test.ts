@@ -2,81 +2,84 @@ import { assertEquals, assertStringIncludes } from '@std/assert'
 import { parse } from '@std/yaml'
 import { validateConfig } from './validate_config.ts'
 
-Deno.test('config.example.yml: sources.deliveries keyed map 应通过当前 schema 校验', () => {
-  const example = Deno.readTextFileSync(new URL('../../config.example.yml', import.meta.url))
-  const parsed = parse(example) as Record<string, unknown>
-  const validated = validateConfig({
-    runtimeDir: '/tmp/knock',
-    ...(parsed ?? {}),
-  })
+Deno.test(
+  '[contract] config.example.yml: sources.deliveries keyed map 应通过当前 schema 校验',
+  () => {
+    const example = Deno.readTextFileSync(new URL('../../config.example.yml', import.meta.url))
+    const parsed = parse(example) as Record<string, unknown>
+    const validated = validateConfig({
+      runtimeDir: '/tmp/knock',
+      ...(parsed ?? {}),
+    })
 
-  assertEquals(validated.language, 'zh-CN')
-  assertEquals(validated.ai?.defaultModel, 'openai_main/default')
-  assertEquals(Object.keys(validated.deliveries ?? {}).sort(), [
-    'local',
-    'release_email',
-    'telegram_webhook',
-    'telegram_webhook_md',
-    'webhook',
-  ])
-  assertEquals(Object.keys(validated.sources ?? {}).sort(), [
-    'daily_summary',
-    'deno',
-    'website_news',
-    'website_news_byparr',
-    'website_news_script',
-  ])
+    assertEquals(validated.language, 'zh-CN')
+    assertEquals(validated.ai?.defaultModel, 'openai_main/default')
+    assertEquals(Object.keys(validated.deliveries ?? {}).sort(), [
+      'local',
+      'release_email',
+      'telegram_webhook',
+      'telegram_webhook_md',
+      'webhook',
+    ])
+    assertEquals(Object.keys(validated.sources ?? {}).sort(), [
+      'daily_summary',
+      'deno',
+      'website_news',
+      'website_news_byparr',
+      'website_news_script',
+    ])
 
-  assertEquals(validated.sources.daily_summary.schedule, '0 0 8 * * *')
-  assertEquals(validated.sources.daily_summary.summary, {
-    sources: ['deno'],
-    feed: {
-      title: '{{ sources.deno.feed.title }} Daily Summary',
-      description:
-        '{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}',
-    },
-    entry: {
-      id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}',
-      title: '{{ sources.deno.feed.title }} Daily Summary',
-      description:
-        '窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}\n条目数：{{ sources.deno.entries | size }}\n',
-      content:
-        '{% for item in sources.deno.entries %}\n- {{ item.title }}{% if item.link != blank %} ({{ item.link }}){% endif %}\n{% endfor %}\n',
-    },
-  })
+    assertEquals(validated.sources.daily_summary.schedule, '0 0 8 * * *')
+    assertEquals(validated.sources.daily_summary.summary, {
+      sources: ['deno'],
+      feed: {
+        title: '{{ sources.deno.feed.title }} Daily Summary',
+        description:
+          '{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}',
+      },
+      entry: {
+        id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}',
+        title: '{{ sources.deno.feed.title }} Daily Summary',
+        description:
+          '窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}\n条目数：{{ sources.deno.entries | size }}\n',
+        content:
+          '{% for item in sources.deno.entries %}\n- {{ item.title }}{% if item.link != blank %} ({{ item.link }}){% endif %}\n{% endfor %}\n',
+      },
+    })
 
-  const denoDeliveries = validated.sources.deno.deliveries
+    const denoDeliveries = validated.sources.deno.deliveries
 
-  assertEquals(Array.isArray(denoDeliveries), false)
-  assertEquals(denoDeliveries === undefined, false)
+    assertEquals(Array.isArray(denoDeliveries), false)
+    assertEquals(denoDeliveries === undefined, false)
 
-  if (!denoDeliveries) {
-    throw new Error('config.example.yml 缺少 sources.deno.deliveries')
-  }
+    if (!denoDeliveries) {
+      throw new Error('config.example.yml 缺少 sources.deno.deliveries')
+    }
 
-  assertEquals(Object.keys(denoDeliveries).sort(), [
-    'local',
-    'release_email',
-    'telegram_webhook',
-    'telegram_webhook_md',
-    'webhook',
-  ])
-  assertEquals(denoDeliveries.local, {})
-  assertEquals(denoDeliveries.telegram_webhook, {
-    payload: {
-      text: '<b>[{{ source.id }}] {{ title }}</b>\n\n{{ content | to_telegram_html }}\n\n{{ link }}\n',
-    },
-  })
-  assertEquals(denoDeliveries.telegram_webhook_md, {})
-  assertEquals(denoDeliveries.webhook, {})
-  assertEquals(denoDeliveries.release_email, {
-    message: {
-      subject: '[release][{{ source.id }}] {{ entry.title }}',
-    },
-  })
-})
+    assertEquals(Object.keys(denoDeliveries).sort(), [
+      'local',
+      'release_email',
+      'telegram_webhook',
+      'telegram_webhook_md',
+      'webhook',
+    ])
+    assertEquals(denoDeliveries.local, {})
+    assertEquals(denoDeliveries.telegram_webhook, {
+      payload: {
+        text: '<b>[{{ source.id }}] {{ title }}</b>\n\n{{ content | to_telegram_html }}\n\n{{ link }}\n',
+      },
+    })
+    assertEquals(denoDeliveries.telegram_webhook_md, {})
+    assertEquals(denoDeliveries.webhook, {})
+    assertEquals(denoDeliveries.release_email, {
+      message: {
+        subject: '[release][{{ source.id }}] {{ entry.title }}',
+      },
+    })
+  },
+)
 
-Deno.test('README.md 与 config.example.yml: 应记录 summary source 契约与示例', () => {
+Deno.test('[flow] R17 README.md 与 config.example.yml: 应记录 summary source 契约与示例', () => {
   const readme = Deno.readTextFileSync(new URL('../../README.md', import.meta.url))
   const example = Deno.readTextFileSync(new URL('../../config.example.yml', import.meta.url))
 
@@ -108,7 +111,7 @@ Deno.test('README.md 与 config.example.yml: 应记录 summary source 契约与�
   assertStringIncludes(readme, '`sources.<id>.entries`')
 })
 
-Deno.test('README.md 与 CLAUDE.md: 应记录 keyed-map 契约与 merge 语义', () => {
+Deno.test('[contract] README.md 与 CLAUDE.md: 应记录 keyed-map 契约与 merge 语义', () => {
   const readme = Deno.readTextFileSync(new URL('../../README.md', import.meta.url))
   const claudeMd = Deno.readTextFileSync(new URL('../../CLAUDE.md', import.meta.url))
 
