@@ -5,7 +5,7 @@ Deno.test('scenario-runner: 应按 arrange -> act -> assert 执行', async () =>
   const trace: string[] = []
 
   const result = await runScenario({
-    arrange: async () => {
+    arrange: () => {
       trace.push('arrange')
       return { value: 40 }
     },
