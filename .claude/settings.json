@@ -64,6 +64,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/fmt.sh"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/skills/test-architecture-guard/scripts/guard.py"
           }
         ]
       }
