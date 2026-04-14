@@ -32,12 +32,15 @@ SHARED_RUNTIME_PATTERN = re.compile(
 
 HIGH_RISK_BOUNDARIES = (
     "deno.json",
+    "scripts/run-paths.sh",
     "src/main.ts",
     "src/core/app.ts",
     "src/db/client.ts",
     "src/db/schema.ts",
     "src/db/migrations/",
+    "src/test_runtime.ts",
     "src/sources/xquery.ts",
+    "src/sources/source_runtime.ts",
 )
 
 
@@ -318,6 +321,12 @@ def run_guard(
 
     failed_checks: List[str] = []
     actionable_fix: List[str] = []
+
+    if not changed_paths and not check_risk_files:
+        failed_checks.append("changed_paths_missing")
+        actionable_fix.append(
+            "传入 --changed 路径，或通过 hook stdin 传入包含 file_path/filePath 的 payload",
+        )
 
     risk_result = risk_checker(changed_paths)
     if not risk_result.get("ok", False):

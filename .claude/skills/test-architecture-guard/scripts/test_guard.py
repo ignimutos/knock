@@ -88,22 +88,43 @@ class GuardTests(unittest.TestCase):
 
             self.assertEqual(missing, ["src/missing_test.ts"])
 
-    def test_high_risk_change_triggers_full_test_command(self) -> None:
-        executed = []
-
-        def runner(command):
-            executed.append(" ".join(command))
-            return (0, "")
-
+    def test_empty_changed_paths_blocks_gate_without_risk_file_check(self) -> None:
         result = run_guard(
-            changed_paths=["src/core/app.ts", "src/core/logger_test.ts"],
+            changed_paths=[],
             check_risk_mapping=lambda _: {"ok": True, "missing": []},
             check_shared_entrypoint=lambda _: {"ok": True, "missing": []},
-            command_runner=runner,
+            command_runner=lambda _: (0, ""),
+            check_risk_files=False,
         )
 
-        self.assertEqual(result["gate"], "passed")
-        self.assertIn("deno task test", executed)
+        self.assertEqual(result["gate"], "blocked")
+        self.assertIn("changed_paths_missing", result["failed_checks"])
+        self.assertTrue(
+            any("--changed" in message and "stdin" in message for message in result["actionable_fix"]),
+        )
+
+    def test_new_high_risk_boundaries_trigger_full_test_command(self) -> None:
+        for boundary_path in (
+            "scripts/run-paths.sh",
+            "src/test_runtime.ts",
+            "src/sources/source_runtime.ts",
+        ):
+            with self.subTest(boundary_path=boundary_path):
+                executed = []
+
+                def runner(command):
+                    executed.append(" ".join(command))
+                    return (0, "")
+
+                result = run_guard(
+                    changed_paths=[boundary_path],
+                    check_risk_mapping=lambda _: {"ok": True, "missing": []},
+                    check_shared_entrypoint=lambda _: {"ok": True, "missing": []},
+                    command_runner=runner,
+                )
+
+                self.assertEqual(result["gate"], "passed")
+                self.assertIn("deno task test", executed)
 
 
 if __name__ == "__main__":
