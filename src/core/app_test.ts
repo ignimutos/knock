@@ -41,7 +41,7 @@ test('[contract] app: 启动入口应拒绝非法 httpProxyClientFactory 类型'
   )
 })
 
-test('[flow] R15 app: 未传 immediate 时入口模型应显式视为 false', async () => {
+test('[flow] app: 未传 immediate 时入口模型应显式视为 false', async () => {
   await withAppRuntime('default-immediate-false', async (testRuntime) => {
     await Deno.writeTextFile(
       join(testRuntime, 'config.yml'),
@@ -55,7 +55,7 @@ sources: {}
   })
 })
 
-test('[flow] R15 app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果', async () => {
+test('[flow] app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果', async () => {
   await withAppRuntime('immediate-v2-daemon', async (testRuntime) => {
     await Deno.writeTextFile(
       join(testRuntime, 'config.yml'),
