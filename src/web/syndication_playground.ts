@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ResolvedSourceConfig } from '../config/types.ts'
+import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import {
   executePreviewSource,
   toPreviewExecutionResult,
@@ -88,7 +88,11 @@ export function parseSyndicationPlaygroundRequest(
 export interface EvaluateSyndicationPlaygroundInput {
   request: unknown
   fetcher?: typeof fetch
-  previewExecutor?: (input: { source: ResolvedSourceConfig; fetcher?: typeof fetch }) => Promise<{
+  previewExecutor?: (input: {
+    config: AppConfigResolved
+    source: ResolvedSourceConfig
+    fetcher?: typeof fetch
+  }) => Promise<{
     warnings: string[]
     fetchMeta: {
       ok: boolean
@@ -113,39 +117,45 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
     ...parsed.source,
     deliveries: [],
   }
+  const config: AppConfigResolved = {
+    runtimeDir: Deno.cwd(),
+    language: 'zh-CN',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    sqlite: {
+      path: `${Deno.cwd()}/.tmp/playground-preview.db`,
+      busyTimeout: '5s',
+      journalMode: 'WAL',
+      retention: {
+        maxAge: '1d',
+        maxEntriesPerSource: 100,
+        vacuum: 'off',
+      },
+    },
+    ai: undefined,
+    deliveries: [],
+    sources: [resolvedSource],
+    logging: {
+      level: 'info',
+      format: 'json',
+      sinks: {
+        console: {
+          type: 'console',
+        },
+      },
+    },
+  }
 
   const result = input.previewExecutor
     ? await input.previewExecutor({
+        config,
         source: resolvedSource,
         fetcher: input.fetcher,
       })
     : toPreviewExecutionResult({
         warnings: parsed.warnings,
         result: await executePreviewSource({
-          config: {
-            runtimeDir: Deno.cwd(),
-            language: 'zh-CN',
-            timezone: 'UTC',
-            timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-            sqlite: {
-              path: `${Deno.cwd()}/.tmp/playground-preview.db`,
-              busyTimeout: '5s',
-              journalMode: 'WAL',
-              retention: {
-                maxAge: '1d',
-                maxEntriesPerSource: 100,
-                vacuum: 'off',
-              },
-            },
-            ai: undefined,
-            deliveries: [],
-            sources: [resolvedSource],
-            logging: {
-              level: 'info',
-              format: 'json',
-              sinks: {},
-            },
-          },
+          config,
           source: resolvedSource,
           fetcher: input.fetcher,
         }),

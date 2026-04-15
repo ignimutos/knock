@@ -483,6 +483,71 @@ Deno.test('[contract] R11 logger: format=pretty 时应通过 @logtape/pretty 渲
 })
 
 Deno.test(
+  '[contract] R11 logger: pretty info 应隐藏低价值调试字段，只保留最小字段集与关键信息',
+  () => {
+    const stdout: string[] = []
+
+    const logger = createLogger({
+      enabled: true,
+      level: 'info',
+      format: 'pretty',
+      module: 'web.api',
+      component: 'web',
+      timezone: 'UTC',
+      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => stdout.push(line),
+    })
+
+    logger.info('API 请求完成', {
+      route: '/api/xquery/evaluate',
+      method: 'POST',
+      'web.request_id': 'web.req.1',
+      'web.duration_ms': 18,
+      'http.response.status_code': 200,
+      'pipeline.warning_count': 2,
+    })
+
+    assertEquals(stdout.length, 1)
+    assertStringIncludes(stdout[0], '2026-03-24 21:45:12')
+    assertStringIncludes(stdout[0], 'knock·web.api')
+    assertStringIncludes(stdout[0], 'API 请求完成')
+    assertStringIncludes(stdout[0], 'web.req.1')
+    assertStringIncludes(stdout[0], '/api/xquery/evaluate')
+    assertEquals(stdout[0].includes('code.filepath'), false)
+    assertEquals(stdout[0].includes('pipeline.warning_count'), false)
+  },
+)
+
+Deno.test('[contract] R11 logger: pretty debug 应保留真实诊断字段', () => {
+  const stdout: string[] = []
+
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    format: 'pretty',
+    module: 'web.api',
+    component: 'web',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+  })
+
+  logger.debug('API 请求开始', {
+    route: '/api/xquery/evaluate',
+    method: 'POST',
+    'web.request_id': 'web.req.2',
+    'pipeline.warning_count': 2,
+  })
+
+  assertEquals(stdout.length, 1)
+  assertStringIncludes(stdout[0], 'API 请求开始')
+  assertStringIncludes(stdout[0], 'pipeline.warning_count')
+  assertStringIncludes(stdout[0], '/src/core/logger_test.ts')
+})
+
+Deno.test(
   '[contract] R11 logger: module 只有一个事实源并写入 scope.name，业务字段进入 attributes',
   () => {
     const stdout: string[] = []

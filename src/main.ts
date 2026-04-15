@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 import type { StartAppOptions } from './core/app.ts'
+import { createLogger } from './core/logger.ts'
 import { parseWithFirstIssue } from './zod_utils.ts'
 
 export type CliMode = 'all' | 'web' | 'daemon'
@@ -65,7 +66,29 @@ export function buildChildArgs(options: ParsedCliOptions, mode: 'web' | 'daemon'
 
 export async function startWeb(options: { host: string; port: number }) {
   const { default: webApp } = await import('../web/main.ts')
-  await webApp.listen({ hostname: options.host, port: options.port })
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    format: 'json',
+    module: 'web.startup',
+    component: 'web',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+  })
+
+  await webApp.listen({
+    hostname: options.host,
+    port: options.port,
+    onListen: ({ hostname, port }) => {
+      logger.info('Web 服务开始监听', {
+        'web.operation': 'startup',
+        'web.outcome': 'listening',
+        'web.host': hostname,
+        'web.port': port,
+        'web.url': `http://${hostname}:${port}/`,
+      })
+    },
+  })
 }
 
 export async function runAllModes(options: ParsedCliOptions): Promise<void> {

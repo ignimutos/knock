@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from '@std/assert'
+import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
 import type { StartAppOptions } from './core/app.ts'
 import {
   buildChildArgs,
@@ -6,6 +6,38 @@ import {
   resolveDaemonStartOptions,
   toDaemonStartOptions,
 } from './main.ts'
+
+async function readCommandOutput(
+  stream: ReadableStream<Uint8Array> | null,
+  timeoutMs: number,
+): Promise<string> {
+  if (!stream) return ''
+
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let output = ''
+
+  try {
+    const result = await Promise.race([
+      (async () => {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) return output
+          output += decoder.decode(value, { stream: true })
+        }
+      })(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(output), timeoutMs)),
+    ])
+
+    return result
+  } finally {
+    try {
+      await reader.cancel()
+    } catch {
+      // noop
+    }
+  }
+}
 
 Deno.test('[contract] parseCliArgs: 应解析 --config、--runtime_dir 与 --immediate', () => {
   const options = parseCliArgs([
@@ -301,4 +333,57 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程
     '--web_port',
     '8080',
   ])
+})
+
+Deno.test('[contract] startWeb: 启动时应输出包含 host、port 与 url 的结构化日志', async () => {
+  const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+  const { port } = listener.addr as Deno.NetAddr
+  listener.close()
+
+  const child = new Deno.Command(Deno.execPath(), {
+    args: [
+      'run',
+      '--allow-read',
+      '--allow-write',
+      '--allow-env',
+      '--allow-net',
+      '--allow-ffi',
+      '--allow-run',
+      'src/main.ts',
+      '--mode',
+      'web',
+      '--web_host',
+      '127.0.0.1',
+      '--web_port',
+      String(port),
+    ],
+    cwd: Deno.cwd(),
+    stdout: 'piped',
+    stderr: 'piped',
+  }).spawn()
+
+  try {
+    const output = await readCommandOutput(child.stdout, 3000)
+
+    assertStringIncludes(output, '"web.host":"127.0.0.1"')
+    assertStringIncludes(output, `"web.port":${port}`)
+    assertStringIncludes(output, `"web.url":"http://127.0.0.1:${port}/"`)
+  } finally {
+    try {
+      child.kill('SIGTERM')
+    } catch {
+      // noop
+    }
+    try {
+      await child.stdout?.cancel()
+    } catch {
+      // noop
+    }
+    try {
+      await child.stderr?.cancel()
+    } catch {
+      // noop
+    }
+    await child.status
+  }
 })

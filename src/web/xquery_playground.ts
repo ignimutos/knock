@@ -322,7 +322,11 @@ function createPlaygroundConfig(source: ResolvedSourceConfig): AppConfigResolved
     logging: {
       level: 'info',
       format: 'json',
-      sinks: {},
+      sinks: {
+        console: {
+          type: 'console',
+        },
+      },
     },
   }
 }

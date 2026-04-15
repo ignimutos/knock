@@ -62,6 +62,41 @@ Deno.test(
   },
 )
 
+Deno.test(
+  '[contract] syndication_playground: 默认 logging shape 应与正式 resolved config 一致',
+  async () => {
+    const result = await evaluateSyndicationPlayground({
+      request: {
+        url: 'https://example.com/feed.xml',
+        entry: { id: '{{ id }}' },
+      },
+      previewExecutor: ((input: unknown) => {
+        const { config, source } = input as {
+          config?: {
+            logging: { level: string; format: string; sinks: { console?: { type: string } } }
+          }
+          source: { http?: { url?: string } }
+        }
+
+        assertEquals(source.http?.url, 'https://example.com/feed.xml')
+        assertEquals(config?.logging.level, 'info')
+        assertEquals(config?.logging.format, 'json')
+        assertEquals(config?.logging.sinks.console?.type, 'console')
+        return Promise.resolve({
+          warnings: [],
+          fetchMeta: { ok: true },
+          parser: 'rss',
+          rawContent: '<rss></rss>',
+          feed: {},
+          entries: [],
+        })
+      }) as never,
+    })
+
+    assertEquals(result.parser, 'rss')
+  },
+)
+
 Deno.test('[contract] syndication_playground: 应拒绝 localhost 地址', () => {
   assertThrows(
     () =>

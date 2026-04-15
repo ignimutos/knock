@@ -349,6 +349,26 @@ function normalizeAttributeFields(fields: Record<string, unknown>): Record<strin
   return sanitizeFields(normalized)
 }
 
+const PRETTY_INFO_ATTRIBUTE_KEYS = new Set([
+  'source.id',
+  'source.run_id',
+  'delivery.id',
+  'web.request_id',
+  'http.request.method',
+  'http.route',
+  'http.response.status_code',
+])
+
+function selectPrettyAttributes(record: OTelLogRecord): Record<string, unknown> {
+  if (record.severityText !== 'INFO') {
+    return record.attributes
+  }
+
+  return Object.fromEntries(
+    Object.entries(record.attributes).filter(([key]) => PRETTY_INFO_ATTRIBUTE_KEYS.has(key)),
+  )
+}
+
 function formatPretty(
   record: OTelLogRecord,
   options: {
@@ -370,7 +390,7 @@ function formatPretty(
       ...(record.span_id ? { span_id: record.span_id } : {}),
       ...(record.trace_flags ? { trace_flags: record.trace_flags } : {}),
       resource: record.resource.attributes,
-      attributes: record.attributes,
+      attributes: selectPrettyAttributes(record),
     },
     timestamp: options.timestamp.getTime(),
   } as LogRecord)

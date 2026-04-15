@@ -67,11 +67,14 @@ Deno.test(
         locate: '//li',
         entry: { mode: 'mapping', fields: { id: 'string(@data-id)', title: 'string(a)' } },
       },
-      previewExecutor: ({ source }) => {
+      previewExecutor: ({ config, source }) => {
         calls.push({
           sourceId: source.id,
           sourceUrl: source.http?.url ?? '',
         })
+        assertEquals(config.logging.level, 'info')
+        assertEquals(config.logging.format, 'json')
+        assertEquals(config.logging.sinks.console?.type, 'console')
         return Promise.resolve({
           warnings: [],
           fetchMeta: { ok: true, payloadBytes: 13, fetchDurationMs: 12, parseDurationMs: 5 },
