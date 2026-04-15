@@ -114,6 +114,9 @@ Deno.test('[flow] R17 README.md 与 config.example.yml: 应记录 summary source
 Deno.test('[contract] README.md 与 CLAUDE.md: 应记录 keyed-map 契约与 merge 语义', () => {
   const readme = Deno.readTextFileSync(new URL('../../README.md', import.meta.url))
   const claudeMd = Deno.readTextFileSync(new URL('../../CLAUDE.md', import.meta.url))
+  const configContract = Deno.readTextFileSync(
+    new URL('../../.claude/rules/config-contract.md', import.meta.url),
+  )
 
   assertEquals(readme.includes('`delivery.content`'), false)
   assertStringIncludes(readme, '`file.content`')
@@ -144,8 +147,22 @@ Deno.test('[contract] README.md 与 CLAUDE.md: 应记录 keyed-map 契约与 mer
   assertStringIncludes(overviewExample, "          parse_mode: 'HTML'")
   assertStringIncludes(overviewExample, '            <b>[{{ source.id }}] {{ title }}</b>')
 
-  assertStringIncludes(claudeMd, '`sources.<id>.deliveries` 是 keyed map')
-  assertStringIncludes(claudeMd, 'source 侧只允许按 delivery 类型覆写消息子树')
-  assertEquals(claudeMd.includes('引用投递 ID 数组'), false)
-  assertEquals(claudeMd.includes('允许内联 `file` / `telegram` / `push` 投递块'), false)
+  assertStringIncludes(
+    claudeMd,
+    '当前配置模型 **MUST** 保持 `deliveries.<id>` canonical + `sources.<id>.deliveries` keyed override。',
+  )
+  assertStringIncludes(
+    claudeMd,
+    '细节规则 **SHOULD** 放在 `.claude/rules/*.md`；本文件只保留顶层项目约束。',
+  )
+
+  assertStringIncludes(configContract, '`sources.<id>.deliveries` 是 keyed map')
+  assertStringIncludes(configContract, 'source 侧只允许按 delivery 类型覆写消息子树')
+  assertStringIncludes(configContract, 'file 覆写 `file.content`')
+  assertStringIncludes(configContract, 'push 的 canonical 消息子树是 `push.request.payload`')
+  assertStringIncludes(configContract, 'source override 键为 `payload`')
+  assertStringIncludes(configContract, 'email 覆写 `email.message`')
+  assertStringIncludes(configContract, '空 override 使用 `{}`')
+  assertEquals(configContract.includes('引用投递 ID 数组'), false)
+  assertEquals(configContract.includes('允许内联 `file` / `telegram` / `push` 投递块'), false)
 })

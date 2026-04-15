@@ -1,3 +1,15 @@
+---
+paths:
+  - 'src/testing/**'
+  - 'src/**/*test.ts'
+  - 'web/**/*test.ts'
+  - 'web/**/*test.tsx'
+  - 'docs/testing/**'
+  - '.claude/settings.json'
+  - '.claude/skills/test-architecture-guard/**'
+  - 'scripts/run-paths.sh'
+---
+
 # testing-architecture
 
 这些规则覆盖测试架构治理与硬门禁约束。

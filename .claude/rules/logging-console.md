@@ -1,3 +1,15 @@
+---
+paths:
+  - 'src/main.ts'
+  - 'src/core/logger.ts'
+  - 'src/core/logger_test.ts'
+  - 'src/interfaces/daemon/**'
+  - 'src/interfaces/web/**'
+  - 'web/routes/**'
+  - 'README.md'
+  - 'config.example.yml'
+---
+
 # logging-console
 
 这些规则只覆盖控制台日志展示层的强约束。

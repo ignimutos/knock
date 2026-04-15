@@ -1,3 +1,20 @@
+---
+paths:
+  - 'src/main.ts'
+  - 'src/application/**'
+  - 'src/config/**'
+  - 'src/core/**'
+  - 'src/db/**'
+  - 'src/deliveries/**'
+  - 'src/infrastructure/**'
+  - 'src/interfaces/**'
+  - 'src/sources/**'
+  - 'src/web/**'
+  - 'web/**'
+  - 'README.md'
+  - 'config.example.yml'
+---
+
 # logging-otel
 
 这些规则只覆盖高确定性、长期有效的 OTel 结构化日志约束。
