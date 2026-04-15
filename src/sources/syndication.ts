@@ -353,7 +353,7 @@ async function renderFeedMapping(
 
   for (const key of FEED_FIELDS) {
     const value = mapping[key]
-    if (!value) continue
+    if (value === undefined) continue
     output[key] = isTemplateValue(value)
       ? await renderTemplate(
           renderer,
@@ -399,7 +399,7 @@ async function renderEntryMapping(
 
   for (const key of ENTRY_FIELDS) {
     const value = mapping[key]
-    if (!value) continue
+    if (value === undefined) continue
     output[key] = isTemplateValue(value)
       ? await renderTemplate(
           renderer,

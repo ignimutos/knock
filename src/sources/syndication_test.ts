@@ -172,6 +172,49 @@ Deno.test(
   },
 )
 
+Deno.test('[contract] syndication: entry 显式空字符串应覆盖默认 content', async () => {
+  const payload = JSON.stringify({
+    version: 'https://jsonfeed.org/version/1.1',
+    items: [
+      {
+        id: 'j-1',
+        summary: 'summary text',
+        content_text: 'body text',
+      },
+    ],
+  })
+
+  const parsed = await parseSyndicationSource(payload, {
+    entry: {
+      id: '{{ id }}',
+      content: '',
+    },
+  })
+
+  assertEquals(parsed.entries[0].mapped.content, '')
+})
+
+Deno.test('[contract] syndication: feed 显式空字符串应覆盖默认 description', async () => {
+  const payload = JSON.stringify({
+    version: 'https://jsonfeed.org/version/1.1',
+    title: 'Example Feed',
+    description: 'Feed Summary',
+    items: [
+      {
+        id: 'j-1',
+      },
+    ],
+  })
+
+  const parsed = await parseSyndicationSource(payload, {
+    feed: {
+      description: '',
+    },
+  })
+
+  assertEquals(parsed.feed.description, '')
+})
+
 Deno.test('[contract] syndication: Atom entry mapping 支持读取 feed', async () => {
   const xml = `<feed xmlns="http://www.w3.org/2005/Atom"><title>Releases</title><entry><id>e-1</id><title>v1.0.0</title><link href="https://example.com/r/1" /><summary>first</summary><published>2026-03-24T00:00:00Z</published></entry></feed>`
 
