@@ -7,7 +7,11 @@ import type { PipelineItem } from '../domain/pipeline_item.ts'
 import type { SourceRun } from '../domain/source_run.ts'
 import type { SourceParser } from './ports/source_parser.ts'
 import type { SourceInputGateway } from './ports/source_input_gateway.ts'
-import { RunSourceUseCase } from './run_source_use_case.ts'
+import {
+  RunSourceUseCase,
+  type RunSourceRequest,
+  type RunSourceResult,
+} from './run_source_use_case.ts'
 
 // risk-id: R07
 // layer: contract
@@ -1074,3 +1078,300 @@ Deno.test(
     ])
   },
 )
+
+Deno.test('[contract] runSourceUseCase: collect 只应执行 plan、fetch、parse', async () => {
+  const calls: string[] = []
+  const request: RunSourceRequest = {
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'production',
+    effectDomain: 'production',
+    trigger: 'scheduled',
+  }
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T12:00:00.000Z',
+    createRunId: () => 'run-collect',
+    sourceInputGateway: {
+      fetch: (plan) => {
+        calls.push(`fetch:${plan.runId}`)
+        return Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T12:00:01.000Z',
+          payloadSummary: { hash: 'hash-collect', bytes: 10 },
+        })
+      },
+    },
+    sourceParser: {
+      parse: (plan, input) => {
+        calls.push(`parse:${plan.runId}:${input.kind}`)
+        return Promise.resolve({
+          sourceKind: input.kind,
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [],
+        })
+      },
+    },
+    runRepository: {
+      insert: () => {
+        calls.push('run.insert')
+        return Promise.resolve()
+      },
+      update: () => {
+        calls.push('run.update')
+        return Promise.resolve()
+      },
+    },
+    itemRepository: {
+      insertMany: () => {
+        calls.push('item.insertMany')
+        return Promise.resolve()
+      },
+      updateStatus: () => {
+        calls.push('item.updateStatus')
+        return Promise.resolve()
+      },
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => {
+        calls.push('attempt.insertPlanned')
+        return Promise.resolve()
+      },
+      finish: () => {
+        calls.push('attempt.finish')
+        return Promise.resolve()
+      },
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => {
+        calls.push('dedupe.item')
+        return Promise.resolve(false)
+      },
+      registerItemFingerprint: () => {
+        calls.push('dedupe.registerItem')
+        return Promise.resolve()
+      },
+      isDeliveryDuplicate: () => {
+        calls.push('dedupe.delivery')
+        return Promise.resolve(false)
+      },
+      registerDeliveryFingerprint: () => {
+        calls.push('dedupe.registerDelivery')
+        return Promise.resolve()
+      },
+    },
+    deliveryExecutors: {
+      file: {
+        execute: () => {
+          calls.push('delivery.execute')
+          return Promise.resolve()
+        },
+      },
+    },
+  })
+
+  const result = await useCase.collect(request)
+
+  assertEquals(result.plan.runId, 'run-collect')
+  assertEquals(calls, ['fetch:run-collect', 'parse:run-collect:fetch'])
+})
+
+Deno.test('[contract] runSourceUseCase: 缺 pipeline deps 时 execute 应退化为 collect', async () => {
+  const calls: string[] = []
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T12:05:00.000Z',
+    createRunId: () => 'run-collect-only',
+    sourceInputGateway: {
+      fetch: (plan) => {
+        calls.push(`fetch:${plan.runId}`)
+        return Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T12:05:01.000Z',
+          payloadSummary: { hash: 'hash-collect-only', bytes: 10 },
+        })
+      },
+    },
+    sourceParser: {
+      parse: (plan, input) => {
+        calls.push(`parse:${plan.runId}:${input.kind}`)
+        return Promise.resolve({
+          sourceKind: input.kind,
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [],
+        })
+      },
+    },
+  })
+
+  const result = await useCase.execute({
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'preview',
+    effectDomain: 'preview',
+    trigger: 'preview',
+  })
+
+  assertEquals(result.plan.runId, 'run-collect-only')
+  assertEquals(calls, ['fetch:run-collect-only', 'parse:run-collect-only:fetch'])
+})
+
+Deno.test('[contract] runSourceUseCase: execute 应先 collect 再 applyCollected', async () => {
+  const order: string[] = []
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T12:10:00.000Z',
+    createRunId: () => 'run-order',
+    createItemId: (entry) => `item:${entry.id}`,
+    sourceInputGateway: {
+      fetch: (plan) => {
+        order.push(`fetch:${plan.runId}`)
+        return Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T12:10:01.000Z',
+          payloadSummary: { hash: 'hash-order', bytes: 10 },
+        })
+      },
+    },
+    sourceParser: {
+      parse: (plan, input) => {
+        order.push(`parse:${plan.runId}:${input.kind}`)
+        return Promise.resolve({
+          sourceKind: input.kind,
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [
+            {
+              id: 'entry-1',
+              title: 'Hello',
+              link: '',
+              description: '',
+              content: '',
+              published: '',
+              updated: '',
+            },
+          ],
+        })
+      },
+    },
+    runRepository: {
+      insert: () => {
+        order.push('run.insert')
+        return Promise.resolve()
+      },
+      update: () => {
+        order.push('run.update')
+        return Promise.resolve()
+      },
+    },
+    itemRepository: {
+      insertMany: () => {
+        order.push('item.insertMany')
+        return Promise.resolve()
+      },
+      updateStatus: () => {
+        order.push('item.updateStatus')
+        return Promise.resolve()
+      },
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => {
+        order.push('attempt.insertPlanned')
+        return Promise.resolve()
+      },
+      finish: () => {
+        order.push('attempt.finish')
+        return Promise.resolve()
+      },
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => {
+        order.push('dedupe.item')
+        return Promise.resolve(true)
+      },
+      registerItemFingerprint: () => {
+        order.push('dedupe.registerItem')
+        return Promise.resolve()
+      },
+      isDeliveryDuplicate: () => {
+        order.push('dedupe.delivery')
+        return Promise.resolve(false)
+      },
+      registerDeliveryFingerprint: () => {
+        order.push('dedupe.registerDelivery')
+        return Promise.resolve()
+      },
+    },
+    deliveryExecutors: {
+      file: {
+        execute: () => {
+          order.push('delivery.execute')
+          return Promise.resolve()
+        },
+      },
+    },
+  })
+
+  const result = await useCase.execute({
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'production',
+    effectDomain: 'production',
+    trigger: 'scheduled',
+    bindings: [
+      {
+        sourceId: 'rust',
+        deliveryId: 'archive',
+        definition: {
+          kind: 'file',
+          deliveryId: 'archive',
+          path: '/tmp/archive.txt',
+          contentTemplate: '{{ entry.title }}',
+        },
+      },
+    ],
+  })
+
+  assertEquals(result.plan.runId, 'run-order')
+  assertEquals(order.slice(0, 4), [
+    'fetch:run-order',
+    'parse:run-order:fetch',
+    'run.insert',
+    'item.insertMany',
+  ])
+})

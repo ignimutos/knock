@@ -72,9 +72,13 @@ export class RunSourceUseCase {
     )
   }
 
+  async collect(input: RunSourceRequest): Promise<RunSourceResult> {
+    const plan = await this.plan(input)
+    return await this.collectPlanned(plan)
+  }
+
   async execute(input: RunSourceRequest): Promise<RunSourceResult> {
     const plan = await this.plan(input)
-    let run: ReturnType<typeof createSourceRun> | undefined
     const lifecycleCounts = {
       sourceItemCount: 0,
       filteredCount: 0,
@@ -86,39 +90,73 @@ export class RunSourceUseCase {
     this.logRunStart(plan)
 
     try {
-      const fetchedInput = await this.deps.sourceInputGateway.fetch(plan)
-      const parsed = await this.deps.sourceParser.parse(plan, fetchedInput)
-      lifecycleCounts.sourceItemCount = parsed.items.length
+      const collected = await this.collectPlanned(plan)
+      lifecycleCounts.sourceItemCount = collected.parsed.items.length
 
-      const taskFiveDeps = this.getTaskFiveDeps()
-      if (!taskFiveDeps) {
+      const pipelineDeps = this.getPipelineDeps()
+      if (!pipelineDeps) {
         this.logRunFinalize(plan, 'success', lifecycleCounts)
-        return {
-          plan,
-          fetchedInput,
-          parsed,
-        }
+        return collected
       }
 
-      run = createSourceRun({
-        runId: plan.runId,
-        sourceId: plan.source.sourceId,
-        trigger: plan.trigger,
-        profile: plan.profile,
-        effectDomain: plan.effectDomain,
-        scheduledAt: plan.scheduledAt,
-        startedAt: this.deps.now(),
-      })
-      const persistedRun = run
-      await taskFiveDeps.runRepository.insert(persistedRun)
-      await taskFiveDeps.runRepository.setFeedSnapshot?.(persistedRun.runId, parsed.feed)
+      await this.applyCollected(collected, pipelineDeps, lifecycleCounts)
+      this.logRunFinalize(plan, 'success', lifecycleCounts)
+      return collected
+    } catch (error) {
+      this.logRunFinalize(plan, 'failure', lifecycleCounts)
+      throw error
+    }
+  }
+
+  private async collectPlanned(plan: RunPlan): Promise<RunSourceResult> {
+    const fetchedInput = await this.deps.sourceInputGateway.fetch(plan)
+    const parsed = await this.deps.sourceParser.parse(plan, fetchedInput)
+
+    return {
+      plan,
+      fetchedInput,
+      parsed,
+    }
+  }
+
+  private async applyCollected(
+    collected: RunSourceResult,
+    pipelineDeps: {
+      runRepository: RunRepository
+      itemRepository: ItemRepository
+      deliveryAttemptRepository: DeliveryAttemptRepository
+      deduplicationRepository: DeduplicationRepository
+      deliveryExecutors: Partial<DeliveryExecutorRegistry>
+    },
+    lifecycleCounts: {
+      sourceItemCount: number
+      filteredCount: number
+      dedupedCount: number
+      pushedCount: number
+      failedCount: number
+    },
+  ): Promise<void> {
+    const { plan, parsed } = collected
+    const run = createSourceRun({
+      runId: plan.runId,
+      sourceId: plan.source.sourceId,
+      trigger: plan.trigger,
+      profile: plan.profile,
+      effectDomain: plan.effectDomain,
+      scheduledAt: plan.scheduledAt,
+      startedAt: this.deps.now(),
+    })
+
+    try {
+      await pipelineDeps.runRepository.insert(run)
+      await pipelineDeps.runRepository.setFeedSnapshot?.(run.runId, parsed.feed)
 
       const items = parsed.items.map((entry) =>
         createPipelineItem({
           itemId: this.createItemId(entry),
-          sourceRunId: persistedRun.runId,
-          sourceId: persistedRun.sourceId,
-          effectDomain: persistedRun.effectDomain,
+          sourceRunId: run.runId,
+          sourceId: run.sourceId,
+          effectDomain: run.effectDomain,
           normalized: {
             id: entry.id,
             title: entry.title,
@@ -130,7 +168,7 @@ export class RunSourceUseCase {
           },
         }),
       )
-      await taskFiveDeps.itemRepository.insertMany(items)
+      await pipelineDeps.itemRepository.insertMany(items)
 
       const counts = {
         fetchedCount: parsed.items.length,
@@ -163,7 +201,7 @@ export class RunSourceUseCase {
         },
       })
       const deduplicationStage = new DeduplicationStage({
-        repository: taskFiveDeps.deduplicationRepository,
+        repository: pipelineDeps.deduplicationRepository,
       })
       const renderStage = new RenderStage({
         now: this.deps.now,
@@ -188,7 +226,7 @@ export class RunSourceUseCase {
           counts.filteredCount += 1
           lifecycleCounts.filteredCount += 1
           this.logFilteredItem(plan, item.itemId)
-          await taskFiveDeps.itemRepository.updateStatus(item.itemId, 'filtered', undefined)
+          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'filtered', undefined)
           continue
         }
 
@@ -202,7 +240,7 @@ export class RunSourceUseCase {
 
         if (dedupeResult.itemStatus === 'duplicate') {
           counts.duplicateItemCount += 1
-          await taskFiveDeps.itemRepository.updateStatus(item.itemId, 'duplicate', undefined)
+          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'duplicate', undefined)
           continue
         }
 
@@ -232,9 +270,9 @@ export class RunSourceUseCase {
             plannedAt: attemptPlan.plannedAt,
             renderedSnapshot: attemptPlan.renderedSnapshot,
           })
-          await taskFiveDeps.deliveryAttemptRepository.insertPlanned(attempt)
+          await pipelineDeps.deliveryAttemptRepository.insertPlanned(attempt)
 
-          const executor = taskFiveDeps.deliveryExecutors[attempt.channel]
+          const executor = pipelineDeps.deliveryExecutors[attempt.channel]
           if (!executor) {
             throw new Error(`缺少 ${attempt.channel} delivery executor`)
           }
@@ -244,10 +282,10 @@ export class RunSourceUseCase {
             executor,
             logger: deliveryDispatchLogger,
           }).run(attemptPlan)
-          await taskFiveDeps.deliveryAttemptRepository.finish(attempt.attemptId, attemptResult)
+          await pipelineDeps.deliveryAttemptRepository.finish(attempt.attemptId, attemptResult)
 
           if (attemptResult.status === 'delivered') {
-            await taskFiveDeps.deduplicationRepository.registerDeliveryFingerprint({
+            await pipelineDeps.deduplicationRepository.registerDeliveryFingerprint({
               sourceId: item.sourceId,
               deliveryId: binding.deliveryId,
               effectDomain: item.effectDomain,
@@ -265,24 +303,24 @@ export class RunSourceUseCase {
         }
 
         if (failed > 0) {
-          await taskFiveDeps.itemRepository.updateStatus(item.itemId, 'failed', undefined)
+          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'failed', undefined)
           continue
         }
 
         if (delivered > 0) {
-          await taskFiveDeps.deduplicationRepository.registerItemFingerprint({
+          await pipelineDeps.deduplicationRepository.registerItemFingerprint({
             sourceId: item.sourceId,
             effectDomain: item.effectDomain,
             fingerprint: item.normalized.id,
             recordedAt: this.deps.now(),
           })
-          await taskFiveDeps.itemRepository.updateStatus(item.itemId, 'delivered', undefined)
+          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'delivered', undefined)
           continue
         }
 
         if (duplicateDeliveries > 0 || bindings.length === 0) {
           counts.skippedCount += 1
-          await taskFiveDeps.itemRepository.updateStatus(
+          await pipelineDeps.itemRepository.updateStatus(
             item.itemId,
             'skipped',
             duplicateDeliveries > 0 ? 'all_deliveries_duplicate' : 'no_deliveries',
@@ -290,36 +328,26 @@ export class RunSourceUseCase {
           continue
         }
 
-        await taskFiveDeps.itemRepository.updateStatus(item.itemId, 'ready', undefined)
+        await pipelineDeps.itemRepository.updateStatus(item.itemId, 'ready', undefined)
       }
 
-      await taskFiveDeps.runRepository.update(
+      await pipelineDeps.runRepository.update(
         finalizeSourceRun(run, {
           ...counts,
           finishedAt: this.deps.now(),
         }),
       )
-      this.logRunFinalize(plan, 'success', lifecycleCounts)
-
-      return {
-        plan,
-        fetchedInput,
-        parsed,
-      }
     } catch (error) {
-      if (run && this.deps.runRepository) {
-        await this.deps.runRepository.update({
-          ...run,
-          status: 'failed',
-          finishedAt: this.deps.now(),
-        })
-      }
-      this.logRunFinalize(plan, 'failure', lifecycleCounts)
+      await pipelineDeps.runRepository.update({
+        ...run,
+        status: 'failed',
+        finishedAt: this.deps.now(),
+      })
       throw error
     }
   }
 
-  private getTaskFiveDeps(): {
+  private getPipelineDeps(): {
     runRepository: RunRepository
     itemRepository: ItemRepository
     deliveryAttemptRepository: DeliveryAttemptRepository

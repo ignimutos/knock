@@ -9,7 +9,7 @@ export interface PreviewSourceRequest {
 }
 
 export interface PreviewSourceUseCaseDeps {
-  runSourceUseCase: Pick<RunSourceUseCase, 'plan' | 'execute'>
+  runSourceUseCase: Pick<RunSourceUseCase, 'plan' | 'collect' | 'execute'>
 }
 
 export class PreviewSourceUseCase {
@@ -17,6 +17,17 @@ export class PreviewSourceUseCase {
 
   async plan(input: PreviewSourceRequest) {
     return await this.deps.runSourceUseCase.plan({
+      source: input.source,
+      profile: 'preview',
+      effectDomain: 'preview',
+      trigger: 'preview',
+      bindings: input.bindings,
+      scheduledAt: input.scheduledAt,
+    })
+  }
+
+  async collect(input: PreviewSourceRequest): Promise<RunSourceResult> {
+    return await this.deps.runSourceUseCase.collect({
       source: input.source,
       profile: 'preview',
       effectDomain: 'preview',
