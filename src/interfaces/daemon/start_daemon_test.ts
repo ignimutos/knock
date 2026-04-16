@@ -49,7 +49,7 @@ Deno.test('[contract] daemon logger: emitted attributes 不应包含 app.runtime
     consoleProxy.warn = capture
     consoleProxy.error = capture
 
-    await withOwnedRuntime(async ({ runtimeDir }) => {
+    await withOwnedRuntime(({ runtimeDir }) => {
       const daemon = createDaemonRuntime({
         config: {
           runtimeDir,
@@ -70,10 +70,10 @@ Deno.test('[contract] daemon logger: emitted attributes 不应包含 app.runtime
           sources: [],
           logging: {
             level: 'info',
-            format: 'json',
             sinks: {
               console: {
                 type: 'console',
+                format: 'jsonl',
               },
             },
           },

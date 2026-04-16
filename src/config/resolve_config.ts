@@ -437,12 +437,23 @@ function resolveAiConfig(input?: AiConfigInput): AiConfigResolved | undefined {
   }
 }
 
-export function resolveLoggingConfig(input: LoggingConfigInput): LoggingConfigResolved {
+export function resolveLoggingConfig(
+  runtimeDir: string,
+  input: LoggingConfigInput,
+): LoggingConfigResolved {
   return {
     level: input.level,
-    format: input.format,
     sinks: {
-      console: input.sinks.console,
+      ...(input.sinks.console ? { console: { ...input.sinks.console } } : {}),
+      ...(input.sinks.file
+        ? {
+            file: {
+              ...input.sinks.file,
+              path: resolveRuntimePath(runtimeDir, input.sinks.file.path),
+              ...(input.sinks.file.rotation ? { rotation: { ...input.sinks.file.rotation } } : {}),
+            },
+          }
+        : {}),
     },
   }
 }
@@ -488,6 +499,6 @@ export function resolveConfig(input: AppConfigValidated): AppConfigResolved {
     ai: resolveAiConfig(input.ai),
     deliveries,
     sources: resolvedSources,
-    logging: resolveLoggingConfig(input.logging),
+    logging: resolveLoggingConfig(input.runtimeDir, input.logging),
   }
 }

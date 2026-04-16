@@ -137,10 +137,10 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
     sources: [resolvedSource],
     logging: {
       level: 'info',
-      format: 'json',
       sinks: {
         console: {
           type: 'console',
+          format: 'jsonl',
         },
       },
     },

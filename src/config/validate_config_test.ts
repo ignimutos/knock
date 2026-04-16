@@ -25,25 +25,102 @@ Deno.test('[contract] validateConfig: schema 静态默认值应在校验阶段�
   })
   assertEquals(validated.logging, {
     level: 'info',
-    format: 'json',
-    sinks: {
-      console: {
-        type: 'console',
-      },
-    },
+    sinks: {},
   })
 })
 
-Deno.test('[contract] validateConfig: logging.format 支持 pretty', () => {
-  const input: AppConfigInput = {
+Deno.test('[contract] validateConfig: logging.sinks.console.format 支持 pretty 与 jsonl', () => {
+  const prettyConfig = validateConfig({
     runtimeDir: '/tmp/runtime',
     logging: {
-      format: 'pretty',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'pretty',
+        },
+      },
     },
-  }
+  })
+  assertEquals(prettyConfig.logging.sinks.console?.format, 'pretty')
 
-  const validated = validateConfig(input)
-  assertEquals(validated.logging.format, 'pretty')
+  const jsonlConfig = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    logging: {
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'jsonl',
+        },
+      },
+    },
+  })
+  assertEquals(jsonlConfig.logging.sinks.console?.format, 'jsonl')
+})
+
+Deno.test('[contract] validateConfig: file sink 支持 jsonl 与 size rotation', () => {
+  const validated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    logging: {
+      sinks: {
+        file: {
+          type: 'file',
+          format: 'jsonl',
+          path: 'runtime/logs/app.jsonl',
+          rotation: {
+            type: 'size',
+            maxSize: '10m',
+            maxFiles: 5,
+          },
+        },
+      },
+    },
+  })
+
+  assertEquals(validated.logging.sinks.file?.rotation, {
+    type: 'size',
+    maxSize: '10m',
+    maxFiles: 5,
+  })
+})
+
+Deno.test('[contract] validateConfig: file sink 支持 time rotation', () => {
+  const validated = validateConfig({
+    runtimeDir: '/tmp/runtime',
+    logging: {
+      sinks: {
+        file: {
+          type: 'file',
+          format: 'jsonl',
+          path: 'runtime/logs/app.jsonl',
+          rotation: {
+            type: 'time',
+            interval: 'daily',
+            maxAge: '7d',
+          },
+        },
+      },
+    },
+  })
+
+  assertEquals(validated.logging.sinks.file?.rotation, {
+    type: 'time',
+    interval: 'daily',
+    maxAge: '7d',
+  })
+})
+
+Deno.test('[contract] validateConfig: logging.format 已删除', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        logging: {
+          format: 'pretty',
+        } as never,
+      }),
+    Error,
+    'logging.format',
+  )
 })
 
 Deno.test('[contract] validateConfig: logging.level 支持 fatal', () => {

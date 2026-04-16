@@ -435,17 +435,20 @@ sources:
 
 # 日志配置（可选）
 # - 省略整个块时使用内置默认值
-# - logging.format 默认 json
-# - pretty 只影响控制台展示层，不改变底层 JSON record 语义与字段归属
+# - sink 仅在显式配置后才创建
+# - console 支持 pretty / jsonl；file 第一版固定 jsonl
 logging:
   # 日志级别（可选；默认: info；支持: trace | debug | info | warn | error | fatal）
   level: info
-  # 日志格式（可选；默认: json；支持: json | pretty）
-  # pretty 只影响控制台展示，不改变底层 JSON 契约
-  format: json
-  # 日志输出 sinks 配置（可选；默认: 内置默认值）
   sinks:
-    # 控制台日志输出配置（可选；默认: 内置默认值）
     console:
-      # 控制台日志 sink 类型（可选；默认: console）
       type: console
+      format: pretty
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+      rotation:
+        type: time
+        interval: daily
+        maxAge: 7d

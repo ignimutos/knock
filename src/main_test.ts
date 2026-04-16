@@ -335,6 +335,14 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程
   ])
 })
 
+Deno.test(
+  '[contract] startWeb: web startup logger 应走共享 sink 配置而非硬编码 format',
+  async () => {
+    const source = await Deno.readTextFile(new URL('./main.ts', import.meta.url))
+    assertEquals(source.includes("format: 'json'"), false)
+  },
+)
+
 Deno.test('[contract] startWeb: 启动时应输出包含 host、port 与 url 的结构化日志', async () => {
   const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
   const { port } = listener.addr as Deno.NetAddr

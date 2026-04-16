@@ -72,9 +72,15 @@ Deno.test(
           sourceId: source.id,
           sourceUrl: source.http?.url ?? '',
         })
-        assertEquals(config.logging.level, 'info')
-        assertEquals(config.logging.format, 'json')
-        assertEquals(config.logging.sinks.console?.type, 'console')
+        assertEquals(config.logging, {
+          level: 'info',
+          sinks: {
+            console: {
+              type: 'console',
+              format: 'jsonl',
+            },
+          },
+        })
         return Promise.resolve({
           warnings: [],
           fetchMeta: { ok: true, payloadBytes: 13, fetchDurationMs: 12, parseDurationMs: 5 },

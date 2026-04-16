@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from '@std/assert'
 import { fromFileUrl } from '@std/path'
 import * as loggerModule from './logger.ts'
+import { configureLoggingRuntime, shutdownLoggingRuntime } from './logging_runtime.ts'
 
 const { createLogger } = loggerModule
 
@@ -26,6 +27,88 @@ function getScopeName(record: Record<string, unknown>): string | undefined {
 function toUnixNano(input: Date): string {
   return (BigInt(input.getTime()) * 1_000_000n).toString()
 }
+
+Deno.test('[contract] R11 logger: console format=jsonl 应输出仓库 OTel JSONL', async () => {
+  const stdout: string[] = []
+
+  await configureLoggingRuntime({
+    logging: {
+      level: 'info',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'jsonl',
+        },
+      },
+    },
+    runtimeDir: '/tmp/runtime',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    consoleWriters: {
+      stdout: (line: string) => stdout.push(line),
+      warn: (line: string) => stdout.push(line),
+      stderr: (line: string) => stdout.push(line),
+    },
+  })
+
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'delivery.http',
+  })
+  logger.info('推送完成', { 'delivery.id': 'telegram' })
+  await shutdownLoggingRuntime()
+
+  const record = parseRecord(stdout.at(-1) ?? '')
+  assertEquals(record.severityText, 'INFO')
+  assertEquals(getScopeName(record), 'delivery.http')
+  assertEquals(getAttributes(record)['delivery.id'], 'telegram')
+})
+
+Deno.test('[contract] R11 logger: runtime pretty 应输出高密度单行并隐藏块状字段', async () => {
+  const stdout: string[] = []
+
+  await configureLoggingRuntime({
+    logging: {
+      level: 'info',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'pretty',
+        },
+      },
+    },
+    runtimeDir: '/tmp/runtime',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    consoleWriters: {
+      stdout: (line: string) => stdout.push(line),
+      warn: (line: string) => stdout.push(line),
+      stderr: (line: string) => stdout.push(line),
+    },
+  })
+
+  createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'pipeline.filter',
+    component: 'daemon',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+  }).info('pipeline item filtered', {
+    'source.id': 'smzdm',
+    'source.run_id': 'a81ce6e0-4906-485b-a41d-3bf3075af785',
+  })
+  await shutdownLoggingRuntime()
+
+  const line = stdout.at(-1) ?? ''
+  assertStringIncludes(line, '2026-03-24 21:45:12')
+  assertStringIncludes(line, 'info')
+  assertStringIncludes(line, 'filter')
+  assertStringIncludes(line, 'component=daemon')
+  assertStringIncludes(line, 'source.id=smzdm')
+  assertEquals(line.includes('resource:'), false)
+  assertEquals(line.includes('attributes:'), false)
+})
 
 function buildStackWithLocation(
   options: {
@@ -511,12 +594,12 @@ Deno.test('[contract] R11 logger: format=pretty 时应通过 @logtape/pretty 渲
 
   assertEquals(stdout.length, 2)
   assertStringIncludes(stdout[0], '2026-03-25 05:45:12')
-  assertStringIncludes(stdout[0], 'knock·delivery.http')
+  assertStringIncludes(stdout[0], 'http')
   assertStringIncludes(stdout[0], '推送完成')
   assertEquals(stdout[0].includes('123456:ABCDEF-SECRET'), false)
   assertEquals(stdout[0].includes('user:pass@'), false)
   assertStringIncludes(stdout[1], '2026-03-25 05:45:12')
-  assertStringIncludes(stdout[1], 'knock·delivery.http')
+  assertStringIncludes(stdout[1], 'http')
   assertStringIncludes(stdout[1], '再次推送完成')
   assertEquals(stdout[1].includes('123456:ABCDEF-SECRET'), false)
   assertEquals(stdout[1].includes('user:pass@'), false)
@@ -550,7 +633,7 @@ Deno.test(
 
     assertEquals(stdout.length, 1)
     assertStringIncludes(stdout[0], '2026-03-24 21:45:12')
-    assertStringIncludes(stdout[0], 'knock·web.api')
+    assertStringIncludes(stdout[0], 'api')
     assertStringIncludes(stdout[0], 'API 请求完成')
     assertStringIncludes(stdout[0], 'web.req.1')
     assertStringIncludes(stdout[0], '/api/xquery/evaluate')

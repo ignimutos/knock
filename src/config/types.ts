@@ -9,8 +9,11 @@ import {
   FEED_FIELD_KEYS,
   type FileDeliveryConfig,
   type HttpPayload as SchemaHttpPayload,
+  type LogConsoleFormat as SchemaLogConsoleFormat,
   type LogConsoleSinkConfig as SchemaLogConsoleSinkConfig,
-  type LogFormat as SchemaLogFormat,
+  type LogFileFormat as SchemaLogFileFormat,
+  type LogFileRotationConfig as SchemaLogFileRotationConfig,
+  type LogFileSinkConfig as SchemaLogFileSinkConfig,
   type LogLevel as SchemaLogLevel,
   type PushConfig,
   type SourceConfigInput,
@@ -20,8 +23,11 @@ import {
 } from './schema.ts'
 
 export type LogLevel = SchemaLogLevel
-export type LogFormat = SchemaLogFormat
+export type LogConsoleFormat = SchemaLogConsoleFormat
+export type LogFileFormat = SchemaLogFileFormat
 export type LogConsoleSinkConfig = SchemaLogConsoleSinkConfig
+export type LogFileSinkConfig = SchemaLogFileSinkConfig
+export type LogFileRotationConfig = SchemaLogFileRotationConfig
 export type SqliteJournalMode = SchemaSqliteJournalMode
 export type SqliteRetentionVacuumMode = SchemaSqliteRetentionVacuumMode
 export type EmailMessageConfig = SchemaEmailMessageConfig
@@ -29,9 +35,9 @@ export type HttpPayload = SchemaHttpPayload
 
 export interface LoggingConfigResolved {
   level: LogLevel
-  format: LogFormat
   sinks: {
     console?: LogConsoleSinkConfig
+    file?: LogFileSinkConfig
   }
 }
 

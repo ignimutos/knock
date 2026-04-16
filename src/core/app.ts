@@ -4,6 +4,7 @@ import { loadConfig } from '../config/load_config.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import { createDaemonRuntime } from '../interfaces/daemon/create_daemon_runtime.ts'
 import { startDaemon } from '../interfaces/daemon/start_daemon.ts'
+import { configureLoggingRuntime, shutdownLoggingRuntime } from './logging_runtime.ts'
 
 export interface StartAppOptions {
   runtimeDir?: string
@@ -77,6 +78,14 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     runtimeDir: input.runtimeDir,
     configPath: input.configPath,
   })
+
+  await configureLoggingRuntime({
+    logging: config.logging,
+    runtimeDir: config.runtimeDir,
+    timezone: config.timezone,
+    timestampFormat: config.timestampFormat,
+  })
+
   const daemon = createDaemonRuntime({
     config,
     httpFetcher: input.httpFetcher,
@@ -103,5 +112,6 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     return { mode: 'daemon' }
   } finally {
     daemon.stop()
+    await shutdownLoggingRuntime()
   }
 }

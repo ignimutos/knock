@@ -112,6 +112,49 @@ sources: {}
   }
 })
 
+test('loadConfig: 应解析 logging file sink 与 time rotation', async () => {
+  await Deno.writeTextFile(
+    join(TEST_RUNTIME, 'config.yml'),
+    `
+logging:
+  level: debug
+  sinks:
+    console:
+      type: console
+      format: pretty
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+      rotation:
+        type: time
+        interval: daily
+        maxAge: 7d
+`,
+  )
+
+  const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+  assertEquals(config.logging, {
+    level: 'debug',
+    sinks: {
+      console: {
+        type: 'console',
+        format: 'pretty',
+      },
+      file: {
+        type: 'file',
+        format: 'jsonl',
+        path: join(TEST_RUNTIME, 'logs', 'app.jsonl'),
+        rotation: {
+          type: 'time',
+          interval: 'daily',
+          maxAge: '7d',
+        },
+      },
+    },
+  })
+})
+
 test('loadConfig: source.deliveries keyed map 应保留普通声明顺序并映射到 resolved delivery', async () => {
   await Deno.writeTextFile(
     join(TEST_RUNTIME, 'config.yml'),

@@ -85,16 +85,50 @@ Deno.test('[contract] resolveConfig: file override 应只改 content', () => {
   assertEquals(resolved.sources[0].deliveries[0].file?.content, 'custom')
 })
 
-Deno.test('[contract] resolveConfig: logging.format=pretty 应进入 resolved 层', () => {
+Deno.test('[contract] resolveConfig: 应保留 console/file sink 配置', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     logging: {
-      format: 'pretty',
+      level: 'debug',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'pretty',
+        },
+        file: {
+          type: 'file',
+          format: 'jsonl',
+          path: 'logs/app.jsonl',
+          rotation: {
+            type: 'time',
+            interval: 'daily',
+            maxAge: '7d',
+          },
+        },
+      },
     },
   }
 
   const resolved = resolveConfig(validateConfig(input))
-  assertEquals(resolved.logging.format, 'pretty')
+  assertEquals(resolved.logging, {
+    level: 'debug',
+    sinks: {
+      console: {
+        type: 'console',
+        format: 'pretty',
+      },
+      file: {
+        type: 'file',
+        format: 'jsonl',
+        path: '/tmp/runtime/logs/app.jsonl',
+        rotation: {
+          type: 'time',
+          interval: 'daily',
+          maxAge: '7d',
+        },
+      },
+    },
+  })
 })
 
 Deno.test('[contract] resolveConfig: logging.level=fatal 应进入 resolved 层', () => {
@@ -138,8 +172,10 @@ Deno.test('[contract] resolveConfig: 默认值与路径解析仍应成立', () =
 
   const resolved = resolveConfig(validateConfig(input))
   assertEquals(resolved.sqlite.path, '/tmp/runtime/knock.db')
-  assertEquals(resolved.logging.level, 'info')
-  assertEquals(resolved.logging.format, 'json')
+  assertEquals(resolved.logging, {
+    level: 'info',
+    sinks: {},
+  })
   assertEquals(resolved.sources[0].enabled, true)
   assertEquals(resolved.sources[0].syndication, {})
   assertEquals(resolved.sources[0].xquery, undefined)
@@ -432,12 +468,7 @@ Deno.test(
     })
     assertEquals(resolved.logging, {
       level: 'info',
-      format: 'json',
-      sinks: {
-        console: {
-          type: 'console',
-        },
-      },
+      sinks: {},
     })
   },
 )

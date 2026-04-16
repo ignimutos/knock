@@ -87,6 +87,7 @@
   required_layer: contract
   owner_tests:
     - src/core/logger_test.ts
+    - src/core/logging_runtime_test.ts
 
 - id: R12
   domain: dedupe

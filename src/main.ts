@@ -69,7 +69,6 @@ export async function startWeb(options: { host: string; port: number }) {
   const logger = createLogger({
     enabled: true,
     level: 'info',
-    format: 'json',
     module: 'web.startup',
     component: 'web',
     timezone: 'UTC',

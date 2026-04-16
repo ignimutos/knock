@@ -11,7 +11,7 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 投递通道：file、push、email。
 - 运行模式：`all`、`web`、`daemon`，支持 `--immediate` 一次性执行。
 - 状态存储：SQLite 记录 feed、entry、delivery 去重状态。
-- 日志：默认结构化 `json`，支持 `pretty` 控制台展示。
+- 日志：按 sink 配置输出；console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。
 
 ## 架构概览
 
@@ -197,10 +197,18 @@ sources:
 
 logging:
   level: info
-  format: json
   sinks:
     console:
       type: console
+      format: pretty
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+      rotation:
+        type: time
+        interval: daily
+        maxAge: 7d
 ```
 
 ## 完整键索引
@@ -220,8 +228,16 @@ logging:
 - `deliveries`
 - `sources`
 - `logging.level`
-- `logging.format`
 - `logging.sinks.console.type`
+- `logging.sinks.console.format`
+- `logging.sinks.file.type`
+- `logging.sinks.file.format`
+- `logging.sinks.file.path`
+- `logging.sinks.file.rotation.type`
+- `logging.sinks.file.rotation.maxSize`
+- `logging.sinks.file.rotation.maxFiles`
+- `logging.sinks.file.rotation.interval`
+- `logging.sinks.file.rotation.maxAge`
 
 ### `ai` 键路径
 
@@ -336,8 +352,11 @@ logging:
 ### `logging`
 
 - `logging.level` 支持 `trace|debug|info|warn|error|fatal`，默认 `info`。
-- `logging.format` 支持 `json|pretty`，默认 `json`。
-- `logging.sinks.console.type` 当前固定 `console`。
+- `logging.sinks.console.format` 支持 `pretty|jsonl`。
+- `logging.sinks.file.format` 第一版固定为 `jsonl`。
+- sink 仅在显式配置后才创建；不再保留顶层 `logging.format`。
+- `logging.sinks.file.rotation.type=size` 时使用 `maxSize` / `maxFiles`。
+- `logging.sinks.file.rotation.type=time` 时使用 `interval` / `maxAge`。
 
 ### `deliveries`
 
@@ -564,7 +583,7 @@ docker run --rm \
 
 ## 日志
 
-默认日志格式为 `json`，字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
+日志按显式 sink 配置输出：console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。JSONL 字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
 
 当前 v2 执行点：source 抓取/解析日志来自 `src/infrastructure/sources/http_source_input_gateway.ts`、`src/infrastructure/sources/byparr_source_input_gateway.ts`、`src/infrastructure/sources/source_parser_gateway.ts`；pipeline 的 filter/dedupe/delivery/finalize 日志来自 `src/application/run_source_use_case.ts` 与 `src/application/stages/delivery_stage.ts`。
 
@@ -572,17 +591,25 @@ Namespaced 关键字段示例：`source.id`、`source.run_id`、`pipeline.item_i
 
 HTTP failure 日志不记录原始 `response_body`；只记录如 `delivery.reason`、`http.response.status_code` 与安全错误摘要。
 
-`pretty` 是控制台展示层，适合本地调试；`json` 适合日志采集与检索。两种格式表达同一条底层记录语义，`pretty` 不改变底层字段归属。
+`pretty` 是控制台展示层，适合本地调试；`jsonl` 适合日志采集与检索。两种格式表达同一条底层记录语义，`pretty` 不改变底层字段归属；file sink 仅在显式配置后创建，并支持 size/time 二选一 rotation。
 
 常用配置入口：
 
 ```yml
 logging:
   level: info
-  format: json
   sinks:
     console:
       type: console
+      format: pretty
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+      rotation:
+        type: time
+        interval: daily
+        maxAge: 7d
 ```
 
 ## 去重与状态存储

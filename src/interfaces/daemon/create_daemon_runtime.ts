@@ -96,9 +96,8 @@ function createSourceQueryService(config: AppConfigResolved): SourceQueryService
 
 export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): DaemonRuntime {
   const logger = createLogger({
-    enabled: options.config.logging.sinks.console?.type === 'console',
+    enabled: true,
     level: options.config.logging.level,
-    format: options.config.logging.format,
     module: 'app.startup',
     component: 'daemon',
     timezone: options.config.timezone,

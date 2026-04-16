@@ -73,3 +73,30 @@ sources: {}
     assertEquals(result.mode, 'daemon')
   })
 })
+
+test('[contract] app: stop 后应释放 logging runtime', async () => {
+  await withAppRuntime('logging-runtime-dispose', async (testRuntime) => {
+    await Deno.writeTextFile(
+      join(testRuntime, 'config.yml'),
+      `
+logging:
+  sinks:
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+sources: {}
+`,
+    )
+
+    await startApp({
+      runtimeDir: testRuntime,
+      keepAlive: false,
+      immediate: true,
+    })
+
+    const logPath = join(testRuntime, 'logs', 'app.jsonl')
+    const stat = await Deno.stat(logPath)
+    assertEquals(stat.isFile, true)
+  })
+})

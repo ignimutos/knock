@@ -1,9 +1,8 @@
-import { getPrettyFormatter } from '@logtape/pretty'
-import { redactByPattern } from '@logtape/redaction'
-import type { LogRecord } from '@logtape/logtape'
+import type { LogRecord, Logger as LogTapeLogger, TextFormatter } from '@logtape/logtape'
+import { getLogger as getLogTapeLogger } from '@logtape/logtape'
 import { fromFileUrl } from '@std/path'
 import { DateTime } from 'luxon'
-import type { LogFormat, LogLevel } from '../config/types.ts'
+import type { LogLevel } from '../config/types.ts'
 
 export type LogFields = Record<string, unknown>
 
@@ -46,7 +45,7 @@ export interface Logger {
 export interface CreateLoggerOptions {
   enabled: boolean
   level: LogLevel
-  format?: LogFormat
+  format?: 'json' | 'pretty'
   module: string
   component?: string
   service?: string
@@ -60,7 +59,7 @@ export interface CreateLoggerOptions {
   baseFields?: LogFields
 }
 
-interface OTelLogRecord {
+export interface OTelLogRecord {
   timeUnixNano: string
   observedTimeUnixNano: string
   severityText: string
@@ -99,6 +98,74 @@ const SEVERITY_NUMBER: Record<LogLevel, number> = {
 const LOGGER_FILE_MARKER = '/src/core/logger.ts'
 const DEFAULT_CODE_ATTRIBUTES_CACHE_LIMIT = 1024
 const codeAttributesCache = new Map<string, Record<string, unknown> | null>()
+let logTapeRuntimeActive = false
+
+export const SENSITIVE_FIELD_NAMES = [
+  /token/i,
+  /secret/i,
+  /password/i,
+  /authorization/i,
+  /api_key/i,
+  /apikey/i,
+  /auth/i,
+  /sig/i,
+  /signature/i,
+  /access_token/i,
+  /chat_id/i,
+  /chatid/i,
+  /content/i,
+  /text/i,
+  /body/i,
+]
+
+export const SENSITIVE_PATTERNS = [
+  {
+    pattern: /(https:\/\/api\.telegram\.org\/bot)([^\/\s]+)(\/)/gi,
+    replacement: '$1****$3',
+  },
+  {
+    pattern: /(https?:\/\/)(?:[^\/@\s:]+(?::[^\/@\s]*)?@)/gi,
+    replacement: '$1',
+  },
+  {
+    pattern:
+      /([?&](?:token|secret|password|authorization|api_key|apikey|auth|sig|signature|access_token)=)([^&\s"]+)/gi,
+    replacement: '$1****',
+  },
+  {
+    pattern:
+      /\b(token|secret|password|authorization|api_key|apikey|auth|sig|signature|access_token)=([^\s"]+)/gi,
+    replacement: '$1=****',
+  },
+  {
+    pattern: /\b(chat_id|chatid)=([^\s"]+)/gi,
+    replacement: '$1=****',
+  },
+  {
+    pattern: /(\bbody=)(\{[^}]*\}|[^\s"]+)/gi,
+    replacement: '$1****',
+  },
+] as const
+
+const SENSITIVE_FIELD_KEYS = new Set([
+  'token',
+  'secret',
+  'password',
+  'authorization',
+  'api_key',
+  'apikey',
+  'auth',
+  'sig',
+  'signature',
+  'access_token',
+  'chat_id',
+  'chatid',
+  'content',
+  'text',
+  'body',
+])
+
+const URL_FIELD_KEYS = new Set(['url', 'source_url'])
 
 function formatTime(input: Date, timezone: string, timestampFormat: string): string {
   return DateTime.fromJSDate(input, { zone: timezone }).toFormat(timestampFormat)
@@ -128,68 +195,12 @@ function normalizeValue(value: unknown): unknown {
   return value
 }
 
-const SENSITIVE_FIELD_KEYS = new Set([
-  'token',
-  'secret',
-  'password',
-  'authorization',
-  'api_key',
-  'apikey',
-  'auth',
-  'sig',
-  'signature',
-  'access_token',
-  'chat_id',
-  'chatid',
-  'content',
-  'text',
-  'body',
-])
-
-const URL_FIELD_KEYS = new Set(['url', 'source_url'])
-
-const redactTextLine = redactByPattern(
-  (record: LogRecord) => String(record.properties.line ?? ''),
-  [
-    {
-      pattern: /(https:\/\/api\.telegram\.org\/bot)([^\/\s]+)(\/)/gi,
-      replacement: '$1****$3',
-    },
-    {
-      pattern: /(https?:\/\/)(?:[^\/@\s:]+(?::[^\/@\s]*)?@)/gi,
-      replacement: '$1',
-    },
-    {
-      pattern:
-        /([?&](?:token|secret|password|authorization|api_key|apikey|auth|sig|signature|access_token)=)([^&\s"]+)/gi,
-      replacement: '$1****',
-    },
-    {
-      pattern:
-        /\b(token|secret|password|authorization|api_key|apikey|auth|sig|signature|access_token)=([^\s"]+)/gi,
-      replacement: '$1=****',
-    },
-    {
-      pattern: /\b(chat_id|chatid)=([^\s"]+)/gi,
-      replacement: '$1=****',
-    },
-    {
-      pattern: /(\bbody=)(\{[^}]*\}|[^\s"]+)/gi,
-      replacement: '$1****',
-    },
-  ],
-)
-
 function redactText(text: string): string {
-  const record: LogRecord = {
-    category: ['knock', 'structured'],
-    level: 'info',
-    message: [text],
-    rawMessage: text,
-    properties: { line: text },
-    timestamp: Date.now(),
+  let redacted = text
+  for (const { pattern, replacement } of SENSITIVE_PATTERNS) {
+    redacted = redacted.replaceAll(pattern, replacement)
   }
-  return String(redactTextLine(record)).replace(/\s+/g, ' ').trim()
+  return redacted.replace(/\s+/g, ' ').trim()
 }
 
 function sanitizeUrl(value: string): string {
@@ -357,6 +368,7 @@ const PRETTY_INFO_ATTRIBUTE_KEYS = new Set([
   'http.request.method',
   'http.route',
   'http.response.status_code',
+  'web.duration_ms',
 ])
 
 function selectPrettyAttributes(record: OTelLogRecord): Record<string, unknown> {
@@ -367,35 +379,6 @@ function selectPrettyAttributes(record: OTelLogRecord): Record<string, unknown> 
   return Object.fromEntries(
     Object.entries(record.attributes).filter(([key]) => PRETTY_INFO_ATTRIBUTE_KEYS.has(key)),
   )
-}
-
-function formatPretty(
-  record: OTelLogRecord,
-  options: {
-    timestamp: Date
-    timezone: string
-    timestampFormat: string
-    prettyFormatter: ReturnType<typeof getPrettyFormatter>
-  },
-): string {
-  const level = record.severityText.toLowerCase()
-  const prettyLevel = level === 'warn' ? 'warning' : level
-  const line = options.prettyFormatter({
-    category: ['knock', record.scope.name],
-    level: prettyLevel as LogRecord['level'],
-    message: [record.body],
-    rawMessage: record.body,
-    properties: {
-      ...(record.trace_id ? { trace_id: record.trace_id } : {}),
-      ...(record.span_id ? { span_id: record.span_id } : {}),
-      ...(record.trace_flags ? { trace_flags: record.trace_flags } : {}),
-      resource: record.resource.attributes,
-      attributes: selectPrettyAttributes(record),
-    },
-    timestamp: options.timestamp.getTime(),
-  } as LogRecord)
-
-  return `${formatTime(options.timestamp, options.timezone, options.timestampFormat)} ${line}`.trimEnd()
 }
 
 function toPathname(location: string): string {
@@ -500,7 +483,40 @@ function getCodeAttributes(): Record<string, unknown> {
   return {}
 }
 
-function buildLogRecord(input: {
+export function toOtelLogRecord(record: LogRecord): OTelLogRecord {
+  const properties = record.properties as Record<string, unknown>
+  const message =
+    typeof record.rawMessage === 'string' ? record.rawMessage : String(record.message[0] ?? '')
+  const resourceAttributes =
+    properties.resource && typeof properties.resource === 'object'
+      ? (properties.resource as Record<string, unknown>)
+      : {}
+  const eventAttributes =
+    properties.attributes && typeof properties.attributes === 'object'
+      ? (properties.attributes as Record<string, unknown>)
+      : {}
+  const repositoryLevel = record.level === 'warning' ? 'warn' : (record.level as LogLevel)
+
+  return {
+    timeUnixNano: toUnixNano(new Date(record.timestamp)),
+    observedTimeUnixNano: toUnixNano(new Date(record.timestamp)),
+    severityText: repositoryLevel.toUpperCase(),
+    severityNumber: SEVERITY_NUMBER[repositoryLevel],
+    body: redactText(message),
+    ...(typeof properties.trace_id === 'string' ? { trace_id: properties.trace_id } : {}),
+    ...(typeof properties.span_id === 'string' ? { span_id: properties.span_id } : {}),
+    ...(typeof properties.trace_flags === 'string' ? { trace_flags: properties.trace_flags } : {}),
+    resource: {
+      attributes: sanitizeFields(resourceAttributes),
+    },
+    scope: {
+      name: record.category.slice(1).join('.') || record.category.join('.'),
+    },
+    attributes: sanitizeFields(eventAttributes),
+  }
+}
+
+function buildLogTapeRecord(input: {
   level: LogLevel
   message: string
   module: string
@@ -512,22 +528,46 @@ function buildLogRecord(input: {
     span_id?: string
     trace_flags?: string
   }
-}): OTelLogRecord {
+}): Omit<LogRecord, 'category'> {
   return {
-    timeUnixNano: toUnixNano(input.timestamp),
-    observedTimeUnixNano: toUnixNano(input.timestamp),
-    severityText: input.level.toUpperCase(),
-    severityNumber: SEVERITY_NUMBER[input.level],
-    body: redactText(input.message),
-    ...input.traceContext,
-    resource: {
-      attributes: sanitizeFields(input.resourceAttributes),
+    level: input.level === 'warn' ? 'warning' : input.level,
+    message: [input.message],
+    rawMessage: input.message,
+    timestamp: input.timestamp.getTime(),
+    properties: {
+      resource: input.resourceAttributes,
+      attributes: input.attributes,
+      ...input.traceContext,
     },
-    scope: {
-      name: input.module,
-    },
-    attributes: input.attributes,
   }
+}
+
+export function createRepositoryJsonlFormatter(): TextFormatter {
+  return (record: LogRecord): string => `${JSON.stringify(toOtelLogRecord(record))}\n`
+}
+
+export function createPrettyFormatter(options: {
+  timezone: string
+  timestampFormat: string
+}): TextFormatter {
+  return (record: LogRecord): string => {
+    const otelRecord = toOtelLogRecord(record)
+    const scope = otelRecord.scope.name.split('.').at(-1) ?? otelRecord.scope.name
+    const component = otelRecord.resource.attributes['knock.component']
+    const attributes = selectPrettyAttributes(otelRecord)
+    const inline = Object.entries(attributes)
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(' ')
+    return `${formatTime(new Date(Number(otelRecord.timeUnixNano) / 1_000_000), options.timezone, options.timestampFormat)} ${otelRecord.severityText.toLowerCase()} ${scope} ${otelRecord.body}${component ? ` component=${component}` : ''}${inline ? ` ${inline}` : ''}`
+  }
+}
+
+export function getKnockLogTapeLogger(category: string[]): LogTapeLogger {
+  return getLogTapeLogger(['knock', ...category])
+}
+
+export function setLogTapeRuntimeActive(active: boolean): void {
+  logTapeRuntimeActive = active
 }
 
 /**
@@ -539,11 +579,6 @@ export function createRunId(sourceId: string, now: Date = new Date()): string {
 
 /**
  * 创建结构化 logger。
- *
- * 契约：
- * - 默认 JSON 输出遵循 OTel/OTLP 风格字段
- * - pretty 与 json 共用同一份脱敏后的记录数据源
- * - child logger 只叠加上下文字段，不改变 level 与 enabled 行为
  */
 export function createLogger(options: CreateLoggerOptions): Logger {
   const now = options.now ?? (() => new Date())
@@ -559,20 +594,51 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     'deployment.environment.name': options.env ?? 'dev',
     ...(options.component ? { 'knock.component': options.component } : {}),
   }
-  const prettyFormatter =
-    format === 'pretty'
-      ? getPrettyFormatter({
-          colors: true,
-          timestamp: 'none',
-          properties: true,
-          categorySeparator: '·',
-          categoryTruncate: false,
-          categoryWidth: 0,
-          icons: true,
-          align: true,
-          wordWrap: false,
-        })
-      : undefined
+  const category = options.module.split('.')
+  const logTapeLogger = getKnockLogTapeLogger(category)
+
+  const emitFallback = (level: LogLevel, message: string, fields: LogFields = {}) => {
+    if (!options.enabled) return
+    if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[options.level]) return
+
+    const timestamp = now()
+    const mergedFields = { ...baseFields, ...fields }
+    const module = typeof mergedFields.module === 'string' ? mergedFields.module : options.module
+    const traceContext = normalizeTraceContext(mergedFields)
+    const attributes = {
+      ...getCodeAttributes(),
+      ...normalizeAttributeFields(mergedFields),
+    }
+
+    const record = {
+      category: ['knock', ...module.split('.')],
+      ...buildLogTapeRecord({
+        level,
+        message,
+        module,
+        timestamp,
+        resourceAttributes,
+        attributes,
+        traceContext,
+      }),
+    } satisfies LogRecord
+
+    const formatter =
+      format === 'pretty'
+        ? createPrettyFormatter({ timezone, timestampFormat })
+        : createRepositoryJsonlFormatter()
+    const line = formatter(record).trimEnd()
+
+    if (level === 'fatal' || level === 'error') {
+      writeStderr(line)
+      return
+    }
+    if (level === 'warn') {
+      writeWarn(line)
+      return
+    }
+    writeStdout(line)
+  }
 
   const emitLog = (level: LogLevel, message: string, fields: LogFields = {}) => {
     if (!options.enabled) return
@@ -582,13 +648,12 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     const mergedFields = { ...baseFields, ...fields }
     const module = typeof mergedFields.module === 'string' ? mergedFields.module : options.module
     const traceContext = normalizeTraceContext(mergedFields)
-
     const attributes = {
       ...getCodeAttributes(),
       ...normalizeAttributeFields(mergedFields),
     }
 
-    const record = buildLogRecord({
+    const record = buildLogTapeRecord({
       level,
       message,
       module,
@@ -598,22 +663,16 @@ export function createLogger(options: CreateLoggerOptions): Logger {
       traceContext,
     })
 
-    const line =
-      format === 'pretty' && prettyFormatter
-        ? formatPretty(record, { timestamp, timezone, timestampFormat, prettyFormatter })
-        : JSON.stringify(record)
-
-    if (level === 'fatal' || level === 'error') {
-      writeStderr(line)
+    if (!logTapeRuntimeActive) {
+      emitFallback(level, message, fields)
       return
     }
 
-    if (level === 'warn') {
-      writeWarn(line)
-      return
+    try {
+      logTapeLogger.emit(record)
+    } catch {
+      emitFallback(level, message, fields)
     }
-
-    writeStdout(line)
   }
 
   return {

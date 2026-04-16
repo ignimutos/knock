@@ -338,20 +338,51 @@ export const languageSchema = requiredString()
   })
   .transform((value) => Intl.getCanonicalLocales(value)[0] ?? value)
 
+const logConsoleFormatSchema = createEnumSchema(['pretty', 'jsonl']).default('pretty')
+const logFileFormatSchema = createLiteralSchema('jsonl').default('jsonl')
+const logTimeRotationIntervalSchema = createEnumSchema(['hourly', 'daily', 'weekly'])
+
 export const loggingConsoleSchema = z
   .object({
     type: createLiteralSchema('console').default('console'),
+    format: logConsoleFormatSchema,
   })
   .strict()
-  .prefault({})
+
+const loggingFileRotationSizeSchema = z
+  .object({
+    type: createLiteralSchema('size'),
+    maxSize: requiredString(),
+    maxFiles: z.number().int().min(1),
+  })
+  .strict()
+
+const loggingFileRotationTimeSchema = z
+  .object({
+    type: createLiteralSchema('time'),
+    interval: logTimeRotationIntervalSchema,
+    maxAge: createDurationSchema('logging.sinks.file.rotation.maxAge', {
+      allowDays: true,
+    }),
+  })
+  .strict()
+
+export const loggingFileSchema = z
+  .object({
+    type: createLiteralSchema('file').default('file'),
+    format: logFileFormatSchema,
+    path: requiredString(),
+    rotation: z.union([loggingFileRotationSizeSchema, loggingFileRotationTimeSchema]).optional(),
+  })
+  .strict()
 
 export const loggingSchema = z
   .object({
     level: createEnumSchema(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-    format: createEnumSchema(['json', 'pretty']).default('json'),
     sinks: z
       .object({
-        console: loggingConsoleSchema,
+        console: loggingConsoleSchema.optional(),
+        file: loggingFileSchema.optional(),
       })
       .strict()
       .prefault({}),
@@ -1582,9 +1613,14 @@ export const phase1ConfigSchema = z.record(z.string(), z.unknown()).superRefine(
 })
 
 export type LogLevel = NonNullable<z.output<typeof loggingSchema>['level']>
-export type LogFormat = NonNullable<z.output<typeof loggingSchema>['format']>
-export type LogSinkType = z.output<typeof loggingConsoleSchema>['type']
+export type LogConsoleFormat = NonNullable<z.output<typeof loggingConsoleSchema>['format']>
+export type LogFileFormat = NonNullable<z.output<typeof loggingFileSchema>['format']>
+export type LogSinkType =
+  | z.output<typeof loggingConsoleSchema>['type']
+  | z.output<typeof loggingFileSchema>['type']
 export type LogConsoleSinkConfig = z.output<typeof loggingConsoleSchema>
+export type LogFileSinkConfig = z.output<typeof loggingFileSchema>
+export type LogFileRotationConfig = NonNullable<z.output<typeof loggingFileSchema>['rotation']>
 export type LoggingConfigInput = z.output<typeof loggingSchema>
 
 export type SqliteJournalMode = NonNullable<z.output<typeof sqliteSchema>['journalMode']>

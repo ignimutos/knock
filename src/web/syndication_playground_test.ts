@@ -73,15 +73,24 @@ Deno.test(
       previewExecutor: ((input: unknown) => {
         const { config, source } = input as {
           config?: {
-            logging: { level: string; format: string; sinks: { console?: { type: string } } }
+            logging: {
+              level: string
+              sinks: { console?: { type: string; format: string } }
+            }
           }
           source: { http?: { url?: string } }
         }
 
         assertEquals(source.http?.url, 'https://example.com/feed.xml')
-        assertEquals(config?.logging.level, 'info')
-        assertEquals(config?.logging.format, 'json')
-        assertEquals(config?.logging.sinks.console?.type, 'console')
+        assertEquals(config?.logging, {
+          level: 'info',
+          sinks: {
+            console: {
+              type: 'console',
+              format: 'jsonl',
+            },
+          },
+        })
         return Promise.resolve({
           warnings: [],
           fetchMeta: { ok: true },

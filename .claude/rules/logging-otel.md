@@ -36,6 +36,8 @@ paths:
 - trace 字段只表示这条日志与当前 trace/span 的真实因果关联；没有真实关联时 MUST NOT 伪造、缓存复用或写入占位值。
 - 当前仓库非 OTLP JSON 输出在顶层 trace 字段命名上 MUST 使用 `trace_id` / `span_id` / `trace_flags`；MUST NOT 混用 `traceId` / `spanId` / `traceFlags` 作为并行 shape。
 - `scope` 只表示产生日志的 instrumentation scope；`scope.name` MUST 表示日志生产者身份，而不是业务实例、请求实例、运行结果或自由文本。
+- LogTape 负责 sink / dispatch / rotation / redaction 主机制；仓库 formatter 继续负责最终 OTel 风格 JSON 输出契约。
+- MUST NOT 直接把 LogTape 原始 `LogRecord` 当作仓库对外 JSON 契约。
 
 ## 严重级别模型
 
