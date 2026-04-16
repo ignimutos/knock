@@ -19,6 +19,12 @@ paths:
 
 这些规则只覆盖高确定性、长期有效的 OTel 结构化日志约束。
 
+## 当前 v2 执行落点（用于判定 owner）
+
+- source fetch/parse 可观测性当前位于 `src/infrastructure/sources/http_source_input_gateway.ts`、`src/infrastructure/sources/byparr_source_input_gateway.ts`、`src/infrastructure/sources/source_parser_gateway.ts`。
+- pipeline filter/dedupe/delivery/finalize 可观测性当前位于 `src/application/run_source_use_case.ts` 与 `src/application/stages/delivery_stage.ts`（及相关 stage 流程）。
+- 这些事件 SHOULD 在对应 owner 域下记录（`source.*` / `pipeline.*` / `delivery.*` / `scheduler.*`）；MUST NOT 再以已删除的 `source_runtime` / `delivery_runtime` helper 作为设计目标。
+
 ## 严格 OTel JSON 模型
 
 - 单条日志记录 MUST 保持 OTel Log Record 语义对应的 JSON 结构。

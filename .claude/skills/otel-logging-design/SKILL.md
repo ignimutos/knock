@@ -10,6 +10,8 @@ description: Use when structured logging design still needs judgment after readi
 当现有 rules 已经能直接回答时，直接按 rules 落地，不要为了走流程再套这个 skill。
 这个 skill 只处理“仍需要判断”的部分：字段归属、严重级别、是否需要事件名、`scope.name` 稳定性、业务 namespace，以及展示层最小/扩展字段的取舍。
 
+当前仓库的真实执行点：source fetch/parse 在 infrastructure adapters（`http_source_input_gateway.ts`、`byparr_source_input_gateway.ts`、`source_parser_gateway.ts`）；pipeline filter/dedupe/delivery/finalize 在 `RunSourceUseCase` 与 `DeliveryStage` / 相关 stages。判断 owner 时以这些执行点为准，不按已删除的 runtime helpers 建模。
+
 ## 先看现有规则
 
 - 先读 `.claude/rules/logging-otel.md` 与 `.claude/rules/logging-console.md`。

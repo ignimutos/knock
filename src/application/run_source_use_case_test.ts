@@ -1,4 +1,5 @@
 import { assertEquals, assertRejects } from '@std/assert'
+import { createLogger } from '../core/logger.ts'
 import type { DeliveryBinding } from '../domain/run_plan.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
 import type { DeliveryAttempt, RenderedSnapshot } from '../domain/delivery_attempt.ts'
@@ -541,85 +542,428 @@ Deno.test('[contract] runSourceUseCase: summary source 也应接入 filter 主�
   ])
 })
 
-Deno.test('[contract] runSourceUseCase: run insert 后主链抛错时应收口 failed 终态', async () => {
-  const runStatuses: string[] = []
+Deno.test(
+  '[contract] runSourceUseCase: owner-scoped lifecycle logs 应覆盖 start/filter/dedupe/finalize(success)',
+  async () => {
+    const logs: string[] = []
 
-  const useCase = new RunSourceUseCase({
-    now: () => '2026-04-13T11:50:00.000Z',
-    createRunId: () => 'run-failed-finalize',
-    sourceInputGateway: {
-      fetch: (plan) =>
-        Promise.resolve({
-          kind: plan.source.kind,
-          collectedAt: '2026-04-13T11:50:00.000Z',
-          payloadSummary: { hash: 'hash-run-failed', bytes: 10 },
-        }),
-    },
-    sourceParser: {
-      parse: () =>
-        Promise.resolve({
-          sourceKind: 'fetch',
-          parser: 'rss',
-          diagnostics: [],
-          feed: {
-            title: 'Feed',
-            link: '',
-            description: '',
-            generator: '',
-            language: '',
-            published: '',
-          },
-          items: [],
-        }),
-    },
-    runRepository: {
-      insert: () => Promise.resolve(),
-      update: (run) => {
-        runStatuses.push(run.status)
-        return Promise.resolve()
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T11:50:00.000Z',
+      createRunId: () => 'run-owner-logs',
+      createItemId: (entry) => `item:${entry.id}`,
+      sourceInputGateway: {
+        fetch: (plan) =>
+          Promise.resolve({
+            kind: plan.source.kind,
+            collectedAt: '2026-04-13T11:50:00.000Z',
+            payloadSummary: { hash: 'hash-owner-logs', bytes: 10 },
+          }),
       },
-    },
-    itemRepository: {
-      insertMany: () => Promise.reject(new Error('persist boom')),
-      updateStatus: () => Promise.resolve(),
-    },
-    deliveryAttemptRepository: {
-      insertPlanned: () => Promise.resolve(),
-      finish: () => Promise.resolve(),
-    },
-    deduplicationRepository: {
-      isItemDuplicate: () => Promise.resolve(false),
-      registerItemFingerprint: () => Promise.resolve(),
-      isDeliveryDuplicate: () => Promise.resolve(false),
-      registerDeliveryFingerprint: () => Promise.resolve(),
-    },
-    deliveryExecutors: {
-      push: { execute: () => Promise.resolve() },
-      file: { execute: () => Promise.resolve() },
-      email: { execute: () => Promise.resolve() },
-    },
-  })
-
-  await assertRejects(
-    () =>
-      useCase.execute({
-        source: {
-          kind: 'fetch',
-          sourceId: 'rust',
-          fetcher: 'http',
-          parser: 'syndication',
-        },
-        profile: 'production',
-        effectDomain: 'production',
-        trigger: 'scheduled',
-        bindings: [],
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
+              link: '',
+              description: '',
+              generator: '',
+              language: '',
+              published: '',
+            },
+            items: [
+              {
+                id: 'entry-filtered',
+                title: 'Filtered',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+              {
+                id: 'entry-deduped',
+                title: 'Deduped',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+              {
+                id: 'entry-delivered',
+                title: 'Delivered',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+            ],
+          }),
+      },
+      runRepository: {
+        insert: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+      },
+      itemRepository: {
+        insertMany: () => Promise.resolve(),
+        updateStatus: () => Promise.resolve(),
+      },
+      deliveryAttemptRepository: {
+        insertPlanned: () => Promise.resolve(),
+        finish: () => Promise.resolve(),
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => Promise.resolve(false),
+        registerItemFingerprint: () => Promise.resolve(),
+        isDeliveryDuplicate: ({ fingerprint }) => Promise.resolve(fingerprint === 'entry-deduped'),
+        registerDeliveryFingerprint: () => Promise.resolve(),
+      },
+      deliveryExecutors: {
+        file: { execute: () => Promise.resolve() },
+      },
+      shouldPassFilter: ({ item }) => Promise.resolve(item.id !== 'entry-filtered'),
+      logger: createLogger({
+        enabled: true,
+        level: 'info',
+        module: 'scheduler.source',
+        now: () => new Date('2026-04-13T11:50:00.000Z'),
+        writeStdout: (line: string) => logs.push(line),
+        writeWarn: (line: string) => logs.push(line),
+        writeStderr: (line: string) => logs.push(line),
       }),
-    Error,
-    'persist boom',
-  )
+    })
 
-  assertEquals(runStatuses, ['failed'])
-})
+    await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+        filter: '{{ true }}',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'scheduled',
+      bindings: [
+        {
+          sourceId: 'rust',
+          deliveryId: 'archive',
+          definition: {
+            kind: 'file',
+            deliveryId: 'archive',
+            path: '/tmp/archive.txt',
+            contentTemplate: '{{ entry.title }}',
+          },
+        },
+      ],
+    })
+
+    const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+    const startLog = records.find((record) => {
+      const scope = (record.scope ?? {}) as Record<string, unknown>
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'scheduler.source' &&
+        attributes['scheduler.operation'] === 'run_source' &&
+        attributes['scheduler.outcome'] === 'start'
+      )
+    })
+    const filterLog = records.find((record) => {
+      const scope = (record.scope ?? {}) as Record<string, unknown>
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'pipeline.filter' &&
+        attributes['pipeline.operation'] === 'filter' &&
+        attributes['pipeline.outcome'] === 'filtered'
+      )
+    })
+    const dedupeLog = records.find((record) => {
+      const scope = (record.scope ?? {}) as Record<string, unknown>
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'delivery.store' &&
+        attributes['delivery.operation'] === 'is_delivered' &&
+        attributes['delivery.outcome'] === 'deduped'
+      )
+    })
+    const finalizeLog = records.find((record) => {
+      const scope = (record.scope ?? {}) as Record<string, unknown>
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'scheduler.source' &&
+        attributes['scheduler.operation'] === 'run_source' &&
+        attributes['scheduler.outcome'] === 'success'
+      )
+    })
+
+    assertEquals(Boolean(startLog), true)
+    assertEquals(Boolean(filterLog), true)
+    assertEquals(Boolean(dedupeLog), true)
+    assertEquals(Boolean(finalizeLog), true)
+
+    const startAttributes = (startLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(startAttributes['source.id'], 'rust')
+    assertEquals(startAttributes['source.run_id'], 'run-owner-logs')
+    assertEquals(startAttributes['scheduler.trigger'], 'scheduled')
+
+    const filterAttributes = (filterLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(filterAttributes['source.id'], 'rust')
+    assertEquals(filterAttributes['source.run_id'], 'run-owner-logs')
+    assertEquals(filterAttributes['pipeline.item_id'], 'item:entry-filtered')
+
+    const dedupeAttributes = (dedupeLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(dedupeAttributes['source.id'], 'rust')
+    assertEquals(dedupeAttributes['source.run_id'], 'run-owner-logs')
+    assertEquals(dedupeAttributes['pipeline.item_id'], 'item:entry-deduped')
+    assertEquals(dedupeAttributes['delivery.id'], 'archive')
+
+    const finalizeAttributes = (finalizeLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(finalizeAttributes['source.id'], 'rust')
+    assertEquals(finalizeAttributes['source.run_id'], 'run-owner-logs')
+    assertEquals(finalizeAttributes['source.item_count'], 3)
+    assertEquals(finalizeAttributes['pipeline.filtered_count'], 1)
+    assertEquals(finalizeAttributes['delivery.deduped_count'], 1)
+    assertEquals(finalizeAttributes['delivery.pushed_count'], 1)
+    assertEquals(finalizeAttributes['delivery.failed_count'], 0)
+  },
+)
+
+Deno.test(
+  '[contract] runSourceUseCase: delivery dispatch 成功应使用 delivery.runtime.dispatch scope',
+  async () => {
+    const logs: string[] = []
+
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T11:55:00.000Z',
+      createRunId: () => 'run-dispatch-logs',
+      createItemId: (entry) => `item:${entry.id}`,
+      sourceInputGateway: {
+        fetch: (plan) =>
+          Promise.resolve({
+            kind: plan.source.kind,
+            collectedAt: '2026-04-13T11:55:00.000Z',
+            payloadSummary: { hash: 'hash-dispatch-logs', bytes: 10 },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
+              link: '',
+              description: '',
+              generator: '',
+              language: '',
+              published: '',
+            },
+            items: [
+              {
+                id: 'entry-1',
+                title: 'Hello',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+            ],
+          }),
+      },
+      runRepository: {
+        insert: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+      },
+      itemRepository: {
+        insertMany: () => Promise.resolve(),
+        updateStatus: () => Promise.resolve(),
+      },
+      deliveryAttemptRepository: {
+        insertPlanned: () => Promise.resolve(),
+        finish: () => Promise.resolve(),
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => Promise.resolve(false),
+        registerItemFingerprint: () => Promise.resolve(),
+        isDeliveryDuplicate: () => Promise.resolve(false),
+        registerDeliveryFingerprint: () => Promise.resolve(),
+      },
+      deliveryExecutors: {
+        file: { execute: () => Promise.resolve() },
+      },
+      logger: createLogger({
+        enabled: true,
+        level: 'info',
+        module: 'scheduler.source',
+        now: () => new Date('2026-04-13T11:55:00.000Z'),
+        writeStdout: (line: string) => logs.push(line),
+        writeWarn: (line: string) => logs.push(line),
+        writeStderr: (line: string) => logs.push(line),
+      }),
+    })
+
+    await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'scheduled',
+      bindings: [
+        {
+          sourceId: 'rust',
+          deliveryId: 'archive',
+          definition: {
+            kind: 'file',
+            deliveryId: 'archive',
+            path: '/tmp/archive.txt',
+            contentTemplate: '{{ entry.title }}',
+          },
+        },
+      ],
+    })
+
+    const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+    const dispatchSuccessLog = records.find((record) => {
+      const scope = (record.scope ?? {}) as Record<string, unknown>
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'delivery.runtime.dispatch' &&
+        attributes['delivery.operation'] === 'dispatch' &&
+        attributes['delivery.outcome'] === 'success'
+      )
+    })
+
+    assertEquals(Boolean(dispatchSuccessLog), true)
+    const attributes = (dispatchSuccessLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(attributes['delivery.id'], 'archive')
+    assertEquals(attributes['pipeline.item_id'], 'item:entry-1')
+  },
+)
+
+Deno.test(
+  '[contract] runSourceUseCase: run insert 后主链抛错时应收口 failed 终态并记录 finalize(failure)',
+  async () => {
+    const runStatuses: string[] = []
+    const logs: string[] = []
+
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T11:50:00.000Z',
+      createRunId: () => 'run-failed-finalize',
+      sourceInputGateway: {
+        fetch: (plan) =>
+          Promise.resolve({
+            kind: plan.source.kind,
+            collectedAt: '2026-04-13T11:50:00.000Z',
+            payloadSummary: { hash: 'hash-run-failed', bytes: 10 },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
+              link: '',
+              description: '',
+              generator: '',
+              language: '',
+              published: '',
+            },
+            items: [],
+          }),
+      },
+      runRepository: {
+        insert: () => Promise.resolve(),
+        update: (run) => {
+          runStatuses.push(run.status)
+          return Promise.resolve()
+        },
+      },
+      itemRepository: {
+        insertMany: () => Promise.reject(new Error('persist boom')),
+        updateStatus: () => Promise.resolve(),
+      },
+      deliveryAttemptRepository: {
+        insertPlanned: () => Promise.resolve(),
+        finish: () => Promise.resolve(),
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => Promise.resolve(false),
+        registerItemFingerprint: () => Promise.resolve(),
+        isDeliveryDuplicate: () => Promise.resolve(false),
+        registerDeliveryFingerprint: () => Promise.resolve(),
+      },
+      deliveryExecutors: {
+        push: { execute: () => Promise.resolve() },
+        file: { execute: () => Promise.resolve() },
+        email: { execute: () => Promise.resolve() },
+      },
+      logger: createLogger({
+        enabled: true,
+        level: 'info',
+        module: 'scheduler.source',
+        now: () => new Date('2026-04-13T11:50:00.000Z'),
+        writeStdout: (line: string) => logs.push(line),
+        writeWarn: (line: string) => logs.push(line),
+        writeStderr: (line: string) => logs.push(line),
+      }),
+    })
+
+    await assertRejects(
+      () =>
+        useCase.execute({
+          source: {
+            kind: 'fetch',
+            sourceId: 'rust',
+            fetcher: 'http',
+            parser: 'syndication',
+          },
+          profile: 'production',
+          effectDomain: 'production',
+          trigger: 'scheduled',
+          bindings: [],
+        }),
+      Error,
+      'persist boom',
+    )
+
+    assertEquals(runStatuses, ['failed'])
+    const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+    const failureFinalizeLog = records.find((record) => {
+      const scope = (record.scope ?? {}) as Record<string, unknown>
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'scheduler.source' &&
+        attributes['scheduler.operation'] === 'run_source' &&
+        attributes['scheduler.outcome'] === 'failure'
+      )
+    })
+
+    assertEquals(Boolean(failureFinalizeLog), true)
+    assertEquals(failureFinalizeLog?.severityText, 'ERROR')
+    assertEquals(failureFinalizeLog?.severityNumber, 17)
+    const failureAttributes = (failureFinalizeLog?.attributes ?? {}) as Record<string, unknown>
+    assertEquals(failureAttributes['source.id'], 'rust')
+    assertEquals(failureAttributes['source.run_id'], 'run-failed-finalize')
+    assertEquals(failureAttributes['source.item_count'], 0)
+    assertEquals(failureAttributes['pipeline.filtered_count'], 0)
+    assertEquals(failureAttributes['delivery.deduped_count'], 0)
+    assertEquals(failureAttributes['delivery.pushed_count'], 0)
+    assertEquals(failureAttributes['delivery.failed_count'], 0)
+  },
+)
 
 Deno.test(
   '[contract] runSourceUseCase: item 为 new 但全部 delivery duplicate 时应保持 item-level 语义分离',

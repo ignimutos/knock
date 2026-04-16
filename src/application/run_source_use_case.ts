@@ -1,4 +1,5 @@
 import type { UnifiedEntryFields } from '../config/types.ts'
+import type { Logger } from '../core/logger.ts'
 import { createDeliveryAttempt } from '../domain/delivery_attempt.ts'
 import { createPipelineItem } from '../domain/pipeline_item.ts'
 import { createRunPlan, type DeliveryBinding, type RunPlan } from '../domain/run_plan.ts'
@@ -51,6 +52,7 @@ export interface RunSourceUseCaseDeps {
     source: { id: string; title: string; runtime?: { window?: { scheduledAt: string } } }
     filterTemplate: string
   }) => Promise<boolean>
+  logger?: Logger
 }
 
 export class RunSourceUseCase {
@@ -73,13 +75,24 @@ export class RunSourceUseCase {
   async execute(input: RunSourceRequest): Promise<RunSourceResult> {
     const plan = await this.plan(input)
     let run: ReturnType<typeof createSourceRun> | undefined
+    const lifecycleCounts = {
+      sourceItemCount: 0,
+      filteredCount: 0,
+      dedupedCount: 0,
+      pushedCount: 0,
+      failedCount: 0,
+    }
+
+    this.logRunStart(plan)
 
     try {
       const fetchedInput = await this.deps.sourceInputGateway.fetch(plan)
       const parsed = await this.deps.sourceParser.parse(plan, fetchedInput)
+      lifecycleCounts.sourceItemCount = parsed.items.length
 
       const taskFiveDeps = this.getTaskFiveDeps()
       if (!taskFiveDeps) {
+        this.logRunFinalize(plan, 'success', lifecycleCounts)
         return {
           plan,
           fetchedInput,
@@ -162,6 +175,9 @@ export class RunSourceUseCase {
           this.deps.renderPayload?.(payload, context) ??
           Promise.resolve(renderPayloadTemplate(payload, context)),
       })
+      const deliveryDispatchLogger = this.deps.logger?.child({
+        module: 'delivery.runtime.dispatch',
+      })
 
       for (const item of items) {
         const filterResult = await filterStage.run({
@@ -170,6 +186,8 @@ export class RunSourceUseCase {
         })
         if (filterResult.status === 'filtered') {
           counts.filteredCount += 1
+          lifecycleCounts.filteredCount += 1
+          this.logFilteredItem(plan, item.itemId)
           await taskFiveDeps.itemRepository.updateStatus(item.itemId, 'filtered', undefined)
           continue
         }
@@ -194,6 +212,8 @@ export class RunSourceUseCase {
         for (const binding of bindings) {
           if (dedupeResult.deliveryStatuses[binding.deliveryId] === 'duplicate') {
             duplicateDeliveries += 1
+            lifecycleCounts.dedupedCount += 1
+            this.logDedupedDelivery(plan, item.itemId, binding.deliveryId)
             continue
           }
 
@@ -222,6 +242,7 @@ export class RunSourceUseCase {
           const attemptResult = await new DeliveryStage({
             now: this.deps.now,
             executor,
+            logger: deliveryDispatchLogger,
           }).run(attemptPlan)
           await taskFiveDeps.deliveryAttemptRepository.finish(attempt.attemptId, attemptResult)
 
@@ -235,9 +256,11 @@ export class RunSourceUseCase {
             })
             delivered += 1
             counts.deliveredCount += 1
+            lifecycleCounts.pushedCount += 1
           } else {
             failed += 1
             counts.failedAttemptCount += 1
+            lifecycleCounts.failedCount += 1
           }
         }
 
@@ -276,6 +299,7 @@ export class RunSourceUseCase {
           finishedAt: this.deps.now(),
         }),
       )
+      this.logRunFinalize(plan, 'success', lifecycleCounts)
 
       return {
         plan,
@@ -290,6 +314,7 @@ export class RunSourceUseCase {
           finishedAt: this.deps.now(),
         })
       }
+      this.logRunFinalize(plan, 'failure', lifecycleCounts)
       throw error
     }
   }
@@ -322,6 +347,72 @@ export class RunSourceUseCase {
 
   private createItemId(entry: UnifiedEntryFields): string {
     return this.deps.createItemId?.(entry) ?? `${this.deps.createRunId()}:${entry.id}`
+  }
+
+  private logRunStart(plan: RunPlan): void {
+    this.deps.logger?.info('source run started', {
+      module: 'scheduler.source',
+      'scheduler.operation': 'run_source',
+      'scheduler.outcome': 'start',
+      'source.id': plan.source.sourceId,
+      'source.run_id': plan.runId,
+      'scheduler.trigger': plan.trigger,
+    })
+  }
+
+  private logFilteredItem(plan: RunPlan, itemId: string): void {
+    this.deps.logger?.info('pipeline item filtered', {
+      module: 'pipeline.filter',
+      'pipeline.operation': 'filter',
+      'pipeline.outcome': 'filtered',
+      'source.id': plan.source.sourceId,
+      'source.run_id': plan.runId,
+      'pipeline.item_id': itemId,
+    })
+  }
+
+  private logDedupedDelivery(plan: RunPlan, itemId: string, deliveryId: string): void {
+    this.deps.logger?.info('delivery dedupe hit', {
+      module: 'delivery.store',
+      'delivery.operation': 'is_delivered',
+      'delivery.outcome': 'deduped',
+      'source.id': plan.source.sourceId,
+      'source.run_id': plan.runId,
+      'pipeline.item_id': itemId,
+      'delivery.id': deliveryId,
+    })
+  }
+
+  private logRunFinalize(
+    plan: RunPlan,
+    outcome: 'success' | 'failure',
+    counts: {
+      sourceItemCount: number
+      filteredCount: number
+      dedupedCount: number
+      pushedCount: number
+      failedCount: number
+    },
+  ): void {
+    const fields = {
+      module: 'scheduler.source',
+      'scheduler.operation': 'run_source',
+      'scheduler.outcome': outcome,
+      'source.id': plan.source.sourceId,
+      'source.run_id': plan.runId,
+      'source.item_count': counts.sourceItemCount,
+      'pipeline.filtered_count': counts.filteredCount,
+      'delivery.deduped_count': counts.dedupedCount,
+      'delivery.pushed_count': counts.pushedCount,
+      'delivery.failed_count': counts.failedCount,
+    }
+
+    if (outcome === 'failure') {
+      this.deps.logger?.error('source run finalized', fields)
+      return
+    }
+
+    this.deps.logger?.info('source run finalized', fields)
   }
 }
 

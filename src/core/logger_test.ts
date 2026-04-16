@@ -74,8 +74,8 @@ Deno.test('[contract] R11 logger: enabled=false 时不输出日志', () => {
     writeStderr: (line: string) => stderr.push(line),
   })
 
-  logger.info('启动完成', { operation: 'boot', outcome: 'success' })
-  logger.error('启动失败', { operation: 'boot', outcome: 'failure' })
+  logger.info('启动完成', { 'app.operation': 'boot', 'app.outcome': 'success' })
+  logger.error('启动失败', { 'app.operation': 'boot', 'app.outcome': 'failure' })
 
   assertEquals(stdout.length, 0)
   assertEquals(stderr.length, 0)
@@ -95,26 +95,43 @@ Deno.test('[contract] R11 logger: level=warn 时过滤 info 但保留 warn/error
     writeStderr: (line: string) => stderr.push(line),
   })
 
-  logger.info('启动完成', { operation: 'boot', outcome: 'success' })
+  logger.info('启动完成', { 'app.operation': 'boot', 'app.outcome': 'success' })
   logger.warn('重入跳过', {
-    operation: 'schedule',
-    outcome: 'skipped_reentry',
+    'scheduler.operation': 'run_source',
+    'scheduler.outcome': 'skipped',
+    'scheduler.reason': 'reentry_inflight',
   })
-  logger.error('启动失败', { operation: 'boot', outcome: 'failure' })
-  logger.fatal('进程无法继续', { operation: 'boot', outcome: 'fatal_failure' })
+  logger.error('启动失败', { 'app.operation': 'boot', 'app.outcome': 'failure' })
+  logger.fatal('进程无法继续', { 'app.operation': 'boot', 'app.outcome': 'fatal_failure' })
 
   assertEquals(stdout.length, 1)
   assertEquals(stderr.length, 2)
 
   const warnRecord = parseRecord(stdout[0])
+  const warnAttributes = getAttributes(warnRecord)
   const errorRecord = parseRecord(stderr[0])
+  const errorAttributes = getAttributes(errorRecord)
   const fatalRecord = parseRecord(stderr[1])
+  const fatalAttributes = getAttributes(fatalRecord)
   assertEquals(warnRecord.severityText, 'WARN')
   assertEquals(warnRecord.severityNumber, 13)
+  assertEquals(warnAttributes['scheduler.operation'], 'run_source')
+  assertEquals(warnAttributes['scheduler.outcome'], 'skipped')
+  assertEquals(warnAttributes['scheduler.reason'], 'reentry_inflight')
+  assertEquals('operation' in warnAttributes, false)
+  assertEquals('outcome' in warnAttributes, false)
   assertEquals(errorRecord.severityText, 'ERROR')
   assertEquals(errorRecord.severityNumber, 17)
+  assertEquals(errorAttributes['app.operation'], 'boot')
+  assertEquals(errorAttributes['app.outcome'], 'failure')
+  assertEquals('operation' in errorAttributes, false)
+  assertEquals('outcome' in errorAttributes, false)
   assertEquals(fatalRecord.severityText, 'FATAL')
   assertEquals(fatalRecord.severityNumber, 21)
+  assertEquals(fatalAttributes['app.operation'], 'boot')
+  assertEquals(fatalAttributes['app.outcome'], 'fatal_failure')
+  assertEquals('operation' in fatalAttributes, false)
+  assertEquals('outcome' in fatalAttributes, false)
 })
 
 Deno.test('[contract] R11 logger: 默认输出为严格 OTel JSON 并包含基础字段', () => {
@@ -136,8 +153,8 @@ Deno.test('[contract] R11 logger: 默认输出为严格 OTel JSON 并包含基�
   })
 
   logger.info('开始执行', {
-    operation: 'fetch',
-    outcome: 'success',
+    'source.operation': 'fetch',
+    'source.outcome': 'success',
     'source.id': 'rust',
   })
 
@@ -158,8 +175,10 @@ Deno.test('[contract] R11 logger: 默认输出为严格 OTel JSON 并包含基�
   assertEquals(resourceAttributes['service.name'], 'knock')
   assertEquals(resourceAttributes['deployment.environment.name'], 'dev')
   assertEquals(resourceAttributes['knock.component'], 'daemon')
-  assertEquals(attributes.operation, 'fetch')
-  assertEquals(attributes.outcome, 'success')
+  assertEquals(attributes['source.operation'], 'fetch')
+  assertEquals(attributes['source.outcome'], 'success')
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
   assertEquals(attributes['source.run_id'], 'source.rust.20260324T214512345Z')
   assertEquals(attributes['source.id'], 'rust')
   assertEquals(typeof attributes['code.filepath'], 'string')
@@ -183,8 +202,8 @@ Deno.test('[contract] R11 logger: 应优先从调用栈补全 code.* 属性且 r
 
   function emitFromNamedFunction(): void {
     logger.info('定位栈信息', {
-      operation: 'locate',
-      outcome: 'success',
+      'app.operation': 'locate',
+      'app.outcome': 'success',
     })
   }
 
@@ -203,6 +222,8 @@ Deno.test('[contract] R11 logger: 应优先从调用栈补全 code.* 属性且 r
   assertEquals(Number(attributes['code.line.number']) > 0, true)
   assertEquals(typeof attributes['code.function.name'], 'string')
   assertStringIncludes(String(attributes['code.function.name'] ?? ''), 'emitFromNamedFunction')
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
 })
 
 Deno.test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath 与 code.line.number', () => {
@@ -220,7 +241,7 @@ Deno.test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath �
         writeStdout: (line: string) => stdout.push(line),
       })
 
-      logger.info('无函数名栈帧', { operation: 'locate', outcome: 'success' })
+      logger.info('无函数名栈帧', { 'app.operation': 'locate', 'app.outcome': 'success' })
     },
   )
 
@@ -230,6 +251,8 @@ Deno.test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath �
   assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
 })
 
 Deno.test(
@@ -254,7 +277,7 @@ Deno.test(
           writeStdout: (line: string) => stdout.push(line),
         })
 
-        logger.info('async 栈帧', { operation: 'locate', outcome: 'success' })
+        logger.info('async 栈帧', { 'app.operation': 'locate', 'app.outcome': 'success' })
       },
     )
 
@@ -264,6 +287,8 @@ Deno.test(
     assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
     assertEquals(attributes['code.line.number'], lineNumber)
     assertEquals('code.function.name' in attributes, false)
+    assertEquals('operation' in attributes, false)
+    assertEquals('outcome' in attributes, false)
   },
 )
 
@@ -281,15 +306,17 @@ Deno.test('[contract] R11 logger: ext 内部 runtime frame 应降级而不是误
         writeStdout: (line: string) => stdout.push(line),
       })
 
-      logger.info('runtime frame', { operation: 'locate', outcome: 'success' })
+      logger.info('runtime frame', { 'app.operation': 'locate', 'app.outcome': 'success' })
     },
   )
 
   assertEquals(stdout.length, 1)
   const record = parseRecord(stdout[0])
   const attributes = getAttributes(record)
-  assertEquals(attributes.operation, 'locate')
-  assertEquals(attributes.outcome, 'success')
+  assertEquals(attributes['app.operation'], 'locate')
+  assertEquals(attributes['app.outcome'], 'success')
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
   assertEquals('code.filepath' in attributes, false)
   assertEquals('code.line.number' in attributes, false)
   assertEquals('code.function.name' in attributes, false)
@@ -315,7 +342,7 @@ Deno.test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继�
         writeStdout: (line: string) => stdout.push(line),
       })
 
-      logger.info('self frame filter', { operation: 'locate', outcome: 'success' })
+      logger.info('self frame filter', { 'app.operation': 'locate', 'app.outcome': 'success' })
     },
   )
 
@@ -325,6 +352,8 @@ Deno.test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继�
   assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
 })
 
 Deno.test('[contract] R11 logger: 缓存不会把上一条调用点误复用到下一条不同 stack line', () => {
@@ -344,9 +373,9 @@ Deno.test('[contract] R11 logger: 缓存不会把上一条调用点误复用到�
         writeStdout: (line: string) => stdout.push(line),
       })
 
-      logger.info('第一次调用点', { operation: 'locate', outcome: 'success' })
+      logger.info('第一次调用点', { 'app.operation': 'locate', 'app.outcome': 'success' })
       currentStack = buildStackWithLocation({ lineNumber: secondLineNumber })
-      logger.info('第二次调用点', { operation: 'locate', outcome: 'success' })
+      logger.info('第二次调用点', { 'app.operation': 'locate', 'app.outcome': 'success' })
     },
   )
 
@@ -359,6 +388,10 @@ Deno.test('[contract] R11 logger: 缓存不会把上一条调用点误复用到�
   assertEquals(firstAttributes['code.line.number'], firstLineNumber)
   assertEquals(secondAttributes['code.filepath'], fromFileUrl(import.meta.url))
   assertEquals(secondAttributes['code.line.number'], secondLineNumber)
+  assertEquals('operation' in firstAttributes, false)
+  assertEquals('outcome' in firstAttributes, false)
+  assertEquals('operation' in secondAttributes, false)
+  assertEquals('outcome' in secondAttributes, false)
 })
 
 Deno.test('[contract] R11 logger: 有界缓存 helper 达到上限时应淘汰最旧 key', () => {
@@ -402,7 +435,10 @@ Deno.test('[contract] R11 logger: Windows 风格分隔符归一化后 self-frame
         writeStdout: (line: string) => stdout.push(line),
       })
 
-      logger.info('windows self frame filter', { operation: 'locate', outcome: 'success' })
+      logger.info('windows self frame filter', {
+        'app.operation': 'locate',
+        'app.outcome': 'success',
+      })
     },
   )
 
@@ -412,6 +448,8 @@ Deno.test('[contract] R11 logger: Windows 风格分隔符归一化后 self-frame
   assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
 })
 
 Deno.test('[contract] R11 logger: 栈解析失败时不中断日志输出', () => {
@@ -428,15 +466,17 @@ Deno.test('[contract] R11 logger: 栈解析失败时不中断日志输出', () =
         writeStdout: (line: string) => stdout.push(line),
       })
 
-      logger.info('栈解析失败', { operation: 'locate', outcome: 'success' })
+      logger.info('栈解析失败', { 'app.operation': 'locate', 'app.outcome': 'success' })
     },
   )
 
   assertEquals(stdout.length, 1)
   const record = parseRecord(stdout[0])
   const attributes = getAttributes(record)
-  assertEquals(attributes.operation, 'locate')
-  assertEquals(attributes.outcome, 'success')
+  assertEquals(attributes['app.operation'], 'locate')
+  assertEquals(attributes['app.outcome'], 'success')
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
   assertEquals('code.filepath' in attributes, false)
   assertEquals('code.line.number' in attributes, false)
   assertEquals('code.function.name' in attributes, false)
@@ -457,14 +497,14 @@ Deno.test('[contract] R11 logger: format=pretty 时应通过 @logtape/pretty 渲
   })
 
   logger.info('推送完成', {
-    operation: 'push',
-    outcome: 'success',
+    'delivery.operation': 'push',
+    'delivery.outcome': 'success',
     sourceUrl: 'https://user:pass@example.com/feed.xml?token=abc',
     token: '123456:ABCDEF-SECRET',
   })
   logger.info('再次推送完成', {
-    operation: 'push',
-    outcome: 'success',
+    'delivery.operation': 'push',
+    'delivery.outcome': 'success',
     sourceUrl: 'https://user:pass@example.com/feed.xml?token=abc',
     token: '123456:ABCDEF-SECRET',
   })
@@ -562,8 +602,8 @@ Deno.test(
 
     logger.info('解析完成', {
       module: 'source.parse.rss',
-      operation: 'parse',
-      outcome: 'success',
+      'source.operation': 'parse',
+      'source.outcome': 'success',
       itemCount: 2,
     })
 
@@ -571,6 +611,10 @@ Deno.test(
     const record = parseRecord(stdout[0])
     const attributes = getAttributes(record)
     assertEquals(getScopeName(record), 'source.parse.rss')
+    assertEquals(attributes['source.operation'], 'parse')
+    assertEquals(attributes['source.outcome'], 'success')
+    assertEquals('operation' in attributes, false)
+    assertEquals('outcome' in attributes, false)
     assertEquals(attributes.item_count, 2)
     assertEquals('itemCount' in attributes, false)
     assertEquals('module' in record, false)
@@ -591,7 +635,11 @@ Deno.test(
       writeStdout: (line: string) => stdout.push(line),
     }).child({ module: 'web.api.xquery.evaluate', route: '/api/xquery/evaluate' })
 
-    logger.info('API 请求开始', { operation: 'request', outcome: 'start', method: 'POST' })
+    logger.info('API 请求开始', {
+      'web.operation': 'request',
+      'web.outcome': 'start',
+      method: 'POST',
+    })
 
     assertEquals(stdout.length, 1)
     const record = parseRecord(stdout[0])
@@ -601,8 +649,10 @@ Deno.test(
     assertEquals(getScopeName(record), 'web.api.xquery.evaluate')
     assertEquals(record.body, 'API 请求开始')
     assertEquals(resourceAttributes['knock.component'], 'web')
-    assertEquals(attributes.operation, 'request')
-    assertEquals(attributes.outcome, 'start')
+    assertEquals(attributes['web.operation'], 'request')
+    assertEquals(attributes['web.outcome'], 'start')
+    assertEquals('operation' in attributes, false)
+    assertEquals('outcome' in attributes, false)
     assertEquals(attributes['http.request.method'], 'POST')
     assertEquals(attributes['http.route'], '/api/xquery/evaluate')
   },
@@ -703,8 +753,8 @@ Deno.test('[contract] R11 logger: 敏感字段与敏感内容应在 OTel attribu
   })
 
   logger.error('发送失败', {
-    operation: 'send_message',
-    outcome: 'failure',
+    'delivery.operation': 'send_message',
+    'delivery.outcome': 'failure',
     token: '123456:ABCDEF-SECRET',
     chatId: '987654321',
     sourceUrl: 'https://user:pass@example.com/feed.xml?token=abc',
@@ -721,6 +771,10 @@ Deno.test('[contract] R11 logger: 敏感字段与敏感内容应在 OTel attribu
   const record = parseRecord(stderr[0])
   const attributes = getAttributes(record)
   assertEquals(record.body, '发送失败')
+  assertEquals(attributes['delivery.operation'], 'send_message')
+  assertEquals(attributes['delivery.outcome'], 'failure')
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
   assertEquals(attributes.token, '****')
   assertEquals(attributes.chat_id, '****')
   assertEquals(attributes.content, '****')

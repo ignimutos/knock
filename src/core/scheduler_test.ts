@@ -66,8 +66,11 @@ Deno.test('[contract] R05 scheduler: 重入跳过时应记录结构化日志', a
   const scope = (record.scope ?? {}) as Record<string, unknown>
   const attributes = (record.attributes ?? {}) as Record<string, unknown>
   assertEquals(scope.name, 'scheduler.source')
-  assertEquals(attributes.operation, 'run_source')
-  assertEquals(attributes.outcome, 'skipped')
-  assertEquals(attributes.reason, 'reentry_inflight')
+  assertEquals(attributes['scheduler.operation'], 'run_source')
+  assertEquals(attributes['scheduler.outcome'], 'skipped')
+  assertEquals(attributes['scheduler.reason'], 'reentry_inflight')
   assertEquals(attributes['source.id'], 's1')
+  assertEquals('operation' in attributes, false)
+  assertEquals('outcome' in attributes, false)
+  assertEquals('reason' in attributes, false)
 })

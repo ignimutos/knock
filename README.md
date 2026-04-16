@@ -566,7 +566,13 @@ docker run --rm \
 
 默认日志格式为 `json`，字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
 
-`pretty` 是控制台展示层，适合本地调试；`json` 适合日志采集与检索。两种格式表达同一条底层记录语义。
+当前 v2 执行点：source 抓取/解析日志来自 `src/infrastructure/sources/http_source_input_gateway.ts`、`src/infrastructure/sources/byparr_source_input_gateway.ts`、`src/infrastructure/sources/source_parser_gateway.ts`；pipeline 的 filter/dedupe/delivery/finalize 日志来自 `src/application/run_source_use_case.ts` 与 `src/application/stages/delivery_stage.ts`。
+
+Namespaced 关键字段示例：`source.id`、`source.run_id`、`pipeline.item_id`、`delivery.id`、`template.ai.provider`、`template.ai.model_ref`、`template.ai.outcome`。
+
+HTTP failure 日志不记录原始 `response_body`；只记录如 `delivery.reason`、`http.response.status_code` 与安全错误摘要。
+
+`pretty` 是控制台展示层，适合本地调试；`json` 适合日志采集与检索。两种格式表达同一条底层记录语义，`pretty` 不改变底层字段归属。
 
 常用配置入口：
 

@@ -5,8 +5,8 @@
     "daemon": "deno task start --mode daemon",
     "dev": "deno task start",
     "check": "scripts/run-paths.sh deno check -- src/main.ts web/main.ts web/routes/**/*.tsx web/islands/**/*.tsx --",
-    "fmt": "scripts/run-paths.sh npx prettier --write -- . --",
-    "fmt:check": "scripts/run-paths.sh npx prettier --check -- . --",
+    "fmt": "scripts/run-paths.sh deno run -A npm:prettier --write -- . --",
+    "fmt:check": "scripts/run-paths.sh deno run -A npm:prettier --check -- . --",
     "lint": "scripts/run-paths.sh deno lint --fix --",
     "lint:check": "scripts/run-paths.sh deno lint --",
     "test": "scripts/run-paths.sh deno test --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run -- src web --"

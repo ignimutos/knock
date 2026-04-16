@@ -14,6 +14,9 @@ paths:
 
 这些规则只覆盖控制台日志展示层的强约束。
 
+- source fetch/parse 事件来自 infrastructure source adapters（`http_source_input_gateway.ts`、`byparr_source_input_gateway.ts`、`source_parser_gateway.ts`）。
+- pipeline filter/dedupe/delivery/finalize 事件来自 `RunSourceUseCase` 与 `DeliveryStage` / 相关 stages。
+- 控制台层只负责展示这些底层记录；MUST NOT 按已删除的 `source_runtime` / `delivery_runtime` helper 想象另一套字段来源。
 - 控制台日志默认格式 MUST 为 `json`。
 - 控制台 MAY 提供 `pretty` 作为可选展示模式。
 - `pretty` 只是展示层；MUST NOT 改变底层 OTel 数据模型、字段归属或语义边界。

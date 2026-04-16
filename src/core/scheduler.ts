@@ -14,10 +14,10 @@ export function createScheduler(logger?: Logger): Scheduler {
     async runSource(sourceId: string, task: () => Promise<void>): Promise<void> {
       if (runningSourceIds.has(sourceId)) {
         logger?.warn('跳过重入执行', {
-          operation: 'run_source',
-          outcome: 'skipped',
+          'scheduler.operation': 'run_source',
+          'scheduler.outcome': 'skipped',
           'source.id': sourceId,
-          reason: 'reentry_inflight',
+          'scheduler.reason': 'reentry_inflight',
         })
         return
       }

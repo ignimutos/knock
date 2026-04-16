@@ -103,9 +103,6 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
     component: 'daemon',
     timezone: options.config.timezone,
     timestampFormat: options.config.timestampFormat,
-    baseFields: {
-      'app.runtime_dir': options.config.runtimeDir,
-    },
   })
   const scheduler = createScheduler(logger.child({ module: 'scheduler.source' }))
   const aiRuntime = createAiRuntime({
@@ -129,10 +126,12 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
   const httpGateway = new HttpSourceInputGateway({
     httpClient,
     resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
+    logger: logger.child({ module: 'source.fetch.http' }),
   })
   const byparrGateway = new ByparrSourceInputGateway({
     httpClient,
     resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
+    logger: logger.child({ module: 'source.fetch.byparr' }),
   })
   const summaryGateway = new SummarySourceInputGateway({
     summaryQueryService,
@@ -149,6 +148,7 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
     aiRuntime,
     summaryQueryService,
     contentRuntime,
+    logger: logger.child({ module: 'source.parse' }),
   })
   const runSourceUseCase = new RunSourceUseCase({
     now: () => new Date().toISOString(),
@@ -196,6 +196,7 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
           ...(source.runtime ? { runtime: source.runtime } : {}),
         } as ResolvedSourceConfig),
       ),
+    logger: logger.child({ module: 'scheduler.source' }),
   })
   const definitions = buildLoadedDefinitionsFromResolvedConfig(options.config)
   const sourceQueryService = createSourceQueryService(options.config)
