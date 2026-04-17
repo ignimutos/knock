@@ -2,8 +2,6 @@ import { Cron } from 'croner'
 import type nodemailer from 'nodemailer'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types.ts'
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
-import { createAiRuntime } from '../../core/ai_runtime.ts'
-import { createContentRuntime } from '../../core/content_runtime.ts'
 import { createLogger } from '../../core/logger.ts'
 import { createScheduler } from '../../core/scheduler.ts'
 import { RunDueSourcesUseCase } from '../../application/run_due_sources_use_case.ts'
@@ -19,12 +17,7 @@ import { createEmailDeliveryExecutor } from '../../infrastructure/deliveries/ema
 import { createEmailDelivery } from '../../deliveries/email.ts'
 import { createFileDeliveryExecutor } from '../../infrastructure/deliveries/file_delivery_executor.ts'
 import { createHttpDeliveryExecutor } from '../../infrastructure/deliveries/http_delivery_executor.ts'
-import { ByparrSourceInputGateway } from '../../infrastructure/sources/byparr_source_input_gateway.ts'
-import { HttpSourceInputGateway } from '../../infrastructure/sources/http_source_input_gateway.ts'
-import { SourceParserGateway } from '../../infrastructure/sources/source_parser_gateway.ts'
-import { SummarySourceInputGateway } from '../../infrastructure/sources/summary_source_input_gateway.ts'
 import type { SourceQueryService } from '../../application/ports/query_service.ts'
-import type { SourceDefinition } from '../../domain/source_definition.ts'
 
 export interface CreateDaemonRuntimeOptions {
   config: AppConfigResolved
@@ -97,7 +90,6 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
     httpLogger: logger.child({ module: 'source.fetch.http' }),
     byparrLogger: logger.child({ module: 'source.fetch.byparr' }),
   })
-  const aiRuntime = shared.aiRuntime
   const contentRuntime = shared.contentRuntime
   const runSourceUseCase = createRunSourceUseCaseForRuntime({
     now: () => new Date().toISOString(),

@@ -10,43 +10,45 @@ Deno.test(
   '[contract] createRunSourceUseCaseForRuntime: production wiring 缺少完整 pipeline deps 时应 fail fast',
   async () => {
     await assertRejects(
-      async () =>
-        createRunSourceUseCaseForRuntime({
-          requireFullPipeline: true,
-          now: () => '2026-04-17T12:00:00.000Z',
-          createRunId: () => 'run-prod-fail-fast',
-          sourceInputGateway: {
-            fetch: () =>
-              Promise.resolve({
-                kind: 'fetch',
-                collectedAt: '2026-04-17T12:00:00.000Z',
-                payloadSummary: { hash: 'hash-1' },
-              }),
-          },
-          sourceParser: {
-            parse: () =>
-              Promise.resolve({
-                sourceKind: 'fetch',
-                parser: 'rss',
-                diagnostics: [],
-                feed: {
-                  title: '',
-                  link: '',
-                  description: '',
-                  generator: '',
-                  language: '',
-                  published: '',
-                },
-                items: [],
-              }),
-          },
-          pipeline: {
-            deliveryExecutors: {
-              file: { execute: () => Promise.resolve() },
-              push: { execute: () => Promise.resolve() },
-            } as never,
-          },
-        }),
+      () =>
+        Promise.resolve().then(() =>
+          createRunSourceUseCaseForRuntime({
+            requireFullPipeline: true,
+            now: () => '2026-04-17T12:00:00.000Z',
+            createRunId: () => 'run-prod-fail-fast',
+            sourceInputGateway: {
+              fetch: () =>
+                Promise.resolve({
+                  kind: 'fetch',
+                  collectedAt: '2026-04-17T12:00:00.000Z',
+                  payloadSummary: { hash: 'hash-1' },
+                }),
+            },
+            sourceParser: {
+              parse: () =>
+                Promise.resolve({
+                  sourceKind: 'fetch',
+                  parser: 'rss',
+                  diagnostics: [],
+                  feed: {
+                    title: '',
+                    link: '',
+                    description: '',
+                    generator: '',
+                    language: '',
+                    published: '',
+                  },
+                  items: [],
+                }),
+            },
+            pipeline: {
+              deliveryExecutors: {
+                file: { execute: () => Promise.resolve() },
+                push: { execute: () => Promise.resolve() },
+              } as never,
+            },
+          }),
+        ),
       Error,
       'production run source wiring 缺少完整 pipeline 依赖',
     )
@@ -99,6 +101,86 @@ Deno.test(
     })
 
     assertEquals(result.plan.runId, 'run-preview-collect-only')
+  },
+)
+
+Deno.test(
+  '[contract] createRunSourceUseCaseForRuntime: daemon production wiring 有完整 pipeline 时不应退化为 collect-only',
+  async () => {
+    let insertedRuns = 0
+    const useCase = createRunSourceUseCaseForRuntime({
+      requireFullPipeline: true,
+      now: () => '2026-04-17T12:10:00.000Z',
+      createRunId: () => 'run-prod-full-pipeline',
+      sourceInputGateway: {
+        fetch: () =>
+          Promise.resolve({
+            kind: 'fetch',
+            collectedAt: '2026-04-17T12:10:00.000Z',
+            payloadSummary: { hash: 'hash-prod' },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: '',
+              link: '',
+              description: '',
+              generator: '',
+              language: '',
+              published: '',
+            },
+            items: [],
+          }),
+      },
+      pipeline: {
+        runRepository: {
+          insert: () => {
+            insertedRuns += 1
+            return Promise.resolve()
+          },
+          update: () => Promise.resolve(),
+          setFeedSnapshot: () => Promise.resolve(),
+        },
+        itemRepository: {
+          insertMany: () => Promise.resolve(),
+          updateStatus: () => Promise.resolve(),
+        },
+        deliveryAttemptRepository: {
+          insertPlanned: () => Promise.resolve(),
+          finish: () => Promise.resolve(),
+        },
+        deduplicationRepository: {
+          isItemDuplicate: () => Promise.resolve(false),
+          registerItemFingerprint: () => Promise.resolve(),
+          isDeliveryDuplicate: () => Promise.resolve(false),
+          registerDeliveryFingerprint: () => Promise.resolve(),
+        },
+        deliveryExecutors: {
+          file: { execute: () => Promise.resolve() },
+          push: { execute: () => Promise.resolve() },
+          email: { execute: () => Promise.resolve() },
+        },
+      },
+    })
+
+    await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'immediate',
+    })
+
+    assertEquals(insertedRuns, 1)
   },
 )
 

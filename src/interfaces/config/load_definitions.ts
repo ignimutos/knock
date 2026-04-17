@@ -1,6 +1,8 @@
 import type { LoadConfigOptions } from '../../config/load_config.ts'
 import { loadConfig } from '../../config/load_config.ts'
+import { toPushRequestType } from '../../config/delivery_semantics.ts'
 import type {
+  AppConfigResolved,
   DeliveryConfig,
   ResolvedDeliveryConfig,
   ResolvedSourceConfig,
@@ -35,17 +37,13 @@ function toSourceDefinition(source: ResolvedSourceConfig): SourceDefinition {
   }
 }
 
-function toPushRequestType(
-  delivery: Pick<ResolvedDeliveryConfig, 'push'>,
-): 'body' | 'query' | 'form' {
-  return delivery.push?.request.type ?? 'body'
-}
-
-function toResolvedDeliveryDefinition(delivery: ResolvedDeliveryConfig): DeliveryDefinition {
+function toDeliveryDefinition(
+  delivery: DeliveryConfig | ResolvedDeliveryConfig,
+): DeliveryDefinition {
   if (delivery.file) {
     return {
       kind: 'file',
-      deliveryId: delivery.deliveryId,
+      deliveryId: 'deliveryId' in delivery ? delivery.deliveryId : delivery.id,
       path: delivery.file.path,
       contentTemplate: delivery.file.content,
       rotation: delivery.file.rotation ? structuredClone(delivery.file.rotation) : undefined,
@@ -55,9 +53,9 @@ function toResolvedDeliveryDefinition(delivery: ResolvedDeliveryConfig): Deliver
   if (delivery.push) {
     return {
       kind: 'push',
-      deliveryId: delivery.deliveryId,
+      deliveryId: 'deliveryId' in delivery ? delivery.deliveryId : delivery.id,
       http: structuredClone(delivery.push.http),
-      requestType: toPushRequestType(delivery),
+      requestType: toPushRequestType(delivery.push.request.type),
       payloadTemplate: structuredClone(delivery.push.request.payload ?? {}),
       response: delivery.push.response ? structuredClone(delivery.push.response) : undefined,
     }
@@ -66,36 +64,26 @@ function toResolvedDeliveryDefinition(delivery: ResolvedDeliveryConfig): Deliver
   if (delivery.email) {
     return {
       kind: 'email',
-      deliveryId: delivery.deliveryId,
+      deliveryId: 'deliveryId' in delivery ? delivery.deliveryId : delivery.id,
       smtp: structuredClone(delivery.email.smtp),
       messageTemplate: structuredClone(delivery.email.message),
     }
   }
 
-  throw new Error(`delivery ${delivery.deliveryId} 缺少可装配的定义类型`)
-}
-
-function toCanonicalDeliveryDefinition(delivery: DeliveryConfig): DeliveryDefinition {
-  return toResolvedDeliveryDefinition({
-    id: delivery.id,
-    sourceId: delivery.id,
-    deliveryId: delivery.id,
-    file: delivery.file,
-    push: delivery.push,
-    email: delivery.email,
-  })
+  const deliveryId = 'deliveryId' in delivery ? delivery.deliveryId : delivery.id
+  throw new Error(`delivery ${deliveryId} 缺少可装配的定义类型`)
 }
 
 export function buildLoadedDefinitionsFromResolvedConfig(
-  config: Awaited<ReturnType<typeof loadConfig>>,
+  config: AppConfigResolved,
 ): LoadedDefinitions {
-  const deliveries = config.deliveries.map(toCanonicalDeliveryDefinition)
+  const deliveries = config.deliveries.map(toDeliveryDefinition)
   const sources = config.sources.map(toSourceDefinition)
   const bindings = config.sources.flatMap((source) =>
     source.deliveries.map((delivery) => ({
       sourceId: source.id,
       deliveryId: delivery.deliveryId,
-      definition: toResolvedDeliveryDefinition(delivery),
+      definition: toDeliveryDefinition(delivery),
     })),
   )
 
