@@ -7,11 +7,7 @@ import type { PipelineItem } from '../domain/pipeline_item.ts'
 import type { SourceRun } from '../domain/source_run.ts'
 import type { SourceParser } from './ports/source_parser.ts'
 import type { SourceInputGateway } from './ports/source_input_gateway.ts'
-import {
-  RunSourceUseCase,
-  type RunSourceRequest,
-  type RunSourceResult,
-} from './run_source_use_case.ts'
+import { RunSourceUseCase, type RunSourceRequest } from './run_source_use_case.ts'
 
 // risk-id: R07
 // layer: contract
@@ -1079,6 +1075,229 @@ Deno.test(
   },
 )
 
+Deno.test('[contract] runSourceUseCase: no bindings 时应落 skipped/no_deliveries', async () => {
+  const itemStatuses: Array<{
+    itemId: string
+    status: PipelineItem['status']
+    skippedReason?: string
+  }> = []
+  let plannedAttemptCount = 0
+
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T11:35:00.000Z',
+    createRunId: () => 'run-no-bindings',
+    createItemId: (entry) => `item:${entry.id}`,
+    sourceInputGateway: {
+      fetch: (plan) =>
+        Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T11:35:00.000Z',
+          payloadSummary: { hash: 'hash-no-bindings', bytes: 10 },
+        }),
+    },
+    sourceParser: {
+      parse: () =>
+        Promise.resolve({
+          sourceKind: 'fetch',
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [
+            {
+              id: 'entry-1',
+              title: 'Hello',
+              link: '',
+              description: '',
+              content: '',
+              published: '',
+              updated: '',
+            },
+          ],
+        }),
+    },
+    runRepository: {
+      insert: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+    },
+    itemRepository: {
+      insertMany: () => Promise.resolve(),
+      updateStatus: (itemId, status, skippedReason) => {
+        itemStatuses.push({ itemId, status, skippedReason })
+        return Promise.resolve()
+      },
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => {
+        plannedAttemptCount += 1
+        return Promise.resolve()
+      },
+      finish: () => Promise.resolve(),
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => Promise.resolve(false),
+      registerItemFingerprint: () => Promise.resolve(),
+      isDeliveryDuplicate: () => Promise.resolve(false),
+      registerDeliveryFingerprint: () => Promise.resolve(),
+    },
+    deliveryExecutors: {
+      push: { execute: () => Promise.resolve() },
+      file: { execute: () => Promise.resolve() },
+      email: { execute: () => Promise.resolve() },
+    },
+  })
+
+  await useCase.execute({
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'production',
+    effectDomain: 'production',
+    trigger: 'scheduled',
+    bindings: [],
+  })
+
+  assertEquals(plannedAttemptCount, 0)
+  assertEquals(itemStatuses, [
+    {
+      itemId: 'item:entry-1',
+      status: 'skipped' as PipelineItem['status'],
+      skippedReason: 'no_deliveries',
+    },
+  ])
+})
+
+Deno.test('[contract] runSourceUseCase: delivered 后应注册 item fingerprint', async () => {
+  const registeredItemFingerprints: Array<{
+    sourceId: string
+    effectDomain: 'production' | 'preview'
+    fingerprint: string
+    recordedAt: string
+  }> = []
+  const itemStatuses: Array<{
+    itemId: string
+    status: PipelineItem['status']
+    skippedReason?: string
+  }> = []
+
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T11:40:00.000Z',
+    createRunId: () => 'run-delivered-fingerprint',
+    createItemId: (entry) => `item:${entry.id}`,
+    sourceInputGateway: {
+      fetch: (plan) =>
+        Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T11:40:00.000Z',
+          payloadSummary: { hash: 'hash-delivered-fingerprint', bytes: 10 },
+        }),
+    },
+    sourceParser: {
+      parse: () =>
+        Promise.resolve({
+          sourceKind: 'fetch',
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [
+            {
+              id: 'entry-1',
+              title: 'Hello',
+              link: '',
+              description: '',
+              content: '',
+              published: '',
+              updated: '',
+            },
+          ],
+        }),
+    },
+    runRepository: {
+      insert: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+    },
+    itemRepository: {
+      insertMany: () => Promise.resolve(),
+      updateStatus: (itemId, status, skippedReason) => {
+        itemStatuses.push({ itemId, status, skippedReason })
+        return Promise.resolve()
+      },
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => Promise.resolve(),
+      finish: () => Promise.resolve(),
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => Promise.resolve(false),
+      registerItemFingerprint: (input) => {
+        registeredItemFingerprints.push(input)
+        return Promise.resolve()
+      },
+      isDeliveryDuplicate: () => Promise.resolve(false),
+      registerDeliveryFingerprint: () => Promise.resolve(),
+    },
+    deliveryExecutors: {
+      file: { execute: () => Promise.resolve() },
+    },
+  })
+
+  await useCase.execute({
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'production',
+    effectDomain: 'production',
+    trigger: 'scheduled',
+    bindings: [
+      {
+        sourceId: 'rust',
+        deliveryId: 'archive',
+        definition: {
+          kind: 'file',
+          deliveryId: 'archive',
+          path: '/tmp/archive.txt',
+          contentTemplate: '{{ entry.title }}',
+        },
+      },
+    ],
+  })
+
+  assertEquals(registeredItemFingerprints, [
+    {
+      sourceId: 'rust',
+      effectDomain: 'production',
+      fingerprint: 'entry-1',
+      recordedAt: '2026-04-13T11:40:00.000Z',
+    },
+  ])
+  assertEquals(itemStatuses, [
+    {
+      itemId: 'item:entry-1',
+      status: 'delivered' as PipelineItem['status'],
+      skippedReason: undefined,
+    },
+  ])
+})
+
 Deno.test('[contract] runSourceUseCase: collect 只应执行 plan、fetch、parse', async () => {
   const calls: string[] = []
   const request: RunSourceRequest = {
@@ -1373,5 +1592,236 @@ Deno.test('[contract] runSourceUseCase: execute 应先 collect 再 applyCollecte
     'parse:run-order:fetch',
     'run.insert',
     'item.insertMany',
+  ])
+})
+
+Deno.test('[contract] runSourceUseCase: execute 应经由 item 级 pipeline 边界方法', async () => {
+  const order: string[] = []
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T12:20:00.000Z',
+    createRunId: () => 'run-boundary-methods',
+    createItemId: (entry) => `item:${entry.id}`,
+    sourceInputGateway: {
+      fetch: (plan) =>
+        Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T12:20:01.000Z',
+          payloadSummary: { hash: 'hash-boundary-methods', bytes: 10 },
+        }),
+    },
+    sourceParser: {
+      parse: () =>
+        Promise.resolve({
+          sourceKind: 'fetch',
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [
+            {
+              id: 'entry-1',
+              title: 'Hello',
+              link: '',
+              description: '',
+              content: '',
+              published: '',
+              updated: '',
+            },
+          ],
+        }),
+    },
+    runRepository: {
+      insert: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+    },
+    itemRepository: {
+      insertMany: () => Promise.resolve(),
+      updateStatus: () => Promise.resolve(),
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => Promise.resolve(),
+      finish: () => Promise.resolve(),
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => Promise.resolve(false),
+      registerItemFingerprint: () => Promise.resolve(),
+      isDeliveryDuplicate: () => Promise.resolve(false),
+      registerDeliveryFingerprint: () => Promise.resolve(),
+    },
+    deliveryExecutors: {
+      file: { execute: () => Promise.resolve() },
+    },
+  })
+
+  const useCaseRecord = useCase as unknown as Record<
+    string,
+    (...args: unknown[]) => Promise<unknown>
+  >
+  assertEquals(typeof useCaseRecord.processItem, 'function')
+  assertEquals(typeof useCaseRecord.processDeliveriesForItem, 'function')
+  assertEquals(typeof useCaseRecord.finalizeItemStatus, 'function')
+
+  const originalProcessItem = useCaseRecord.processItem
+  const originalProcessDeliveriesForItem = useCaseRecord.processDeliveriesForItem
+  const originalFinalizeItemStatus = useCaseRecord.finalizeItemStatus
+
+  useCaseRecord.processItem = async function (...args: unknown[]) {
+    order.push('processItem')
+    return await originalProcessItem.apply(this, args)
+  }
+  useCaseRecord.processDeliveriesForItem = async function (...args: unknown[]) {
+    order.push('processDeliveriesForItem')
+    return await originalProcessDeliveriesForItem.apply(this, args)
+  }
+  useCaseRecord.finalizeItemStatus = async function (...args: unknown[]) {
+    order.push('finalizeItemStatus')
+    return await originalFinalizeItemStatus.apply(this, args)
+  }
+
+  await useCase.execute({
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'production',
+    effectDomain: 'production',
+    trigger: 'scheduled',
+    bindings: [
+      {
+        sourceId: 'rust',
+        deliveryId: 'archive',
+        definition: {
+          kind: 'file',
+          deliveryId: 'archive',
+          path: '/tmp/archive.txt',
+          contentTemplate: '{{ entry.title }}',
+        },
+      },
+    ],
+  })
+
+  assertEquals(order, ['processItem', 'processDeliveriesForItem', 'finalizeItemStatus'])
+})
+
+Deno.test('[contract] runSourceUseCase: item duplicate 时不应进入 delivery 边界', async () => {
+  const itemStatuses: Array<{
+    itemId: string
+    status: PipelineItem['status']
+    skippedReason?: string
+  }> = []
+  let processDeliveriesCalls = 0
+
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T12:25:00.000Z',
+    createRunId: () => 'run-item-duplicate-boundary',
+    createItemId: (entry) => `item:${entry.id}`,
+    sourceInputGateway: {
+      fetch: (plan) =>
+        Promise.resolve({
+          kind: plan.source.kind,
+          collectedAt: '2026-04-13T12:25:01.000Z',
+          payloadSummary: { hash: 'hash-item-duplicate-boundary', bytes: 10 },
+        }),
+    },
+    sourceParser: {
+      parse: () =>
+        Promise.resolve({
+          sourceKind: 'fetch',
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [
+            {
+              id: 'entry-1',
+              title: 'Hello',
+              link: '',
+              description: '',
+              content: '',
+              published: '',
+              updated: '',
+            },
+          ],
+        }),
+    },
+    runRepository: {
+      insert: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+    },
+    itemRepository: {
+      insertMany: () => Promise.resolve(),
+      updateStatus: (itemId, status, skippedReason) => {
+        itemStatuses.push({ itemId, status, skippedReason })
+        return Promise.resolve()
+      },
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => Promise.resolve(),
+      finish: () => Promise.resolve(),
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => Promise.resolve(true),
+      registerItemFingerprint: () => Promise.resolve(),
+      isDeliveryDuplicate: () => Promise.resolve(false),
+      registerDeliveryFingerprint: () => Promise.resolve(),
+    },
+    deliveryExecutors: {
+      file: { execute: () => Promise.resolve() },
+    },
+  })
+
+  const useCaseRecord = useCase as unknown as Record<
+    string,
+    (...args: unknown[]) => Promise<unknown>
+  >
+  assertEquals(typeof useCaseRecord.processDeliveriesForItem, 'function')
+
+  const originalProcessDeliveriesForItem = useCaseRecord.processDeliveriesForItem
+  useCaseRecord.processDeliveriesForItem = async function (...args: unknown[]) {
+    processDeliveriesCalls += 1
+    return await originalProcessDeliveriesForItem.apply(this, args)
+  }
+
+  await useCase.execute({
+    source: {
+      kind: 'fetch',
+      sourceId: 'rust',
+      fetcher: 'http',
+      parser: 'syndication',
+    },
+    profile: 'production',
+    effectDomain: 'production',
+    trigger: 'scheduled',
+    bindings: [
+      {
+        sourceId: 'rust',
+        deliveryId: 'archive',
+        definition: {
+          kind: 'file',
+          deliveryId: 'archive',
+          path: '/tmp/archive.txt',
+          contentTemplate: '{{ entry.title }}',
+        },
+      },
+    ],
+  })
+
+  assertEquals(processDeliveriesCalls, 0)
+  assertEquals(itemStatuses, [
+    { itemId: 'item:entry-1', status: 'duplicate', skippedReason: undefined },
   ])
 })

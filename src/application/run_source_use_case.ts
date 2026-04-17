@@ -1,7 +1,7 @@
 import type { UnifiedEntryFields } from '../config/types.ts'
 import type { Logger } from '../core/logger.ts'
 import { createDeliveryAttempt } from '../domain/delivery_attempt.ts'
-import { createPipelineItem } from '../domain/pipeline_item.ts'
+import { createPipelineItem, type PipelineItem } from '../domain/pipeline_item.ts'
 import { createRunPlan, type DeliveryBinding, type RunPlan } from '../domain/run_plan.ts'
 import { createSourceRun, finalizeSourceRun } from '../domain/source_run.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
@@ -53,6 +53,38 @@ export interface RunSourceUseCaseDeps {
     filterTemplate: string
   }) => Promise<boolean>
   logger?: Logger
+}
+
+type PipelineDeps = {
+  runRepository: RunRepository
+  itemRepository: ItemRepository
+  deliveryAttemptRepository: DeliveryAttemptRepository
+  deduplicationRepository: DeduplicationRepository
+  deliveryExecutors: Partial<DeliveryExecutorRegistry>
+}
+
+type LifecycleCounts = {
+  sourceItemCount: number
+  filteredCount: number
+  dedupedCount: number
+  pushedCount: number
+  failedCount: number
+}
+
+type ApplyCounts = {
+  fetchedCount: number
+  parsedCount: number
+  filteredCount: number
+  duplicateItemCount: number
+  deliveredCount: number
+  failedAttemptCount: number
+  skippedCount: number
+}
+
+type ProcessDeliveriesForItemResult = {
+  delivered: number
+  failed: number
+  duplicateDeliveries: number
 }
 
 export class RunSourceUseCase {
@@ -170,7 +202,7 @@ export class RunSourceUseCase {
       )
       await pipelineDeps.itemRepository.insertMany(items)
 
-      const counts = {
+      const counts: ApplyCounts = {
         fetchedCount: parsed.items.length,
         parsedCount: parsed.items.length,
         filteredCount: 0,
@@ -218,117 +250,19 @@ export class RunSourceUseCase {
       })
 
       for (const item of items) {
-        const filterResult = await filterStage.run({
+        await this.processItem({
           item,
-          filterTemplate: plan.source.filter ?? undefined,
+          plan,
+          feed: parsed.feed,
+          bindings,
+          filterStage,
+          deduplicationStage,
+          renderStage,
+          deliveryDispatchLogger,
+          pipelineDeps,
+          counts,
+          lifecycleCounts,
         })
-        if (filterResult.status === 'filtered') {
-          counts.filteredCount += 1
-          lifecycleCounts.filteredCount += 1
-          this.logFilteredItem(plan, item.itemId)
-          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'filtered', undefined)
-          continue
-        }
-
-        const dedupeResult = await deduplicationStage.run({
-          fingerprint: item.normalized.id,
-          sourceId: item.sourceId,
-          effectDomain: item.effectDomain,
-          deliveries: bindings.map((binding) => binding.deliveryId),
-          recordedAt: this.deps.now(),
-        })
-
-        if (dedupeResult.itemStatus === 'duplicate') {
-          counts.duplicateItemCount += 1
-          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'duplicate', undefined)
-          continue
-        }
-
-        let delivered = 0
-        let failed = 0
-        let duplicateDeliveries = 0
-        for (const binding of bindings) {
-          if (dedupeResult.deliveryStatuses[binding.deliveryId] === 'duplicate') {
-            duplicateDeliveries += 1
-            lifecycleCounts.dedupedCount += 1
-            this.logDedupedDelivery(plan, item.itemId, binding.deliveryId)
-            continue
-          }
-
-          const attemptPlan = await renderStage.run({
-            item,
-            binding,
-            feed: parsed.feed,
-          })
-          const attempt = createDeliveryAttempt({
-            attemptId: attemptPlan.attemptId,
-            itemId: attemptPlan.itemId,
-            sourceRunId: attemptPlan.sourceRunId,
-            deliveryId: attemptPlan.deliveryId,
-            channel: attemptPlan.channel,
-            effectDomain: attemptPlan.effectDomain,
-            plannedAt: attemptPlan.plannedAt,
-            renderedSnapshot: attemptPlan.renderedSnapshot,
-          })
-          await pipelineDeps.deliveryAttemptRepository.insertPlanned(attempt)
-
-          const executor = pipelineDeps.deliveryExecutors[attempt.channel]
-          if (!executor) {
-            throw new Error(`缺少 ${attempt.channel} delivery executor`)
-          }
-
-          const attemptResult = await new DeliveryStage({
-            now: this.deps.now,
-            executor,
-            logger: deliveryDispatchLogger,
-          }).run(attemptPlan)
-          await pipelineDeps.deliveryAttemptRepository.finish(attempt.attemptId, attemptResult)
-
-          if (attemptResult.status === 'delivered') {
-            await pipelineDeps.deduplicationRepository.registerDeliveryFingerprint({
-              sourceId: item.sourceId,
-              deliveryId: binding.deliveryId,
-              effectDomain: item.effectDomain,
-              fingerprint: item.normalized.id,
-              recordedAt: this.deps.now(),
-            })
-            delivered += 1
-            counts.deliveredCount += 1
-            lifecycleCounts.pushedCount += 1
-          } else {
-            failed += 1
-            counts.failedAttemptCount += 1
-            lifecycleCounts.failedCount += 1
-          }
-        }
-
-        if (failed > 0) {
-          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'failed', undefined)
-          continue
-        }
-
-        if (delivered > 0) {
-          await pipelineDeps.deduplicationRepository.registerItemFingerprint({
-            sourceId: item.sourceId,
-            effectDomain: item.effectDomain,
-            fingerprint: item.normalized.id,
-            recordedAt: this.deps.now(),
-          })
-          await pipelineDeps.itemRepository.updateStatus(item.itemId, 'delivered', undefined)
-          continue
-        }
-
-        if (duplicateDeliveries > 0 || bindings.length === 0) {
-          counts.skippedCount += 1
-          await pipelineDeps.itemRepository.updateStatus(
-            item.itemId,
-            'skipped',
-            duplicateDeliveries > 0 ? 'all_deliveries_duplicate' : 'no_deliveries',
-          )
-          continue
-        }
-
-        await pipelineDeps.itemRepository.updateStatus(item.itemId, 'ready', undefined)
       }
 
       await pipelineDeps.runRepository.update(
@@ -347,13 +281,211 @@ export class RunSourceUseCase {
     }
   }
 
-  private getPipelineDeps(): {
-    runRepository: RunRepository
-    itemRepository: ItemRepository
-    deliveryAttemptRepository: DeliveryAttemptRepository
-    deduplicationRepository: DeduplicationRepository
-    deliveryExecutors: Partial<DeliveryExecutorRegistry>
-  } | null {
+  private async processItem(input: {
+    item: PipelineItem
+    plan: RunPlan
+    feed: ParsedSourceSnapshot['feed']
+    bindings: DeliveryBinding[]
+    filterStage: FilterStage
+    deduplicationStage: DeduplicationStage
+    renderStage: RenderStage
+    deliveryDispatchLogger?: Logger
+    pipelineDeps: PipelineDeps
+    counts: ApplyCounts
+    lifecycleCounts: LifecycleCounts
+  }): Promise<void> {
+    const {
+      item,
+      plan,
+      feed,
+      bindings,
+      filterStage,
+      deduplicationStage,
+      renderStage,
+      deliveryDispatchLogger,
+      pipelineDeps,
+      counts,
+      lifecycleCounts,
+    } = input
+
+    const filterResult = await filterStage.run({
+      item,
+      filterTemplate: plan.source.filter ?? undefined,
+    })
+    if (filterResult.status === 'filtered') {
+      counts.filteredCount += 1
+      lifecycleCounts.filteredCount += 1
+      this.logFilteredItem(plan, item.itemId)
+      await pipelineDeps.itemRepository.updateStatus(item.itemId, 'filtered', undefined)
+      return
+    }
+
+    const dedupeResult = await deduplicationStage.run({
+      fingerprint: item.normalized.id,
+      sourceId: item.sourceId,
+      effectDomain: item.effectDomain,
+      deliveries: bindings.map((binding) => binding.deliveryId),
+      recordedAt: this.deps.now(),
+    })
+
+    if (dedupeResult.itemStatus === 'duplicate') {
+      counts.duplicateItemCount += 1
+      await pipelineDeps.itemRepository.updateStatus(item.itemId, 'duplicate', undefined)
+      return
+    }
+
+    const deliveryResult = await this.processDeliveriesForItem({
+      item,
+      plan,
+      feed,
+      bindings,
+      deliveryStatuses: dedupeResult.deliveryStatuses,
+      renderStage,
+      deliveryDispatchLogger,
+      pipelineDeps,
+      counts,
+      lifecycleCounts,
+    })
+
+    await this.finalizeItemStatus({
+      item,
+      bindings,
+      pipelineDeps,
+      counts,
+      deliveryResult,
+    })
+  }
+
+  private async processDeliveriesForItem(input: {
+    item: PipelineItem
+    plan: RunPlan
+    feed: ParsedSourceSnapshot['feed']
+    bindings: DeliveryBinding[]
+    deliveryStatuses: Record<string, 'new' | 'duplicate'>
+    renderStage: RenderStage
+    deliveryDispatchLogger?: Logger
+    pipelineDeps: PipelineDeps
+    counts: ApplyCounts
+    lifecycleCounts: LifecycleCounts
+  }): Promise<ProcessDeliveriesForItemResult> {
+    const {
+      item,
+      plan,
+      feed,
+      bindings,
+      deliveryStatuses,
+      renderStage,
+      deliveryDispatchLogger,
+      pipelineDeps,
+      counts,
+      lifecycleCounts,
+    } = input
+
+    let delivered = 0
+    let failed = 0
+    let duplicateDeliveries = 0
+
+    for (const binding of bindings) {
+      if (deliveryStatuses[binding.deliveryId] === 'duplicate') {
+        duplicateDeliveries += 1
+        lifecycleCounts.dedupedCount += 1
+        this.logDedupedDelivery(plan, item.itemId, binding.deliveryId)
+        continue
+      }
+
+      const attemptPlan = await renderStage.run({
+        item,
+        binding,
+        feed,
+      })
+      const attempt = createDeliveryAttempt({
+        attemptId: attemptPlan.attemptId,
+        itemId: attemptPlan.itemId,
+        sourceRunId: attemptPlan.sourceRunId,
+        deliveryId: attemptPlan.deliveryId,
+        channel: attemptPlan.channel,
+        effectDomain: attemptPlan.effectDomain,
+        plannedAt: attemptPlan.plannedAt,
+        renderedSnapshot: attemptPlan.renderedSnapshot,
+      })
+      await pipelineDeps.deliveryAttemptRepository.insertPlanned(attempt)
+
+      const executor = pipelineDeps.deliveryExecutors[attempt.channel]
+      if (!executor) {
+        throw new Error(`缺少 ${attempt.channel} delivery executor`)
+      }
+
+      const attemptResult = await new DeliveryStage({
+        now: this.deps.now,
+        executor,
+        logger: deliveryDispatchLogger,
+      }).run(attemptPlan)
+      await pipelineDeps.deliveryAttemptRepository.finish(attempt.attemptId, attemptResult)
+
+      if (attemptResult.status === 'delivered') {
+        await pipelineDeps.deduplicationRepository.registerDeliveryFingerprint({
+          sourceId: item.sourceId,
+          deliveryId: binding.deliveryId,
+          effectDomain: item.effectDomain,
+          fingerprint: item.normalized.id,
+          recordedAt: this.deps.now(),
+        })
+        delivered += 1
+        counts.deliveredCount += 1
+        lifecycleCounts.pushedCount += 1
+      } else {
+        failed += 1
+        counts.failedAttemptCount += 1
+        lifecycleCounts.failedCount += 1
+      }
+    }
+
+    return {
+      delivered,
+      failed,
+      duplicateDeliveries,
+    }
+  }
+
+  private async finalizeItemStatus(input: {
+    item: PipelineItem
+    bindings: DeliveryBinding[]
+    pipelineDeps: PipelineDeps
+    counts: ApplyCounts
+    deliveryResult: ProcessDeliveriesForItemResult
+  }): Promise<void> {
+    const { item, bindings, pipelineDeps, counts, deliveryResult } = input
+
+    if (deliveryResult.failed > 0) {
+      await pipelineDeps.itemRepository.updateStatus(item.itemId, 'failed', undefined)
+      return
+    }
+
+    if (deliveryResult.delivered > 0) {
+      await pipelineDeps.deduplicationRepository.registerItemFingerprint({
+        sourceId: item.sourceId,
+        effectDomain: item.effectDomain,
+        fingerprint: item.normalized.id,
+        recordedAt: this.deps.now(),
+      })
+      await pipelineDeps.itemRepository.updateStatus(item.itemId, 'delivered', undefined)
+      return
+    }
+
+    if (deliveryResult.duplicateDeliveries > 0 || bindings.length === 0) {
+      counts.skippedCount += 1
+      await pipelineDeps.itemRepository.updateStatus(
+        item.itemId,
+        'skipped',
+        deliveryResult.duplicateDeliveries > 0 ? 'all_deliveries_duplicate' : 'no_deliveries',
+      )
+      return
+    }
+
+    await pipelineDeps.itemRepository.updateStatus(item.itemId, 'ready', undefined)
+  }
+
+  private getPipelineDeps(): PipelineDeps | null {
     if (
       this.deps.runRepository === undefined ||
       this.deps.itemRepository === undefined ||
