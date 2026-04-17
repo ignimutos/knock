@@ -4,18 +4,12 @@ import {
   type PreviewSourceRequest,
 } from '../../application/preview_source_use_case.ts'
 import { RunSourceUseCase } from '../../application/run_source_use_case.ts'
-import { createDeliveryAttemptRepository } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'
-import { createApplicationDeduplicationRepository } from '../../infrastructure/sqlite/deduplication_repository.ts'
-import { createItemRepository } from '../../infrastructure/sqlite/item_repository.ts'
-import { createRunRepository } from '../../infrastructure/sqlite/run_repository.ts'
-import { SourceParserGateway } from '../../infrastructure/sources/source_parser_gateway.ts'
-import { ByparrSourceInputGateway } from '../../infrastructure/sources/byparr_source_input_gateway.ts'
-import { HttpSourceInputGateway } from '../../infrastructure/sources/http_source_input_gateway.ts'
-import { SummarySourceInputGateway } from '../../infrastructure/sources/summary_source_input_gateway.ts'
-import { createSummaryQueryService } from '../../infrastructure/sqlite/summary_query_service.ts'
-import { createContentRuntime } from '../../core/content_runtime.ts'
-import { createAiRuntime } from '../../core/ai_runtime.ts'
-import { createHttpClient } from '../../core/http_client.ts'
+import {
+  createRunSourceUseCaseForRuntime,
+  createRuntimePipeline,
+  createRuntimeSourceInputGateway,
+  createSourceRuntimeSharedDeps,
+} from '../create_source_execution_core.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types.ts'
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
 import type { SourceDefinition } from '../../domain/source_definition.ts'
@@ -80,93 +74,36 @@ export function createPreviewRuntime<
   }
 }
 
-function resolveSourceConfig(
-  sourceConfigsById: Record<string, ResolvedSourceConfig>,
-  sourceId: string,
-): ResolvedSourceConfig {
-  const source = sourceConfigsById[sourceId]
-  if (!source) {
-    throw new Error(`source 未定义: ${sourceId}`)
-  }
-  return source
-}
-
-function selectSourceInputGateway(
-  source: SourceDefinition,
-  deps: {
-    httpGateway: HttpSourceInputGateway
-    byparrGateway: ByparrSourceInputGateway
-    summaryGateway: SummarySourceInputGateway
-  },
-) {
-  if (source.kind === 'summary') return deps.summaryGateway
-  return source.fetcher === 'byparr' ? deps.byparrGateway : deps.httpGateway
-}
-
 export function createPreviewSourceUseCaseRuntime(input: {
   config: AppConfigResolved
   fetcher?: typeof fetch
   now?: () => string
 }) {
   const factsDb = createInMemoryDb()
-  const contentRuntime = createContentRuntime({
-    aiRuntime: createAiRuntime({
-      ai: input.config.ai,
-      defaultLanguage: input.config.language,
-    }),
-  })
-  const httpClient = createHttpClient({ fetcher: input.fetcher ?? fetch })
-  const summaryQueryService = createSummaryQueryService(factsDb)
   const definitions = buildLoadedDefinitionsFromResolvedConfig(input.config)
-
-  const httpGateway = new HttpSourceInputGateway({
-    httpClient,
-    resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
-  })
-  const byparrGateway = new ByparrSourceInputGateway({
-    httpClient,
-    resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
-  })
-  const summaryGateway = new SummarySourceInputGateway({
-    summaryQueryService,
-    contentRuntime,
-    language: input.config.language,
-  })
-  const sourceParser = new SourceParserGateway({
-    resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
-    timeOptions: {
-      timezone: input.config.timezone,
-      timestampFormat: input.config.timestampFormat,
-    },
-    language: input.config.language,
-    aiRuntime: input.config.ai
-      ? createAiRuntime({ ai: input.config.ai, defaultLanguage: input.config.language })
-      : undefined,
-    summaryQueryService,
-    contentRuntime,
+  const shared = createSourceRuntimeSharedDeps({
+    config: input.config,
+    factsDb,
+    fetcher: input.fetcher ?? fetch,
+    sourceConfigsById: definitions.sourceConfigsById,
   })
   const now = input.now ?? (() => new Date().toISOString())
-  const runSourceUseCase = new RunSourceUseCase({
+  const runSourceUseCase = createRunSourceUseCaseForRuntime({
     now,
     createRunId: () => `run-preview-${crypto.randomUUID()}`,
-    sourceInputGateway: {
-      fetch: (plan) =>
-        selectSourceInputGateway(plan.source, { httpGateway, byparrGateway, summaryGateway }).fetch(
-          plan,
-        ),
-    },
-    sourceParser,
-    runRepository: createRunRepository(factsDb),
-    itemRepository: createItemRepository(factsDb),
-    deliveryAttemptRepository: createDeliveryAttemptRepository(factsDb),
-    deduplicationRepository: createApplicationDeduplicationRepository(factsDb),
-    deliveryExecutors: {
-      file: createFileDeliveryExecutor({ runtimeDir: input.config.runtimeDir }),
-      push: createHttpDeliveryExecutor({ httpClient }),
-      email: createEmailDeliveryExecutor({}),
-    },
-    renderContent: (template, context) => contentRuntime.renderContent(template, context),
-    renderPayload: (payload, context) => contentRuntime.renderPayload(payload as never, context),
+    sourceInputGateway: createRuntimeSourceInputGateway(shared),
+    sourceParser: shared.sourceParser,
+    pipeline: createRuntimePipeline({
+      factsDb,
+      deliveryExecutors: {
+        file: createFileDeliveryExecutor({ runtimeDir: input.config.runtimeDir }),
+        push: createHttpDeliveryExecutor({ httpClient: shared.httpClient }),
+        email: createEmailDeliveryExecutor({}),
+      },
+    }),
+    renderContent: (template, context) => shared.contentRuntime.renderContent(template, context),
+    renderPayload: (payload, context) =>
+      shared.contentRuntime.renderPayload(payload as never, context),
   })
 
   return new PreviewSourceUseCase({ runSourceUseCase })

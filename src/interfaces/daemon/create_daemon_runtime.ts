@@ -4,17 +4,16 @@ import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
 import { createAiRuntime } from '../../core/ai_runtime.ts'
 import { createContentRuntime } from '../../core/content_runtime.ts'
-import { createHttpClient } from '../../core/http_client.ts'
 import { createLogger } from '../../core/logger.ts'
 import { createScheduler } from '../../core/scheduler.ts'
 import { RunDueSourcesUseCase } from '../../application/run_due_sources_use_case.ts'
-import { RunSourceUseCase } from '../../application/run_source_use_case.ts'
 import { createFactsDbClient } from '../../db/client.ts'
-import { createDeliveryAttemptRepository } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'
-import { createApplicationDeduplicationRepository } from '../../infrastructure/sqlite/deduplication_repository.ts'
-import { createItemRepository } from '../../infrastructure/sqlite/item_repository.ts'
-import { createRunRepository } from '../../infrastructure/sqlite/run_repository.ts'
-import { createSummaryQueryService } from '../../infrastructure/sqlite/summary_query_service.ts'
+import {
+  createRunSourceUseCaseForRuntime,
+  createRuntimePipeline,
+  createRuntimeSourceInputGateway,
+  createSourceRuntimeSharedDeps,
+} from '../create_source_execution_core.ts'
 import { markInterruptedAttempts } from '../../infrastructure/sqlite/recovery.ts'
 import { createEmailDeliveryExecutor } from '../../infrastructure/deliveries/email_delivery_executor.ts'
 import { createEmailDelivery } from '../../deliveries/email.ts'
@@ -43,29 +42,6 @@ export interface DaemonRuntime {
   runImmediate: () => Promise<void>
   enterDaemon: () => Promise<void>
   stop: () => void
-}
-
-function resolveSourceConfig(
-  sourceConfigsById: Record<string, ResolvedSourceConfig>,
-  sourceId: string,
-): ResolvedSourceConfig {
-  const source = sourceConfigsById[sourceId]
-  if (!source) {
-    throw new Error(`source 未定义: ${sourceId}`)
-  }
-  return source
-}
-
-function selectSourceInputGateway(
-  source: SourceDefinition,
-  deps: {
-    httpGateway: HttpSourceInputGateway
-    byparrGateway: ByparrSourceInputGateway
-    summaryGateway: SummarySourceInputGateway
-  },
-) {
-  if (source.kind === 'summary') return deps.summaryGateway
-  return source.fetcher === 'byparr' ? deps.byparrGateway : deps.httpGateway
 }
 
 function createSourceQueryService(config: AppConfigResolved): SourceQueryService {
@@ -104,84 +80,50 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
     timestampFormat: options.config.timestampFormat,
   })
   const scheduler = createScheduler(logger.child({ module: 'scheduler.source' }))
-  const aiRuntime = createAiRuntime({
-    ai: options.config.ai,
-    defaultLanguage: options.config.language,
-    logger: logger.child({ module: 'core.ai.runtime' }),
-  })
-  const contentRuntime = createContentRuntime({
-    aiRuntime,
-    logger: logger.child({ module: 'content.render' }),
-  })
+  const definitions = buildLoadedDefinitionsFromResolvedConfig(options.config)
   const factsDb = createFactsDbClient({
     sqlite: options.config.sqlite,
     logger: logger.child({ module: 'db.sqlite' }),
   })
-  const summaryQueryService = createSummaryQueryService(factsDb)
-  const httpClient = createHttpClient({
+  const shared = createSourceRuntimeSharedDeps({
+    config: options.config,
+    factsDb,
+    sourceConfigsById: definitions.sourceConfigsById,
     fetcher: options.httpFetcher ?? fetch,
     proxyClientFactory: options.httpProxyClientFactory ?? Deno.createHttpClient,
+    aiLogger: logger.child({ module: 'core.ai.runtime' }),
+    contentLogger: logger.child({ module: 'content.render' }),
+    parserLogger: logger.child({ module: 'source.parse' }),
+    httpLogger: logger.child({ module: 'source.fetch.http' }),
+    byparrLogger: logger.child({ module: 'source.fetch.byparr' }),
   })
-  const httpGateway = new HttpSourceInputGateway({
-    httpClient,
-    resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
-    logger: logger.child({ module: 'source.fetch.http' }),
-  })
-  const byparrGateway = new ByparrSourceInputGateway({
-    httpClient,
-    resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
-    logger: logger.child({ module: 'source.fetch.byparr' }),
-  })
-  const summaryGateway = new SummarySourceInputGateway({
-    summaryQueryService,
-    contentRuntime,
-    language: options.config.language,
-  })
-  const sourceParser = new SourceParserGateway({
-    resolveSourceConfig: (sourceId) => resolveSourceConfig(definitions.sourceConfigsById, sourceId),
-    timeOptions: {
-      timezone: options.config.timezone,
-      timestampFormat: options.config.timestampFormat,
-    },
-    language: options.config.language,
-    aiRuntime,
-    summaryQueryService,
-    contentRuntime,
-    logger: logger.child({ module: 'source.parse' }),
-  })
-  const runSourceUseCase = new RunSourceUseCase({
+  const aiRuntime = shared.aiRuntime
+  const contentRuntime = shared.contentRuntime
+  const runSourceUseCase = createRunSourceUseCaseForRuntime({
     now: () => new Date().toISOString(),
     createRunId: () => crypto.randomUUID(),
-    sourceInputGateway: {
-      fetch: (plan) =>
-        selectSourceInputGateway(plan.source, {
-          httpGateway,
-          byparrGateway,
-          summaryGateway,
-        }).fetch(plan),
-    },
-    sourceParser,
-    runRepository: createRunRepository(factsDb),
-    itemRepository: createItemRepository(factsDb),
-    deliveryAttemptRepository: createDeliveryAttemptRepository(factsDb),
-    deduplicationRepository: createApplicationDeduplicationRepository(factsDb),
-    deliveryExecutors: {
-      file: createFileDeliveryExecutor({
-        runtimeDir: options.config.runtimeDir,
-        logger: logger.child({ module: 'delivery.file' }),
-      }),
-      push: createHttpDeliveryExecutor({
-        httpClient,
-        logger: logger.child({ module: 'delivery.http' }),
-      }),
-      email: createEmailDeliveryExecutor({
-        logger: logger.child({ module: 'delivery.email' }),
-        delivery: createEmailDelivery({
-          logger: logger.child({ module: 'delivery.email' }),
-          createTransport: options.emailTransportFactory,
+    sourceInputGateway: createRuntimeSourceInputGateway(shared),
+    sourceParser: shared.sourceParser,
+    pipeline: createRuntimePipeline({
+      factsDb,
+      deliveryExecutors: {
+        file: createFileDeliveryExecutor({
+          runtimeDir: options.config.runtimeDir,
+          logger: logger.child({ module: 'delivery.file' }),
         }),
-      }),
-    },
+        push: createHttpDeliveryExecutor({
+          httpClient: shared.httpClient,
+          logger: logger.child({ module: 'delivery.http' }),
+        }),
+        email: createEmailDeliveryExecutor({
+          logger: logger.child({ module: 'delivery.email' }),
+          delivery: createEmailDelivery({
+            logger: logger.child({ module: 'delivery.email' }),
+            createTransport: options.emailTransportFactory,
+          }),
+        }),
+      },
+    }),
     renderContent: (template, context) => contentRuntime.renderContent(template, context),
     renderPayload: (payload, context) => contentRuntime.renderPayload(payload as never, context),
     shouldPassFilter: ({ item, feed, source, filterTemplate }) =>
@@ -196,8 +138,8 @@ export function createDaemonRuntime(options: CreateDaemonRuntimeOptions): Daemon
         } as ResolvedSourceConfig),
       ),
     logger: logger.child({ module: 'scheduler.source' }),
+    requireFullPipeline: true,
   })
-  const definitions = buildLoadedDefinitionsFromResolvedConfig(options.config)
   const sourceQueryService = createSourceQueryService(options.config)
   const sourceConfigs = Object.values(definitions.sourceConfigsById)
   const runDueSourcesUseCase = new RunDueSourcesUseCase({
