@@ -323,6 +323,144 @@ Deno.test(
 )
 
 Deno.test(
+  '[contract] runSourceUseCase: email delivery 应把 canonical rendered payload 贯通到主链 attempt plan',
+  async () => {
+    const plannedAttempts: DeliveryAttempt[] = []
+    const executedSnapshots: RenderedSnapshot[] = []
+
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T11:10:00.000Z',
+      createRunId: () => 'run-email-canonical',
+      createItemId: (entry) => `item:${entry.id}`,
+      sourceInputGateway: {
+        fetch: (plan) =>
+          Promise.resolve({
+            kind: plan.source.kind,
+            collectedAt: '2026-04-13T11:10:00.000Z',
+            payloadSummary: { hash: 'hash-email-canonical', bytes: 10 },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
+              link: '',
+              description: '',
+              generator: '',
+              language: '',
+              published: '',
+            },
+            items: [
+              {
+                id: 'entry-1',
+                title: 'Hello',
+                link: '',
+                description: 'Desc',
+                content: '',
+                published: '',
+                updated: '',
+              },
+            ],
+          }),
+      },
+      runRepository: {
+        insert: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+      },
+      itemRepository: {
+        insertMany: () => Promise.resolve(),
+        updateStatus: () => Promise.resolve(),
+      },
+      deliveryAttemptRepository: {
+        insertPlanned: (attempt) => {
+          plannedAttempts.push(attempt)
+          return Promise.resolve()
+        },
+        finish: () => Promise.resolve(),
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => Promise.resolve(false),
+        registerItemFingerprint: () => Promise.resolve(),
+        isDeliveryDuplicate: () => Promise.resolve(false),
+        registerDeliveryFingerprint: () => Promise.resolve(),
+      },
+      deliveryExecutors: {
+        email: {
+          execute: (plan) => {
+            executedSnapshots.push(plan.renderedSnapshot)
+            return Promise.resolve()
+          },
+        },
+      },
+    })
+
+    await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'scheduled',
+      bindings: [
+        {
+          sourceId: 'rust',
+          deliveryId: 'mailer',
+          definition: {
+            kind: 'email',
+            deliveryId: 'mailer',
+            smtp: {
+              host: 'smtp.example.com',
+              port: 587,
+              security: 'starttls',
+            },
+            messageTemplate: {
+              from: 'bot@example.com',
+              to: ['ops@example.com'],
+              subject: '{{ entry.title }}',
+              text: '{{ entry.description }}',
+            },
+          },
+        },
+      ],
+    })
+
+    const expectedSnapshot = {
+      channel: 'email',
+      payload: {
+        smtp: {
+          host: 'smtp.example.com',
+          port: 587,
+          security: 'starttls',
+        },
+        message: {
+          from: 'bot@example.com',
+          to: ['ops@example.com'],
+          cc: undefined,
+          bcc: undefined,
+          replyTo: undefined,
+          subject: 'Hello',
+          text: 'Desc',
+          headers: undefined,
+        },
+      },
+    } satisfies RenderedSnapshot
+
+    assertEquals(
+      plannedAttempts.map((attempt) => attempt.renderedSnapshot),
+      [expectedSnapshot],
+    )
+    assertEquals(executedSnapshots, [expectedSnapshot])
+  },
+)
+
+Deno.test(
   '[contract] runSourceUseCase: source filter 命中时应落 filtered，而不是继续进入 dedupe/delivery',
   async () => {
     const itemStatuses: Array<{

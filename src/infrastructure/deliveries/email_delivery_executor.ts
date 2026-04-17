@@ -21,7 +21,7 @@ export function createEmailDeliveryExecutor(deps: EmailDeliveryExecutorDeps): De
 
       const payload = (plan.renderedSnapshot.payload ?? {}) as Record<string, unknown>
       const smtp = payload.smtp
-      const message = payload.message ?? payload
+      const message = payload.message
       if (!smtp || typeof smtp !== 'object' || !message || typeof message !== 'object') {
         throw new Error('email executor 缺少 smtp/message rendered payload')
       }
