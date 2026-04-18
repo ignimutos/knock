@@ -146,8 +146,9 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
     },
   }
 
-  const result = input.previewExecutor
-    ? await input.previewExecutor({
+  const previewExecutor = input.previewExecutor
+  const result = previewExecutor
+    ? await previewExecutor({
         config,
         source: resolvedSource,
         fetcher: input.fetcher,
@@ -161,8 +162,14 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
         }),
       })
 
+  const warnings = previewExecutor ? [...parsed.warnings, ...result.warnings] : result.warnings
+
   return {
-    ...result,
-    warnings: parsed.warnings,
+    warnings,
+    fetchMeta: result.fetchMeta,
+    parser: result.parser,
+    rawContent: result.rawContent,
+    feed: result.feed,
+    entries: result.entries,
   }
 }

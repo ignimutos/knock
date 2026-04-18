@@ -1,4 +1,8 @@
 import { asc, eq } from 'drizzle-orm'
+import type {
+  SourceRunQueryService,
+  SourceRunView,
+} from '../../application/ports/source_run_query_service.ts'
 import {
   assertDeliveryAttemptInvariant,
   type DeliveryAttempt,
@@ -20,16 +24,6 @@ import {
 import type { EffectDomain, RunProfile, RunTrigger } from '../../domain/run_profile.ts'
 import type { FactsDbClient } from '../../db/client.ts'
 import { deliveryAttempts, pipelineItems, sourceRuns } from './schema.ts'
-
-export interface SourceRunView {
-  run: SourceRun
-  items: PipelineItem[]
-  attempts: DeliveryAttempt[]
-}
-
-export interface SourceRunQueryService {
-  getRun(runId: string): Promise<SourceRunView | undefined>
-}
 
 function parseJsonRecord(value: string, fieldName: string): unknown {
   try {

@@ -52,6 +52,29 @@ function createUseCaseWithRecorder(calls: string[]) {
     createRunId: () => 'run-1',
     sourceInputGateway,
     sourceParser,
+    runRepository: {
+      insert: () => Promise.resolve(),
+      update: () => Promise.resolve(),
+    },
+    itemRepository: {
+      insertMany: () => Promise.resolve(),
+      updateStatus: () => Promise.resolve(),
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => Promise.resolve(),
+      finish: () => Promise.resolve(),
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => Promise.resolve(false),
+      registerItemFingerprint: () => Promise.resolve(),
+      isDeliveryDuplicate: () => Promise.resolve(false),
+      registerDeliveryFingerprint: () => Promise.resolve(),
+    },
+    deliveryExecutors: {
+      file: { execute: () => Promise.resolve() },
+      push: { execute: () => Promise.resolve() },
+      email: { execute: () => Promise.resolve() },
+    },
   })
 }
 
@@ -1545,7 +1568,7 @@ Deno.test('[contract] runSourceUseCase: collect 只应执行 plan、fetch、pars
   assertEquals(calls, ['fetch:run-collect', 'parse:run-collect:fetch'])
 })
 
-Deno.test('[contract] runSourceUseCase: 缺 pipeline deps 时 execute 应退化为 collect', async () => {
+Deno.test('[contract] runSourceUseCase: 缺 pipeline deps 时 execute 应 fail fast', async () => {
   const calls: string[] = []
   const useCase = new RunSourceUseCase({
     now: () => '2026-04-13T12:05:00.000Z',
@@ -1581,19 +1604,22 @@ Deno.test('[contract] runSourceUseCase: 缺 pipeline deps 时 execute 应退化�
     },
   })
 
-  const result = await useCase.execute({
-    source: {
-      kind: 'fetch',
-      sourceId: 'rust',
-      fetcher: 'http',
-      parser: 'syndication',
-    },
-    profile: 'preview',
-    effectDomain: 'preview',
-    trigger: 'preview',
-  })
-
-  assertEquals(result.plan.runId, 'run-collect-only')
+  await assertRejects(
+    () =>
+      useCase.execute({
+        source: {
+          kind: 'fetch',
+          sourceId: 'rust',
+          fetcher: 'http',
+          parser: 'syndication',
+        },
+        profile: 'preview',
+        effectDomain: 'preview',
+        trigger: 'preview',
+      }),
+    Error,
+    'run source execute 缺少完整 pipeline 依赖',
+  )
   assertEquals(calls, ['fetch:run-collect-only', 'parse:run-collect-only:fetch'])
 })
 
@@ -1733,233 +1759,269 @@ Deno.test('[contract] runSourceUseCase: execute 应先 collect 再 applyCollecte
   ])
 })
 
-Deno.test('[contract] runSourceUseCase: execute 应经由 item 级 pipeline 边界方法', async () => {
-  const order: string[] = []
-  const useCase = new RunSourceUseCase({
-    now: () => '2026-04-13T12:20:00.000Z',
-    createRunId: () => 'run-boundary-methods',
-    createItemId: (entry) => `item:${entry.id}`,
-    sourceInputGateway: {
-      fetch: (plan) =>
-        Promise.resolve({
-          kind: plan.source.kind,
-          collectedAt: '2026-04-13T12:20:01.000Z',
-          payloadSummary: { hash: 'hash-boundary-methods', bytes: 10 },
-        }),
-    },
-    sourceParser: {
-      parse: () =>
-        Promise.resolve({
-          sourceKind: 'fetch',
-          parser: 'rss',
-          diagnostics: [],
-          feed: {
-            title: 'Feed',
-            link: '',
-            description: '',
-            generator: '',
-            language: '',
-            published: '',
-          },
-          items: [
-            {
-              id: 'entry-1',
-              title: 'Hello',
+Deno.test(
+  '[contract] runSourceUseCase: 非 duplicate item 应进入 delivery 并以 delivered 收口',
+  async () => {
+    const itemStatuses: Array<{
+      itemId: string
+      status: PipelineItem['status']
+      skippedReason?: string
+    }> = []
+    let itemDuplicateChecks = 0
+    let deliveryDuplicateChecks = 0
+    let plannedAttemptCount = 0
+    let finishedAttemptCount = 0
+    let deliveryExecutions = 0
+    let registeredDeliveryFingerprints = 0
+    let registeredItemFingerprints = 0
+
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T12:20:00.000Z',
+      createRunId: () => 'run-boundary-methods',
+      createItemId: (entry) => `item:${entry.id}`,
+      sourceInputGateway: {
+        fetch: (plan) =>
+          Promise.resolve({
+            kind: plan.source.kind,
+            collectedAt: '2026-04-13T12:20:01.000Z',
+            payloadSummary: { hash: 'hash-boundary-methods', bytes: 10 },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
               link: '',
               description: '',
-              content: '',
+              generator: '',
+              language: '',
               published: '',
-              updated: '',
             },
-          ],
-        }),
-    },
-    runRepository: {
-      insert: () => Promise.resolve(),
-      update: () => Promise.resolve(),
-    },
-    itemRepository: {
-      insertMany: () => Promise.resolve(),
-      updateStatus: () => Promise.resolve(),
-    },
-    deliveryAttemptRepository: {
-      insertPlanned: () => Promise.resolve(),
-      finish: () => Promise.resolve(),
-    },
-    deduplicationRepository: {
-      isItemDuplicate: () => Promise.resolve(false),
-      registerItemFingerprint: () => Promise.resolve(),
-      isDeliveryDuplicate: () => Promise.resolve(false),
-      registerDeliveryFingerprint: () => Promise.resolve(),
-    },
-    deliveryExecutors: {
-      file: { execute: () => Promise.resolve() },
-    },
-  })
-
-  const useCaseRecord = useCase as unknown as Record<
-    string,
-    (...args: unknown[]) => Promise<unknown>
-  >
-  assertEquals(typeof useCaseRecord.processItem, 'function')
-  assertEquals(typeof useCaseRecord.processDeliveriesForItem, 'function')
-  assertEquals(typeof useCaseRecord.finalizeItemStatus, 'function')
-
-  const originalProcessItem = useCaseRecord.processItem
-  const originalProcessDeliveriesForItem = useCaseRecord.processDeliveriesForItem
-  const originalFinalizeItemStatus = useCaseRecord.finalizeItemStatus
-
-  useCaseRecord.processItem = async function (...args: unknown[]) {
-    order.push('processItem')
-    return await originalProcessItem.apply(this, args)
-  }
-  useCaseRecord.processDeliveriesForItem = async function (...args: unknown[]) {
-    order.push('processDeliveriesForItem')
-    return await originalProcessDeliveriesForItem.apply(this, args)
-  }
-  useCaseRecord.finalizeItemStatus = async function (...args: unknown[]) {
-    order.push('finalizeItemStatus')
-    return await originalFinalizeItemStatus.apply(this, args)
-  }
-
-  await useCase.execute({
-    source: {
-      kind: 'fetch',
-      sourceId: 'rust',
-      fetcher: 'http',
-      parser: 'syndication',
-    },
-    profile: 'production',
-    effectDomain: 'production',
-    trigger: 'scheduled',
-    bindings: [
-      {
-        sourceId: 'rust',
-        deliveryId: 'archive',
-        definition: {
-          kind: 'file',
-          deliveryId: 'archive',
-          path: '/tmp/archive.txt',
-          contentTemplate: '{{ entry.title }}',
+            items: [
+              {
+                id: 'entry-1',
+                title: 'Hello',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+            ],
+          }),
+      },
+      runRepository: {
+        insert: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+      },
+      itemRepository: {
+        insertMany: () => Promise.resolve(),
+        updateStatus: (itemId, status, skippedReason) => {
+          itemStatuses.push({ itemId, status, skippedReason })
+          return Promise.resolve()
         },
       },
-    ],
-  })
-
-  assertEquals(order, ['processItem', 'processDeliveriesForItem', 'finalizeItemStatus'])
-})
-
-Deno.test('[contract] runSourceUseCase: item duplicate 时不应进入 delivery 边界', async () => {
-  const itemStatuses: Array<{
-    itemId: string
-    status: PipelineItem['status']
-    skippedReason?: string
-  }> = []
-  let processDeliveriesCalls = 0
-
-  const useCase = new RunSourceUseCase({
-    now: () => '2026-04-13T12:25:00.000Z',
-    createRunId: () => 'run-item-duplicate-boundary',
-    createItemId: (entry) => `item:${entry.id}`,
-    sourceInputGateway: {
-      fetch: (plan) =>
-        Promise.resolve({
-          kind: plan.source.kind,
-          collectedAt: '2026-04-13T12:25:01.000Z',
-          payloadSummary: { hash: 'hash-item-duplicate-boundary', bytes: 10 },
-        }),
-    },
-    sourceParser: {
-      parse: () =>
-        Promise.resolve({
-          sourceKind: 'fetch',
-          parser: 'rss',
-          diagnostics: [],
-          feed: {
-            title: 'Feed',
-            link: '',
-            description: '',
-            generator: '',
-            language: '',
-            published: '',
+      deliveryAttemptRepository: {
+        insertPlanned: () => {
+          plannedAttemptCount += 1
+          return Promise.resolve()
+        },
+        finish: () => {
+          finishedAttemptCount += 1
+          return Promise.resolve()
+        },
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => {
+          itemDuplicateChecks += 1
+          return Promise.resolve(false)
+        },
+        registerItemFingerprint: () => {
+          registeredItemFingerprints += 1
+          return Promise.resolve()
+        },
+        isDeliveryDuplicate: () => {
+          deliveryDuplicateChecks += 1
+          return Promise.resolve(false)
+        },
+        registerDeliveryFingerprint: () => {
+          registeredDeliveryFingerprints += 1
+          return Promise.resolve()
+        },
+      },
+      deliveryExecutors: {
+        file: {
+          execute: () => {
+            deliveryExecutions += 1
+            return Promise.resolve()
           },
-          items: [
-            {
-              id: 'entry-1',
-              title: 'Hello',
+        },
+      },
+    })
+
+    await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'scheduled',
+      bindings: [
+        {
+          sourceId: 'rust',
+          deliveryId: 'archive',
+          definition: {
+            kind: 'file',
+            deliveryId: 'archive',
+            path: '/tmp/archive.txt',
+            contentTemplate: '{{ entry.title }}',
+          },
+        },
+      ],
+    })
+
+    assertEquals(itemDuplicateChecks, 1)
+    assertEquals(deliveryDuplicateChecks, 1)
+    assertEquals(plannedAttemptCount, 1)
+    assertEquals(finishedAttemptCount, 1)
+    assertEquals(deliveryExecutions, 1)
+    assertEquals(registeredDeliveryFingerprints, 1)
+    assertEquals(registeredItemFingerprints, 1)
+    assertEquals(itemStatuses, [
+      { itemId: 'item:entry-1', status: 'delivered', skippedReason: undefined },
+    ])
+  },
+)
+
+Deno.test(
+  '[contract] runSourceUseCase: item duplicate 时不应进入 delivery 计划与发送',
+  async () => {
+    const itemStatuses: Array<{
+      itemId: string
+      status: PipelineItem['status']
+      skippedReason?: string
+    }> = []
+    let plannedAttemptCount = 0
+    let finishedAttemptCount = 0
+    let deliveryExecutions = 0
+    let deliveryDuplicateChecks = 0
+
+    const useCase = new RunSourceUseCase({
+      now: () => '2026-04-13T12:25:00.000Z',
+      createRunId: () => 'run-item-duplicate-boundary',
+      createItemId: (entry) => `item:${entry.id}`,
+      sourceInputGateway: {
+        fetch: (plan) =>
+          Promise.resolve({
+            kind: plan.source.kind,
+            collectedAt: '2026-04-13T12:25:01.000Z',
+            payloadSummary: { hash: 'hash-item-duplicate-boundary', bytes: 10 },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
               link: '',
               description: '',
-              content: '',
+              generator: '',
+              language: '',
               published: '',
-              updated: '',
             },
-          ],
-        }),
-    },
-    runRepository: {
-      insert: () => Promise.resolve(),
-      update: () => Promise.resolve(),
-    },
-    itemRepository: {
-      insertMany: () => Promise.resolve(),
-      updateStatus: (itemId, status, skippedReason) => {
-        itemStatuses.push({ itemId, status, skippedReason })
-        return Promise.resolve()
+            items: [
+              {
+                id: 'entry-1',
+                title: 'Hello',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+            ],
+          }),
       },
-    },
-    deliveryAttemptRepository: {
-      insertPlanned: () => Promise.resolve(),
-      finish: () => Promise.resolve(),
-    },
-    deduplicationRepository: {
-      isItemDuplicate: () => Promise.resolve(true),
-      registerItemFingerprint: () => Promise.resolve(),
-      isDeliveryDuplicate: () => Promise.resolve(false),
-      registerDeliveryFingerprint: () => Promise.resolve(),
-    },
-    deliveryExecutors: {
-      file: { execute: () => Promise.resolve() },
-    },
-  })
-
-  const useCaseRecord = useCase as unknown as Record<
-    string,
-    (...args: unknown[]) => Promise<unknown>
-  >
-  assertEquals(typeof useCaseRecord.processDeliveriesForItem, 'function')
-
-  const originalProcessDeliveriesForItem = useCaseRecord.processDeliveriesForItem
-  useCaseRecord.processDeliveriesForItem = async function (...args: unknown[]) {
-    processDeliveriesCalls += 1
-    return await originalProcessDeliveriesForItem.apply(this, args)
-  }
-
-  await useCase.execute({
-    source: {
-      kind: 'fetch',
-      sourceId: 'rust',
-      fetcher: 'http',
-      parser: 'syndication',
-    },
-    profile: 'production',
-    effectDomain: 'production',
-    trigger: 'scheduled',
-    bindings: [
-      {
-        sourceId: 'rust',
-        deliveryId: 'archive',
-        definition: {
-          kind: 'file',
-          deliveryId: 'archive',
-          path: '/tmp/archive.txt',
-          contentTemplate: '{{ entry.title }}',
+      runRepository: {
+        insert: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+      },
+      itemRepository: {
+        insertMany: () => Promise.resolve(),
+        updateStatus: (itemId, status, skippedReason) => {
+          itemStatuses.push({ itemId, status, skippedReason })
+          return Promise.resolve()
         },
       },
-    ],
-  })
+      deliveryAttemptRepository: {
+        insertPlanned: () => {
+          plannedAttemptCount += 1
+          return Promise.resolve()
+        },
+        finish: () => {
+          finishedAttemptCount += 1
+          return Promise.resolve()
+        },
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => Promise.resolve(true),
+        registerItemFingerprint: () => Promise.resolve(),
+        isDeliveryDuplicate: () => {
+          deliveryDuplicateChecks += 1
+          return Promise.resolve(false)
+        },
+        registerDeliveryFingerprint: () => Promise.resolve(),
+      },
+      deliveryExecutors: {
+        file: {
+          execute: () => {
+            deliveryExecutions += 1
+            return Promise.resolve()
+          },
+        },
+      },
+    })
 
-  assertEquals(processDeliveriesCalls, 0)
-  assertEquals(itemStatuses, [
-    { itemId: 'item:entry-1', status: 'duplicate', skippedReason: undefined },
-  ])
-})
+    await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'scheduled',
+      bindings: [
+        {
+          sourceId: 'rust',
+          deliveryId: 'archive',
+          definition: {
+            kind: 'file',
+            deliveryId: 'archive',
+            path: '/tmp/archive.txt',
+            contentTemplate: '{{ entry.title }}',
+          },
+        },
+      ],
+    })
+
+    assertEquals(deliveryDuplicateChecks, 0)
+    assertEquals(plannedAttemptCount, 0)
+    assertEquals(finishedAttemptCount, 0)
+    assertEquals(deliveryExecutions, 0)
+    assertEquals(itemStatuses, [
+      { itemId: 'item:entry-1', status: 'duplicate', skippedReason: undefined },
+    ])
+  },
+)

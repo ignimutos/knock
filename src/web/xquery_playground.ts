@@ -147,6 +147,20 @@ export function parsePlaygroundRequest(input: unknown): ParsedPlaygroundRequest 
   }
 }
 
+export interface PlaygroundPreviewResult {
+  warnings: string[]
+  fetchMeta: {
+    ok: boolean
+    payloadBytes?: number
+    fetchDurationMs?: number
+    parseDurationMs?: number
+  }
+  parser: string
+  rawContent: string
+  feed: unknown
+  entries: unknown[]
+}
+
 export interface EvaluatePlaygroundInput {
   request: unknown
   fetcher?: typeof fetch
@@ -154,19 +168,7 @@ export interface EvaluatePlaygroundInput {
     config: AppConfigResolved
     source: ResolvedSourceConfig
     fetcher?: typeof fetch
-  }) => Promise<{
-    warnings: string[]
-    fetchMeta: {
-      ok: boolean
-      payloadBytes?: number
-      fetchDurationMs?: number
-      parseDurationMs?: number
-    }
-    parser: string
-    rawContent: string
-    feed: unknown
-    entries: unknown[]
-  }>
+  }) => Promise<PlaygroundPreviewResult>
 }
 
 export interface PlaygroundErrorResult {
@@ -339,8 +341,9 @@ export async function evaluatePlayground(input: EvaluatePlaygroundInput) {
   }
   const config = createPlaygroundConfig(resolvedSource)
 
-  const result = input.previewExecutor
-    ? await input.previewExecutor({
+  const previewExecutor = input.previewExecutor
+  const result = previewExecutor
+    ? await previewExecutor({
         config,
         source: resolvedSource,
         fetcher: input.fetcher,
@@ -354,8 +357,14 @@ export async function evaluatePlayground(input: EvaluatePlaygroundInput) {
         }),
       })
 
+  const warnings = previewExecutor ? [...parsed.warnings, ...result.warnings] : result.warnings
+
   return {
-    ...result,
-    warnings: parsed.warnings,
+    warnings,
+    fetchMeta: result.fetchMeta,
+    parser: result.parser,
+    rawContent: result.rawContent,
+    feed: result.feed,
+    entries: result.entries,
   }
 }

@@ -1,11 +1,12 @@
 import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
-import type { StartAppOptions } from './core/app.ts'
+import type { StartAppOptions } from './main.ts'
+import { dispatchCliCommand, main } from './main.ts'
 import {
   buildChildArgs,
-  parseCliArgs,
+  parseCliCommand,
   resolveDaemonStartOptions,
   toDaemonStartOptions,
-} from './main.ts'
+} from './interfaces/cli/parse_cli_command.ts'
 
 async function readCommandOutput(
   stream: ReadableStream<Uint8Array> | null,
@@ -39,8 +40,8 @@ async function readCommandOutput(
   }
 }
 
-Deno.test('[contract] parseCliArgs: 应解析 --config、--runtime_dir 与 --immediate', () => {
-  const options = parseCliArgs([
+Deno.test('[contract] parseCliCommand: 应解析 --config、--runtime_dir 与 --immediate', () => {
+  const command = parseCliCommand([
     '--config',
     '/tmp/config.yml',
     '--runtime_dir',
@@ -48,55 +49,57 @@ Deno.test('[contract] parseCliArgs: 应解析 --config、--runtime_dir 与 --imm
     '--immediate',
   ])
 
-  assertEquals(options, {
-    mode: 'all',
+  assertEquals(command, {
+    kind: 'all',
     configPath: '/tmp/config.yml',
     runtimeDir: '/tmp/runtime',
     immediate: true,
-    webHost: undefined,
-    webPort: undefined,
+    host: undefined,
+    port: undefined,
   })
 })
 
-Deno.test('[contract] parseCliArgs: 未知参数时应报错', () => {
-  assertThrows(() => parseCliArgs(['--unknown']), Error, '未知参数: --unknown')
+Deno.test('[contract] parseCliCommand: 未知参数时应报错', () => {
+  assertThrows(() => parseCliCommand(['--unknown']), Error, '未知参数: --unknown')
 })
 
-Deno.test('[contract] parseCliArgs: --config 缺少值时应报错', () => {
-  assertThrows(() => parseCliArgs(['--config']), Error, '--config 缺少路径参数')
+Deno.test('[contract] parseCliCommand: --config 缺少值时应报错', () => {
+  assertThrows(() => parseCliCommand(['--config']), Error, '--config 缺少路径参数')
 })
 
-Deno.test('[contract] parseCliArgs: --runtime_dir 缺少值时应报错', () => {
-  assertThrows(() => parseCliArgs(['--runtime_dir']), Error, '--runtime_dir 缺少目录参数')
+Deno.test('[contract] parseCliCommand: --runtime_dir 缺少值时应报错', () => {
+  assertThrows(() => parseCliCommand(['--runtime_dir']), Error, '--runtime_dir 缺少目录参数')
 })
 
-Deno.test('[contract] parseCliArgs: --mode 缺少值时应报错', () => {
-  assertThrows(() => parseCliArgs(['--mode']), Error, '--mode 缺少参数')
+Deno.test('[contract] parseCliCommand: --mode 缺少值时应报错', () => {
+  assertThrows(() => parseCliCommand(['--mode']), Error, '--mode 缺少参数')
 })
 
-Deno.test('[contract] parseCliArgs: --web_host 缺少值时应报错', () => {
-  assertThrows(() => parseCliArgs(['--web_host']), Error, '--web_host 缺少参数')
+Deno.test('[contract] parseCliCommand: --web_host 缺少值时应报错', () => {
+  assertThrows(() => parseCliCommand(['--web_host']), Error, '--web_host 缺少参数')
 })
 
-Deno.test('[contract] parseCliArgs: --web_port 缺少值时应报错', () => {
-  assertThrows(() => parseCliArgs(['--web_port']), Error, '--web_port 缺少参数')
+Deno.test('[contract] parseCliCommand: --web_port 缺少值时应报错', () => {
+  assertThrows(() => parseCliCommand(['--web_port']), Error, '--web_port 缺少参数')
 })
 
-Deno.test('[contract] parseCliArgs: 未传 --immediate 时应显式返回 immediate=false', () => {
-  const options = parseCliArgs(['--config', '/tmp/config.yml'])
+Deno.test('[contract] parseCliCommand: 未传 --immediate 时应显式返回 immediate=false', () => {
+  const command = parseCliCommand(['--config', '/tmp/config.yml'])
 
-  assertEquals(options, {
-    mode: 'all',
+  assertEquals(command, {
+    kind: 'all',
     configPath: '/tmp/config.yml',
     runtimeDir: undefined,
     immediate: false,
-    webHost: undefined,
-    webPort: undefined,
+    host: undefined,
+    port: undefined,
   })
 })
 
-Deno.test('[contract] parseCliArgs: 返回值应可赋给 app 启动入口类型', () => {
-  const options: StartAppOptions = parseCliArgs(['--config', '/tmp/config.yml'])
+Deno.test('[contract] toDaemonStartOptions: 返回值应可赋给 app 启动入口类型', () => {
+  const options: StartAppOptions = toDaemonStartOptions(
+    parseCliCommand(['--config', '/tmp/config.yml']),
+  )
 
   assertEquals(options.immediate, false)
   assertEquals(options.configPath, '/tmp/config.yml')
@@ -104,7 +107,13 @@ Deno.test('[contract] parseCliArgs: 返回值应可赋给 app 启动入口类型
 
 Deno.test('[contract] toDaemonStartOptions: 应收敛为 daemon 启动参数', () => {
   const options = toDaemonStartOptions(
-    parseCliArgs(['--config', '/tmp/config.yml', '--runtime_dir', '/tmp/runtime', '--immediate']),
+    parseCliCommand([
+      '--config',
+      '/tmp/config.yml',
+      '--runtime_dir',
+      '/tmp/runtime',
+      '--immediate',
+    ]),
   )
 
   assertEquals(options, {
@@ -114,18 +123,9 @@ Deno.test('[contract] toDaemonStartOptions: 应收敛为 daemon 启动参数', (
   })
 })
 
-Deno.test('[contract] toDaemonStartOptions: 返回值应可赋给 app 启动入口类型', () => {
-  const options: StartAppOptions = toDaemonStartOptions(
-    parseCliArgs(['--config', '/tmp/config.yml']),
-  )
-
-  assertEquals(options.immediate, false)
-  assertEquals(options.configPath, '/tmp/config.yml')
-})
-
 Deno.test('[contract] resolveDaemonStartOptions: CLI 显式 runtime_dir 应优先于环境变量', () => {
   const options = resolveDaemonStartOptions(
-    parseCliArgs([
+    parseCliCommand([
       '--mode',
       'daemon',
       '--config',
@@ -147,7 +147,7 @@ Deno.test('[contract] resolveDaemonStartOptions: CLI 显式 runtime_dir 应优�
 
 Deno.test('[contract] resolveDaemonStartOptions: 未传 runtime_dir 时应回退到环境变量', () => {
   const options = resolveDaemonStartOptions(
-    parseCliArgs(['--mode', 'daemon', '--config', '/tmp/config.yml']),
+    parseCliCommand(['--mode', 'daemon', '--config', '/tmp/config.yml']),
     {
       KNOCK_RUNTIME_DIR: '/tmp/runtime-from-env',
     },
@@ -160,123 +160,143 @@ Deno.test('[contract] resolveDaemonStartOptions: 未传 runtime_dir 时应回退
   })
 })
 
-Deno.test('[contract] parseCliArgs: 应解析 mode=web 与 web 参数', () => {
-  const options = parseCliArgs(['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', '8080'])
+Deno.test('[contract] parseCliCommand: 应解析 mode=web 与 web 参数', () => {
+  const command = parseCliCommand([
+    '--mode',
+    'web',
+    '--web_host',
+    '127.0.0.1',
+    '--web_port',
+    '8080',
+  ])
 
-  assertEquals(options, {
-    mode: 'web',
-    configPath: undefined,
-    runtimeDir: undefined,
-    immediate: false,
-    webHost: '127.0.0.1',
-    webPort: 8080,
+  assertEquals(command, {
+    kind: 'web',
+    host: '127.0.0.1',
+    port: 8080,
   })
 })
 
-Deno.test('[contract] parseCliArgs: start 默认 mode=all', () => {
-  assertEquals(parseCliArgs([]).mode, 'all')
+Deno.test('[contract] parseCliCommand: start 默认 mode=all', () => {
+  assertEquals(parseCliCommand([]).kind, 'all')
 })
 
-Deno.test('[contract] parseCliArgs: web 模式不接受 --config', () => {
+Deno.test('[contract] parseCliCommand: web 模式不接受 --config', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'web', '--config', 'runtime/config.yml']),
+    () => parseCliCommand(['--mode', 'web', '--config', 'runtime/config.yml']),
     Error,
     'web 模式不支持 --config',
   )
 })
 
-Deno.test('[contract] parseCliArgs: web 模式不接受 --runtime_dir', () => {
+Deno.test('[contract] parseCliCommand: web 模式不接受 --runtime_dir', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'web', '--runtime_dir', '/tmp/runtime']),
+    () => parseCliCommand(['--mode', 'web', '--runtime_dir', '/tmp/runtime']),
     Error,
     'web 模式不支持 --runtime_dir',
   )
 })
 
-Deno.test('[contract] parseCliArgs: web 模式不接受 --immediate', () => {
+Deno.test('[contract] parseCliCommand: web 模式不接受 --immediate', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'web', '--immediate']),
+    () => parseCliCommand(['--mode', 'web', '--immediate']),
     Error,
     'web 模式不支持 --immediate',
   )
 })
 
-Deno.test('[contract] parseCliArgs: daemon 模式不接受 --web_host', () => {
+Deno.test('[contract] parseCliCommand: daemon 模式不接受 --web_host', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'daemon', '--web_host', '127.0.0.1']),
+    () => parseCliCommand(['--mode', 'daemon', '--web_host', '127.0.0.1']),
     Error,
     'daemon 模式不支持 --web_host',
   )
 })
 
-Deno.test('[contract] parseCliArgs: daemon 模式不接受 --web_port', () => {
+Deno.test('[contract] parseCliCommand: daemon 模式不接受 --web_port', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'daemon', '--web_port', '8080']),
+    () => parseCliCommand(['--mode', 'daemon', '--web_port', '8080']),
     Error,
     'daemon 模式不支持 --web_port',
   )
 })
 
-Deno.test('[contract] parseCliArgs: --mode 非法值时应报错', () => {
-  assertThrows(() => parseCliArgs(['--mode', 'oops']), Error, '--mode 非法: oops')
+Deno.test('[contract] parseCliCommand: --mode 非法值时应报错', () => {
+  assertThrows(() => parseCliCommand(['--mode', 'oops']), Error, '--mode 非法: oops')
 })
 
-Deno.test('[contract] parseCliArgs: --web_port 非数字时应报错', () => {
-  assertThrows(() => parseCliArgs(['--mode', 'web', '--web_port', 'abc']), Error, '--web_port 非法')
-})
-
-Deno.test('[contract] parseCliArgs: --web_port 小数时应报错', () => {
+Deno.test('[contract] parseCliCommand: --web_port 非数字时应报错', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'web', '--web_port', '8080.5']),
+    () => parseCliCommand(['--mode', 'web', '--web_port', 'abc']),
     Error,
     '--web_port 非法',
   )
 })
 
-Deno.test('[contract] parseCliArgs: --web_port 空白时应报错', () => {
-  assertThrows(() => parseCliArgs(['--mode', 'web', '--web_port', '  ']), Error, '--web_port 非法')
-})
-
-Deno.test('[contract] parseCliArgs: --web_port 越界时应报错', () => {
+Deno.test('[contract] parseCliCommand: --web_port 小数时应报错', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'web', '--web_port', '70000']),
+    () => parseCliCommand(['--mode', 'web', '--web_port', '8080.5']),
     Error,
     '--web_port 非法',
   )
 })
 
-Deno.test('[contract] parseCliArgs: --web_port 为 0 时应报错', () => {
-  assertThrows(() => parseCliArgs(['--mode', 'web', '--web_port', '0']), Error, '--web_port 非法')
-})
-
-Deno.test('[contract] parseCliArgs: --web_port 最小边界 1 应通过', () => {
-  const options = parseCliArgs(['--mode', 'web', '--web_port', '1'])
-  assertEquals(options.webPort, 1)
-})
-
-Deno.test('[contract] parseCliArgs: --web_port 最大边界 65535 应通过', () => {
-  const options = parseCliArgs(['--mode', 'web', '--web_port', '65535'])
-  assertEquals(options.webPort, 65535)
-})
-
-Deno.test('[contract] parseCliArgs: daemon 模式下 --web_host 空字符串也应报互斥错误', () => {
+Deno.test('[contract] parseCliCommand: --web_port 空白时应报错', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'daemon', '--web_host', '']),
+    () => parseCliCommand(['--mode', 'web', '--web_port', '  ']),
+    Error,
+    '--web_port 非法',
+  )
+})
+
+Deno.test('[contract] parseCliCommand: --web_port 越界时应报错', () => {
+  assertThrows(
+    () => parseCliCommand(['--mode', 'web', '--web_port', '70000']),
+    Error,
+    '--web_port 非法',
+  )
+})
+
+Deno.test('[contract] parseCliCommand: --web_port 为 0 时应报错', () => {
+  assertThrows(
+    () => parseCliCommand(['--mode', 'web', '--web_port', '0']),
+    Error,
+    '--web_port 非法',
+  )
+})
+
+Deno.test('[contract] parseCliCommand: --web_port 最小边界 1 应通过', () => {
+  const command = parseCliCommand(['--mode', 'web', '--web_port', '1'])
+  assertEquals(command.kind, 'web')
+  if (command.kind !== 'web') throw new Error('unexpected command kind')
+  assertEquals(command.port, 1)
+})
+
+Deno.test('[contract] parseCliCommand: --web_port 最大边界 65535 应通过', () => {
+  const command = parseCliCommand(['--mode', 'web', '--web_port', '65535'])
+  assertEquals(command.kind, 'web')
+  if (command.kind !== 'web') throw new Error('unexpected command kind')
+  assertEquals(command.port, 65535)
+})
+
+Deno.test('[contract] parseCliCommand: daemon 模式下 --web_host 空字符串也应报互斥错误', () => {
+  assertThrows(
+    () => parseCliCommand(['--mode', 'daemon', '--web_host', '']),
     Error,
     'daemon 模式不支持 --web_host',
   )
 })
 
-Deno.test('[contract] parseCliArgs: web 模式下 --config 空字符串也应报互斥错误', () => {
+Deno.test('[contract] parseCliCommand: web 模式下 --config 空字符串也应报互斥错误', () => {
   assertThrows(
-    () => parseCliArgs(['--mode', 'web', '--config', '']),
+    () => parseCliCommand(['--mode', 'web', '--config', '']),
     Error,
     'web 模式不支持 --config',
   )
 })
 
 Deno.test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进程', () => {
-  const parsed = parseCliArgs([
+  const command = parseCliCommand([
     '--config',
     'runtime/config.yml',
     '--runtime_dir',
@@ -288,7 +308,7 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进
     '8080',
   ])
 
-  assertEquals(buildChildArgs(parsed, 'daemon'), [
+  assertEquals(buildChildArgs(command, 'daemon'), [
     'run',
     '--allow-read',
     '--allow-write',
@@ -308,7 +328,7 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进
 })
 
 Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程', () => {
-  const parsed = parseCliArgs([
+  const command = parseCliCommand([
     '--config',
     'runtime/config.yml',
     '--web_host',
@@ -317,7 +337,7 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程
     '8080',
   ])
 
-  assertEquals(buildChildArgs(parsed, 'web'), [
+  assertEquals(buildChildArgs(command, 'web'), [
     'run',
     '--allow-read',
     '--allow-write',
@@ -333,6 +353,67 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程
     '--web_port',
     '8080',
   ])
+})
+
+Deno.test('[contract] dispatchCliCommand: 应通过 command object 分发 daemon 入口', async () => {
+  const calls: StartAppOptions[] = []
+
+  await dispatchCliCommand(
+    {
+      kind: 'daemon',
+      configPath: '/tmp/config.yml',
+      immediate: false,
+    },
+    {
+      env: { KNOCK_RUNTIME_DIR: '/tmp/runtime-from-env' },
+      startApp: (options) => {
+        calls.push(options)
+        return Promise.resolve({ mode: 'daemon' })
+      },
+    },
+  )
+
+  assertEquals(calls, [
+    {
+      configPath: '/tmp/config.yml',
+      runtimeDir: '/tmp/runtime-from-env',
+      immediate: false,
+    },
+  ])
+})
+
+Deno.test('[contract] main: 应通过 command object 分发入口', async () => {
+  const calls: string[] = []
+  const originalStartWeb = globalThis.fetch
+
+  try {
+    await dispatchCliCommand(
+      parseCliCommand(['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', '8080']),
+      {
+        startWeb: ({ host, port }) => {
+          calls.push(`${host}:${port}`)
+          return Promise.resolve()
+        },
+      },
+    )
+  } finally {
+    globalThis.fetch = originalStartWeb
+  }
+
+  assertEquals(calls, ['127.0.0.1:8080'])
+})
+
+Deno.test('[contract] main: 通过 main(args) 应走同一 dispatch 路径', async () => {
+  const calls: string[] = []
+
+  await main([], {
+    runAllModes: () => {
+      calls.push('all')
+      return Promise.resolve()
+    },
+  })
+
+  assertEquals(calls, ['all'])
 })
 
 Deno.test(

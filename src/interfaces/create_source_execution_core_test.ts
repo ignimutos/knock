@@ -1,10 +1,11 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { createInMemoryDb } from '../db/client.ts'
 import { createLogger } from '../core/logger.ts'
+import { CollectSourceUseCase } from '../application/collect_source_use_case.ts'
 import {
   createRunSourceUseCaseForRuntime,
   createSourceRuntimeSharedDeps,
-} from './create_source_execution_core.ts'
+} from '../composition/create_runtime_kernel.ts'
 
 Deno.test(
   '[contract] createRunSourceUseCaseForRuntime: production wiring 缺少完整 pipeline deps 时应 fail fast',
@@ -56,9 +57,9 @@ Deno.test(
 )
 
 Deno.test(
-  '[contract] createRunSourceUseCaseForRuntime: preview wiring 缺少 pipeline deps 时仍应允许 collect-only',
+  '[contract] createRunSourceUseCaseForRuntime: preview execute 缺少 pipeline deps 时应 fail fast',
   async () => {
-    const useCase = createRunSourceUseCaseForRuntime({
+    const runSourceUseCase = createRunSourceUseCaseForRuntime({
       now: () => '2026-04-17T12:05:00.000Z',
       createRunId: () => 'run-preview-collect-only',
       sourceInputGateway: {
@@ -87,8 +88,11 @@ Deno.test(
           }),
       },
     })
+    const collectUseCase = new CollectSourceUseCase({
+      runSourceUseCase,
+    })
 
-    const result = await useCase.execute({
+    const collected = await collectUseCase.execute({
       source: {
         kind: 'fetch',
         sourceId: 'rust',
@@ -99,8 +103,24 @@ Deno.test(
       effectDomain: 'preview',
       trigger: 'preview',
     })
+    assertEquals(collected.plan.runId, 'run-preview-collect-only')
 
-    assertEquals(result.plan.runId, 'run-preview-collect-only')
+    await assertRejects(
+      () =>
+        runSourceUseCase.execute({
+          source: {
+            kind: 'fetch',
+            sourceId: 'rust',
+            fetcher: 'http',
+            parser: 'syndication',
+          },
+          profile: 'preview',
+          effectDomain: 'preview',
+          trigger: 'preview',
+        }),
+      Error,
+      'run source execute 缺少完整 pipeline 依赖',
+    )
   },
 )
 

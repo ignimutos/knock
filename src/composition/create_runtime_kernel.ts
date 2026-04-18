@@ -1,27 +1,34 @@
-import type { ResolvedSourceConfig, AppConfigResolved } from '../config/types.ts'
+import { Cron } from 'croner'
+import { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
+import { RunSourceUseCase, type RunSourceUseCaseDeps } from '../application/run_source_use_case.ts'
+import type { DeliveryAttemptRepository } from '../application/ports/delivery_attempt_repository.ts'
+import type { DeduplicationRepository } from '../application/ports/deduplication_repository.ts'
+import type { DeliveryExecutorRegistry } from '../application/ports/delivery_executor.ts'
+import type { ItemRepository } from '../application/ports/item_repository.ts'
+import type { RunRepository } from '../application/ports/run_repository.ts'
+import type { SourceInputGateway } from '../application/ports/source_input_gateway.ts'
+import type { SourceParser } from '../application/ports/source_parser.ts'
+import type { SourceQueryService } from '../application/ports/query_service.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
 import { createContentRuntime } from '../core/content_runtime.ts'
 import { createHttpClient, type CreateHttpClientOptions } from '../core/http_client.ts'
 import type { Logger } from '../core/logger.ts'
+import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
+import { buildLoadedDefinitionsFromResolvedConfig } from '../interfaces/config/load_definitions.ts'
+import {
+  resolveSourceConfig,
+  selectSourceInputGateway,
+} from '../interfaces/source_runtime_helpers.ts'
 import { createDeliveryAttemptRepository } from '../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { createApplicationDeduplicationRepository } from '../infrastructure/sqlite/deduplication_repository.ts'
 import { createItemRepository } from '../infrastructure/sqlite/item_repository.ts'
 import { createRunRepository } from '../infrastructure/sqlite/run_repository.ts'
 import { createSummaryQueryService } from '../infrastructure/sqlite/summary_query_service.ts'
-import { SourceParserGateway } from '../infrastructure/sources/source_parser_gateway.ts'
 import { ByparrSourceInputGateway } from '../infrastructure/sources/byparr_source_input_gateway.ts'
 import { HttpSourceInputGateway } from '../infrastructure/sources/http_source_input_gateway.ts'
+import { SourceParserGateway } from '../infrastructure/sources/source_parser_gateway.ts'
 import { SummarySourceInputGateway } from '../infrastructure/sources/summary_source_input_gateway.ts'
-import { RunSourceUseCase, type RunSourceUseCaseDeps } from '../application/run_source_use_case.ts'
-import type { SourceInputGateway } from '../application/ports/source_input_gateway.ts'
-import type { SourceParser } from '../application/ports/source_parser.ts'
-import type { DeliveryExecutorRegistry } from '../application/ports/delivery_executor.ts'
-import type { RunRepository } from '../application/ports/run_repository.ts'
-import type { ItemRepository } from '../application/ports/item_repository.ts'
-import type { DeliveryAttemptRepository } from '../application/ports/delivery_attempt_repository.ts'
-import type { DeduplicationRepository } from '../application/ports/deduplication_repository.ts'
-import { resolveSourceConfig, selectSourceInputGateway } from './source_runtime_helpers.ts'
 
 export interface SourceRuntimeSharedDeps {
   sourceConfigsById: Record<string, ResolvedSourceConfig>
@@ -33,6 +40,12 @@ export interface SourceRuntimeSharedDeps {
   aiRuntime: ReturnType<typeof createAiRuntime>
   summaryQueryService: ReturnType<typeof createSummaryQueryService>
   httpClient: ReturnType<typeof createHttpClient>
+}
+
+export interface RuntimeKernel {
+  sourceQueryService: SourceQueryService
+  runDueSourcesUseCase: RunDueSourcesUseCase
+  sourceConfigs: ResolvedSourceConfig[]
 }
 
 export function createSourceRuntimeSharedDeps(input: {
@@ -194,5 +207,69 @@ export function createRuntimePipeline(input: {
     deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
     deduplicationRepository: createApplicationDeduplicationRepository(input.factsDb),
     deliveryExecutors: input.deliveryExecutors,
+  }
+}
+
+export function createRuntimeKernel(input: {
+  config: AppConfigResolved
+  now: () => string
+  runSourceUseCase: Pick<RunSourceUseCase, 'execute'>
+}): RuntimeKernel {
+  const definitions = buildLoadedDefinitionsFromResolvedConfig(input.config)
+  const sourceConfigs = Object.values(definitions.sourceConfigsById)
+  const sourceById = new Map(
+    definitions.sources.map((source) => [source.sourceId, source] as const),
+  )
+  const bindingsBySourceId = new Map<string, (typeof definitions.bindings)[number][]>()
+
+  for (const binding of definitions.bindings) {
+    const existing = bindingsBySourceId.get(binding.sourceId) ?? []
+    existing.push(binding)
+    bindingsBySourceId.set(binding.sourceId, existing)
+  }
+
+  const sourceQueryService: SourceQueryService = {
+    getSource: (sourceId) => Promise.resolve(sourceById.get(sourceId)),
+    getBindings: (sourceId) => Promise.resolve(bindingsBySourceId.get(sourceId) ?? []),
+    listDueSources: (at, trigger) => {
+      const dueSources = []
+
+      for (const sourceConfig of sourceConfigs) {
+        if (!sourceConfig.enabled) continue
+        if (trigger === 'scheduled') {
+          if (!sourceConfig.schedule) continue
+          if (
+            !new Cron(sourceConfig.schedule, {
+              paused: true,
+              timezone: input.config.timezone,
+            }).match(at)
+          ) {
+            continue
+          }
+        }
+
+        const source = sourceById.get(sourceConfig.id)
+        if (!source) {
+          throw new Error(`source 未定义: ${sourceConfig.id}`)
+        }
+
+        dueSources.push({
+          source,
+          bindings: bindingsBySourceId.get(sourceConfig.id) ?? [],
+        })
+      }
+
+      return Promise.resolve(dueSources)
+    },
+  }
+
+  return {
+    sourceQueryService,
+    runDueSourcesUseCase: new RunDueSourcesUseCase({
+      now: input.now,
+      sourceQueryService,
+      runSourceUseCase: input.runSourceUseCase,
+    }),
+    sourceConfigs,
   }
 }

@@ -17,14 +17,14 @@ Deno.test('[flow] R15 startDaemon: 应通过 RunDueSourcesUseCase 驱动 source 
 
   const result = await startDaemon({
     runDueSourcesUseCase: {
-      execute: () => {
-        calls.push('run-due-sources')
+      execute: (command) => {
+        calls.push(`${command.trigger}:${command.sourceId ?? 'all'}`)
         return Promise.resolve([])
       },
     },
   })
 
-  assertEquals(calls, ['run-due-sources'])
+  assertEquals(calls, ['scheduled:all'])
   assertEquals(result.mode, 'daemon')
 })
 

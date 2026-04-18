@@ -63,6 +63,60 @@ Deno.test(
 )
 
 Deno.test(
+  '[contract] syndication_playground: 应合并 parsed warnings 与 executor warnings',
+  async () => {
+    const result = await evaluateSyndicationPlayground({
+      request: {
+        url: 'https://example.com/feed.xml',
+        entry: { id: '{{ id }}' },
+      },
+      previewExecutor: () =>
+        Promise.resolve({
+          warnings: ['executor warning'],
+          fetchMeta: { ok: true },
+          parser: 'rss',
+          rawContent: '<rss></rss>',
+          feed: {},
+          entries: [],
+        }),
+    })
+
+    assertEquals(result.warnings, ['executor warning'])
+  },
+)
+
+Deno.test(
+  '[contract] syndication_playground: 非 previewExecutor 路径不应重复 parsed warnings',
+  async () => {
+    const result = await evaluateSyndicationPlayground({
+      request: {
+        url: 'https://example.com/feed.xml',
+        entry: { id: '{{ id }}' },
+      },
+      fetcher: () =>
+        Promise.resolve(
+          new Response(
+            `<?xml version="1.0" encoding="UTF-8"?>
+             <rss version="2.0">
+               <channel>
+                 <title>Feed</title>
+                 <link>https://example.com</link>
+                 <description>Desc</description>
+                 <item>
+                   <guid>1</guid>
+                   <title>Entry</title>
+                 </item>
+               </channel>
+             </rss>`,
+          ),
+        ),
+    })
+
+    assertEquals(result.warnings, [])
+  },
+)
+
+Deno.test(
   '[contract] syndication_playground: 默认 logging shape 应与正式 resolved config 一致',
   async () => {
     const result = await evaluateSyndicationPlayground({

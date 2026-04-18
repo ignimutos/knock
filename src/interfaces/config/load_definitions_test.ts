@@ -2,6 +2,7 @@ import { assertEquals, assertExists, assertNotEquals } from '@std/assert'
 import { emptyDir, ensureDir } from '@std/fs'
 import { dirname, fromFileUrl, join } from '@std/path'
 import { withOwnedRuntime } from '../../test_runtime.ts'
+import { buildDefinitionsConfigFixture } from './definitions_test_fixture.ts'
 import { loadDefinitions } from './load_definitions.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(dirname(fromFileUrl(import.meta.url)))))
@@ -23,69 +24,7 @@ test('[contract] loadDefinitions: 应将 resolved config 组装成判别联合 S
 
   await Deno.writeTextFile(
     join(TEST_RUNTIME, 'config.yml'),
-    `
-deliveries:
-  archive:
-    file:
-      path: outputs/archive.md
-      content: '{{ entry.title }}'
-  webhook:
-    push:
-      http:
-        url: https://example.com/hook
-      request:
-        type: form
-        payload:
-          text: '{{ entry.title }}'
-  ping:
-    push:
-      http:
-        url: https://example.com/ping
-      request:
-        type: query
-        payload: ok
-  default_body:
-    push:
-      http:
-        url: https://example.com/default-body
-      request:
-        payload:
-          text: '{{ entry.title }}'
-  mailer:
-    email:
-      smtp:
-        host: smtp.example.com
-        port: 587
-        security: starttls
-      message:
-        from: bot@example.com
-        to:
-          - ops@example.com
-        subject: '[{{ source.title }}] {{ entry.title }}'
-        text: '{{ entry.description }}'
-
-sources:
-  rust:
-    http:
-      url: https://example.com/feed.xml
-    deliveries:
-      archive:
-        content: 'override {{ entry.id }}'
-      webhook: {}
-      ping: {}
-      default_body: {}
-      mailer:
-        message:
-          subject: '[override] {{ entry.title }}'
-
-  digest:
-    schedule: '0 * * * *'
-    summary:
-      sources:
-        - rust
-    deliveries:
-      archive: {}
-`,
+    buildDefinitionsConfigFixture({ includePushRequestVariants: true }),
   )
 
   const definitions = await loadDefinitions({ runtimeDir: TEST_RUNTIME })
@@ -129,6 +68,7 @@ sources:
   assertExists(rustMailerBinding)
   assertEquals('profile' in rustArchiveBinding, false)
   assertEquals('effectDomain' in rustArchiveBinding, false)
+  assertEquals('trigger' in rustArchiveBinding, false)
   if (fileDelivery?.kind !== 'file' || rustArchiveBinding.definition.kind !== 'file') {
     throw new Error('archive delivery 应为 file')
   }

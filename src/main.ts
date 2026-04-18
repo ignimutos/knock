@@ -1,67 +1,133 @@
-import { parseArgs } from 'node:util'
+import type nodemailer from 'nodemailer'
 import { z } from 'zod'
-import type { StartAppOptions } from './core/app.ts'
+import { loadConfig } from './config/load_config.ts'
 import { createLogger } from './core/logger.ts'
+import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
+import {
+  buildChildArgs,
+  parseCliCommand,
+  resolveDaemonStartOptions,
+  type AllCliCommand,
+  type CliCommand,
+} from './interfaces/cli/parse_cli_command.ts'
+import { createDaemonRuntime } from './interfaces/daemon/create_daemon_runtime.ts'
+import { startDaemon } from './interfaces/daemon/start_daemon.ts'
 import { parseWithFirstIssue } from './zod_utils.ts'
 
-export type CliMode = 'all' | 'web' | 'daemon'
-
-export interface ParsedCliOptions extends StartAppOptions {
-  mode: CliMode
-  webHost?: string
-  webPort?: number
+export interface StartAppOptions {
+  runtimeDir?: string
+  configPath?: string
+  httpFetcher?: typeof fetch
+  httpProxyClientFactory?: typeof Deno.createHttpClient
+  emailTransportFactory?: typeof nodemailer.createTransport
+  keepAlive?: boolean
+  keepAliveSignal?: Promise<void>
+  immediate?: boolean
 }
 
-export function toDaemonStartOptions(options: ParsedCliOptions): StartAppOptions {
+interface StartAppInput {
+  runtimeDir?: string
+  configPath?: string
+  httpFetcher: typeof fetch
+  httpProxyClientFactory: typeof Deno.createHttpClient
+  emailTransportFactory?: typeof nodemailer.createTransport
+  keepAlive: boolean
+  keepAliveSignal?: Promise<void>
+  immediate: boolean
+}
+
+export interface StartAppResult {
+  mode: 'daemon'
+}
+
+export interface DispatchCliCommandDeps {
+  startApp?: (options: StartAppOptions) => Promise<StartAppResult>
+  startWeb?: (options: { host: string; port: number }) => Promise<void>
+  runAllModes?: (command: AllCliCommand) => Promise<void>
+  env?: Record<string, string | undefined>
+}
+
+const startAppOptionsSchema = z.object({
+  runtimeDir: z.string({ message: 'runtimeDir 必须是字符串' }).optional(),
+  configPath: z.string({ message: 'configPath 必须是字符串' }).optional(),
+  httpFetcher: z.custom<typeof fetch>(
+    (value) => value === undefined || typeof value === 'function',
+    {
+      message: 'httpFetcher 必须是函数',
+    },
+  ),
+  httpProxyClientFactory: z.custom<typeof Deno.createHttpClient>(
+    (value) => value === undefined || typeof value === 'function',
+    { message: 'httpProxyClientFactory 必须是函数' },
+  ),
+  emailTransportFactory: z.custom<typeof nodemailer.createTransport>(
+    (value) => value === undefined || typeof value === 'function',
+    { message: 'emailTransportFactory 必须是函数' },
+  ),
+  keepAlive: z.boolean({ message: 'keepAlive 必须是布尔值' }).optional(),
+  keepAliveSignal: z.custom<Promise<void>>(
+    (value) => value === undefined || value instanceof Promise,
+    { message: 'keepAliveSignal 必须是 Promise' },
+  ),
+  immediate: z.boolean({ message: 'immediate 必须是布尔值' }).optional(),
+})
+
+function normalizeStartAppInput(options: StartAppOptions = {}): StartAppInput {
+  const parsed = parseWithFirstIssue(startAppOptionsSchema, options, 'startApp 参数非法')
+
   return {
-    configPath: options.configPath,
-    runtimeDir: options.runtimeDir,
-    immediate: options.immediate,
+    runtimeDir: parsed.runtimeDir,
+    configPath: parsed.configPath,
+    httpFetcher: parsed.httpFetcher ?? fetch,
+    httpProxyClientFactory: parsed.httpProxyClientFactory ?? Deno.createHttpClient,
+    emailTransportFactory: parsed.emailTransportFactory,
+    keepAlive: parsed.keepAlive ?? true,
+    keepAliveSignal: parsed.keepAliveSignal,
+    immediate: parsed.immediate ?? false,
   }
 }
 
-export function resolveDaemonStartOptions(
-  options: ParsedCliOptions,
-  env: Record<string, string | undefined> = Deno.env.toObject(),
-): StartAppOptions {
-  return {
-    ...toDaemonStartOptions(options),
-    runtimeDir: options.runtimeDir ?? env.KNOCK_RUNTIME_DIR,
-  }
-}
+export async function startApp(options: StartAppOptions = {}): Promise<StartAppResult> {
+  const input = normalizeStartAppInput(options)
+  const config = await loadConfig({
+    runtimeDir: input.runtimeDir,
+    configPath: input.configPath,
+  })
 
-export function buildChildArgs(options: ParsedCliOptions, mode: 'web' | 'daemon'): string[] {
-  const args = [
-    'run',
-    '--allow-read',
-    '--allow-write',
-    '--allow-env',
-    '--allow-net',
-    '--allow-ffi',
-    '--allow-run',
-    'src/main.ts',
-    '--mode',
-    mode,
-  ]
+  await configureLoggingRuntime({
+    logging: config.logging,
+    runtimeDir: config.runtimeDir,
+    timezone: config.timezone,
+    timestampFormat: config.timestampFormat,
+  })
 
-  if (mode === 'daemon') {
-    if (options.configPath !== undefined) {
-      args.push('--config', options.configPath)
+  const daemon = createDaemonRuntime({
+    config,
+    httpFetcher: input.httpFetcher,
+    httpProxyClientFactory: input.httpProxyClientFactory,
+    emailTransportFactory: input.emailTransportFactory,
+    keepAlive: input.keepAlive,
+    keepAliveSignal: input.keepAliveSignal,
+  })
+
+  try {
+    await daemon.recoverInterruptedAttempts()
+
+    if (input.immediate) {
+      await daemon.runImmediate()
+      return { mode: 'daemon' }
     }
-    if (options.runtimeDir !== undefined) {
-      args.push('--runtime_dir', options.runtimeDir)
-    }
-    if (options.immediate) args.push('--immediate')
-  }
 
-  if (mode === 'web') {
-    if (options.webHost !== undefined) args.push('--web_host', options.webHost)
-    if (options.webPort !== undefined) {
-      args.push('--web_port', String(options.webPort))
-    }
+    await startDaemon({
+      runDueSourcesUseCase: daemon.runDueSourcesUseCase,
+      recoverInterruptedAttempts: async () => {},
+    })
+    await daemon.enterDaemon()
+    return { mode: 'daemon' }
+  } finally {
+    daemon.stop()
+    await shutdownLoggingRuntime()
   }
-
-  return args
 }
 
 export async function startWeb(options: { host: string; port: number }) {
@@ -90,16 +156,16 @@ export async function startWeb(options: { host: string; port: number }) {
   })
 }
 
-export async function runAllModes(options: ParsedCliOptions): Promise<void> {
+export async function runAllModes(command: AllCliCommand): Promise<void> {
   const daemonChild = new Deno.Command(Deno.execPath(), {
-    args: buildChildArgs(options, 'daemon'),
+    args: buildChildArgs(command, 'daemon'),
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
   }).spawn()
 
   const webChild = new Deno.Command(Deno.execPath(), {
-    args: buildChildArgs(options, 'web'),
+    args: buildChildArgs(command, 'web'),
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -131,174 +197,34 @@ export async function runAllModes(options: ParsedCliOptions): Promise<void> {
   }
 }
 
-const cliPositionalsSchema = z.array(z.string()).superRefine((positionals, ctx) => {
-  if (positionals.length === 0) return
-  ctx.addIssue({
-    code: 'custom',
-    message: `未知参数: ${positionals[0]}`,
-  })
-})
+export async function dispatchCliCommand(
+  command: CliCommand,
+  deps: DispatchCliCommandDeps = {},
+): Promise<void> {
+  const startAppFn = deps.startApp ?? startApp
+  const startWebFn = deps.startWeb ?? startWeb
+  const runAllModesFn = deps.runAllModes ?? runAllModes
 
-const cliModeSchema = z.string().superRefine((value, ctx) => {
-  if (value === 'all' || value === 'web' || value === 'daemon') return
-  ctx.addIssue({
-    code: 'custom',
-    message: `--mode 非法: ${value}`,
-  })
-}) as z.ZodType<CliMode>
-
-const cliOptionsSchema = z
-  .object({
-    mode: cliModeSchema,
-    configPath: z.string().optional(),
-    runtimeDir: z.string().optional(),
-    immediate: z.boolean(),
-    webHost: z.string().optional(),
-    webPort: z.number().int().min(1).max(65535).optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.mode === 'web') {
-      if (value.configPath !== undefined) {
-        ctx.addIssue({ code: 'custom', message: 'web 模式不支持 --config' })
-      }
-      if (value.runtimeDir !== undefined) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'web 模式不支持 --runtime_dir',
-        })
-      }
-      if (value.immediate) {
-        ctx.addIssue({ code: 'custom', message: 'web 模式不支持 --immediate' })
-      }
-    }
-
-    if (value.mode === 'daemon') {
-      if (value.webHost !== undefined) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'daemon 模式不支持 --web_host',
-        })
-      }
-      if (value.webPort !== undefined) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'daemon 模式不支持 --web_port',
-        })
-      }
-    }
-  })
-
-function parseWebPort(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined
-  if (!/^\d+$/.test(value)) {
-    throw new Error('--web_port 非法')
+  if (command.kind === 'daemon') {
+    await startAppFn(resolveDaemonStartOptions(command, deps.env))
+    return
   }
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw new Error('--web_port 非法')
+
+  if (command.kind === 'web') {
+    await startWebFn({
+      host: command.host,
+      port: command.port,
+    })
+    return
   }
-  return parsed
+
+  await runAllModesFn(command)
 }
 
-/**
- * 只解析当前入口明确支持的 CLI 参数；遇到未知参数或缺失值时立即报错，避免静默带着错误配置启动。
- */
-export function parseCliArgs(args: string[]): ParsedCliOptions {
-  try {
-    const { values, positionals } = parseArgs({
-      args,
-      strict: true,
-      allowPositionals: false,
-      options: {
-        mode: {
-          type: 'string',
-        },
-        config: {
-          type: 'string',
-        },
-        runtime_dir: {
-          type: 'string',
-        },
-        immediate: {
-          type: 'boolean',
-        },
-        web_host: {
-          type: 'string',
-        },
-        web_port: {
-          type: 'string',
-        },
-      },
-    })
-
-    parseWithFirstIssue(cliPositionalsSchema, positionals, '未知参数')
-
-    return parseWithFirstIssue(
-      cliOptionsSchema,
-      {
-        mode: values.mode ?? 'all',
-        configPath: values.config,
-        runtimeDir: values.runtime_dir,
-        immediate: values.immediate ?? false,
-        webHost: values.web_host,
-        webPort: parseWebPort(values.web_port),
-      },
-      'CLI 参数非法',
-    )
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-
-    if (
-      message.includes("option '--mode <value>' argument missing") ||
-      message.includes("Option '--mode <value>' argument missing")
-    ) {
-      throw new Error('--mode 缺少参数')
-    }
-    if (
-      message.includes("option '--config <value>' argument missing") ||
-      message.includes("Option '--config <value>' argument missing")
-    ) {
-      throw new Error('--config 缺少路径参数')
-    }
-    if (
-      message.includes("option '--runtime_dir <value>' argument missing") ||
-      message.includes("Option '--runtime_dir <value>' argument missing")
-    ) {
-      throw new Error('--runtime_dir 缺少目录参数')
-    }
-    if (
-      message.includes("option '--web_host <value>' argument missing") ||
-      message.includes("Option '--web_host <value>' argument missing")
-    ) {
-      throw new Error('--web_host 缺少参数')
-    }
-    if (
-      message.includes("option '--web_port <value>' argument missing") ||
-      message.includes("Option '--web_port <value>' argument missing")
-    ) {
-      throw new Error('--web_port 缺少参数')
-    }
-    if (message.includes('Unknown option')) {
-      const match = message.match(/Unknown option '([^']+)'/)
-      throw new Error(`未知参数: ${match?.[1] ?? args[0]}`)
-    }
-
-    throw error
-  }
+export async function main(args: string[], deps: DispatchCliCommandDeps = {}): Promise<void> {
+  await dispatchCliCommand(parseCliCommand(args), deps)
 }
 
 if (import.meta.main) {
-  const options = parseCliArgs(Deno.args)
-
-  if (options.mode === 'daemon') {
-    const { startApp } = await import('./core/app.ts')
-    await startApp(resolveDaemonStartOptions(options))
-  } else if (options.mode === 'web') {
-    await startWeb({
-      host: options.webHost ?? '127.0.0.1',
-      port: options.webPort ?? 8000,
-    })
-  } else {
-    await runAllModes(options)
-  }
+  await main(Deno.args)
 }

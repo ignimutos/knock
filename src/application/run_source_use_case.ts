@@ -126,11 +126,6 @@ export class RunSourceUseCase {
       lifecycleCounts.sourceItemCount = collected.parsed.items.length
 
       const pipelineDeps = this.getPipelineDeps()
-      if (!pipelineDeps) {
-        this.logRunFinalize(plan, 'success', lifecycleCounts)
-        return collected
-      }
-
       await this.applyCollected(collected, pipelineDeps, lifecycleCounts)
       this.logRunFinalize(plan, 'success', lifecycleCounts)
       return collected
@@ -153,13 +148,7 @@ export class RunSourceUseCase {
 
   private async applyCollected(
     collected: RunSourceResult,
-    pipelineDeps: {
-      runRepository: RunRepository
-      itemRepository: ItemRepository
-      deliveryAttemptRepository: DeliveryAttemptRepository
-      deduplicationRepository: DeduplicationRepository
-      deliveryExecutors: Partial<DeliveryExecutorRegistry>
-    },
+    pipelineDeps: PipelineDeps,
     lifecycleCounts: {
       sourceItemCount: number
       filteredCount: number
@@ -485,7 +474,7 @@ export class RunSourceUseCase {
     await pipelineDeps.itemRepository.updateStatus(item.itemId, 'ready', undefined)
   }
 
-  private getPipelineDeps(): PipelineDeps | null {
+  private getPipelineDeps(): PipelineDeps {
     if (
       this.deps.runRepository === undefined ||
       this.deps.itemRepository === undefined ||
@@ -493,7 +482,7 @@ export class RunSourceUseCase {
       this.deps.deduplicationRepository === undefined ||
       this.deps.deliveryExecutors === undefined
     ) {
-      return null
+      throw new Error('run source execute 缺少完整 pipeline 依赖')
     }
 
     return {

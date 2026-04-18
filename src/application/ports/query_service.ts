@@ -9,5 +9,8 @@ export interface PlannedSourceExecution {
 export interface SourceQueryService {
   getSource(sourceId: string): Promise<SourceDefinition | undefined>
   getBindings(sourceId: string): Promise<DeliveryBinding[]>
-  listDueSources(at: string): Promise<PlannedSourceExecution[]>
+  listDueSources(
+    at: string,
+    trigger: 'scheduled' | 'immediate' | 'manual',
+  ): Promise<PlannedSourceExecution[]>
 }

@@ -1,19 +1,10 @@
-import { createInMemoryDb } from '../../db/client.ts'
 import {
   PreviewSourceUseCase,
   type PreviewSourceRequest,
 } from '../../application/preview_source_use_case.ts'
-import {
-  createRunSourceUseCaseForRuntime,
-  createRuntimePipeline,
-  createRuntimeSourceInputGateway,
-  createSourceRuntimeSharedDeps,
-} from '../create_source_execution_core.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types.ts'
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
-import { createFileDeliveryExecutor } from '../../infrastructure/deliveries/file_delivery_executor.ts'
-import { createHttpDeliveryExecutor } from '../../infrastructure/deliveries/http_delivery_executor.ts'
-import { createEmailDeliveryExecutor } from '../../infrastructure/deliveries/email_delivery_executor.ts'
+import { createPreviewComposition } from '../../composition/create_preview_runtime.ts'
 
 export interface PreviewRuntimeDeps<TRequest, TParsedRequest, TResponse> {
   previewSourceUseCase: Pick<PreviewSourceUseCase, 'execute'>
@@ -42,10 +33,6 @@ export interface PreviewExecutionResult {
   rawContent: string
   feed: unknown
   entries: unknown[]
-  plan: {
-    profile: string
-    effectDomain: string
-  }
 }
 
 export function createPreviewRuntime<
@@ -77,34 +64,7 @@ export function createPreviewSourceUseCaseRuntime(input: {
   fetcher?: typeof fetch
   now?: () => string
 }) {
-  const factsDb = createInMemoryDb()
-  const definitions = buildLoadedDefinitionsFromResolvedConfig(input.config)
-  const shared = createSourceRuntimeSharedDeps({
-    config: input.config,
-    factsDb,
-    fetcher: input.fetcher ?? fetch,
-    sourceConfigsById: definitions.sourceConfigsById,
-  })
-  const now = input.now ?? (() => new Date().toISOString())
-  const runSourceUseCase = createRunSourceUseCaseForRuntime({
-    now,
-    createRunId: () => `run-preview-${crypto.randomUUID()}`,
-    sourceInputGateway: createRuntimeSourceInputGateway(shared),
-    sourceParser: shared.sourceParser,
-    pipeline: createRuntimePipeline({
-      factsDb,
-      deliveryExecutors: {
-        file: createFileDeliveryExecutor({ runtimeDir: input.config.runtimeDir }),
-        push: createHttpDeliveryExecutor({ httpClient: shared.httpClient }),
-        email: createEmailDeliveryExecutor({}),
-      },
-    }),
-    renderContent: (template, context) => shared.contentRuntime.renderContent(template, context),
-    renderPayload: (payload, context) =>
-      shared.contentRuntime.renderPayload(payload as never, context),
-  })
-
-  return new PreviewSourceUseCase({ runSourceUseCase })
+  return createPreviewComposition(input).previewSourceUseCase
 }
 
 export async function executePreviewSource(input: {
@@ -149,9 +109,5 @@ export function toPreviewExecutionResult(input: {
       JSON.stringify(input.result.fetchedInput.collectedJson ?? {}),
     feed: input.result.parsed.feed,
     entries: input.result.parsed.items.map((item) => ({ mapped: item })),
-    plan: {
-      profile: input.result.plan.profile,
-      effectDomain: input.result.plan.effectDomain,
-    },
   }
 }

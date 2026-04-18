@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { join } from '@std/path'
 import { withOwnedRuntime } from '../test_runtime.ts'
-import { startApp } from './app.ts'
+import { startApp } from '../main.ts'
 
 const registerTest = Deno.test
 

@@ -105,6 +105,43 @@ Deno.test(
   },
 )
 
+Deno.test('[contract] xquery_playground: 应合并 parsed warnings 与 executor warnings', async () => {
+  const result = await evaluatePlayground({
+    request: {
+      url: 'https://example.com/page.html',
+      namespaces: { xh: 'http://www.w3.org/1999/xhtml' },
+      entry: { mode: 'script', code: 'map { "id": "1" }' },
+    },
+    previewExecutor: () =>
+      Promise.resolve({
+        warnings: ['executor warning'],
+        fetchMeta: { ok: true },
+        parser: 'xquery',
+        rawContent: '<html></html>',
+        feed: {},
+        entries: [],
+      }),
+  })
+
+  assertEquals(result.warnings, ['script 模式下 namespaces 不生效', 'executor warning'])
+})
+
+Deno.test(
+  '[contract] xquery_playground: 非 previewExecutor 路径不应重复 parsed warnings',
+  async () => {
+    const result = await evaluatePlayground({
+      request: {
+        url: 'https://example.com/page.html',
+        namespaces: { xh: 'http://www.w3.org/1999/xhtml' },
+        entry: { mode: 'script', code: 'map { "id": "1" }' },
+      },
+      fetcher: () => Promise.resolve(new Response('<html><body></body></html>')),
+    })
+
+    assertEquals(result.warnings, ['script 模式下 namespaces 不生效'])
+  },
+)
+
 Deno.test('[contract] xquery_playground: 应拒绝 localhost 地址', () => {
   assertThrows(
     () =>

@@ -5,39 +5,38 @@ async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
-Deno.test(
-  '[flow] xquery api: preview handler 应走 preview profile 并落 preview domain facts',
-  async () => {
-    const calls: Array<Record<string, unknown>> = []
+Deno.test('[flow] xquery api: 应将请求 payload 原样转发给 evaluatePlayground', async () => {
+  const calls: Array<{ request: unknown }> = []
 
-    const response = await handler(
-      new Request('http://localhost/api/xquery/evaluate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          url: 'https://example.com/page.html',
-          entry: { mode: 'mapping', fields: { id: 'string(@data-id)' } },
-        }),
-      }),
-      {
-        evaluatePlayground: () => {
-          calls.push({ profile: 'preview', effectDomain: 'preview' })
-          return Promise.resolve({
-            warnings: [],
-            fetchMeta: { ok: true },
-            parser: 'xquery',
-            rawContent: '<html></html>',
-            feed: {},
-            entries: [],
-          })
-        },
+  const requestPayload = {
+    url: 'https://example.com/page.html',
+    entry: { mode: 'mapping', fields: { id: 'string(@data-id)' } },
+  }
+
+  const response = await handler(
+    new Request('http://localhost/api/xquery/evaluate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(requestPayload),
+    }),
+    {
+      evaluatePlayground: (input) => {
+        calls.push(input)
+        return Promise.resolve({
+          warnings: [],
+          fetchMeta: { ok: true },
+          parser: 'xquery',
+          rawContent: '<html></html>',
+          feed: {},
+          entries: [],
+        })
       },
-    )
+    },
+  )
 
-    assertEquals(response.status, 200)
-    assertEquals(calls, [{ profile: 'preview', effectDomain: 'preview' }])
-  },
-)
+  assertEquals(response.status, 200)
+  assertEquals(calls, [{ request: requestPayload }])
+})
 
 Deno.test('[flow] xquery api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
   const logs: EvaluateLogMeta[] = []
@@ -68,6 +67,11 @@ Deno.test('[flow] xquery api: POST 应返回 JSON 结果并上报成功日志元
   assertEquals(response.status, 200)
   assertEquals(response.headers.get('content-type'), 'application/json')
   const payload = await readJson(response)
+  assertEquals(
+    Object.keys(payload).sort(),
+    ['entries', 'feed', 'fetchMeta', 'parser', 'rawContent', 'warnings'].sort(),
+  )
+  assertEquals('plan' in payload, false)
   assertEquals(payload.parser, 'xquery')
   assertEquals(payload.rawContent, '<html></html>')
   assertEquals(logs, [

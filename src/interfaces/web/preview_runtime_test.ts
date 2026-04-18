@@ -70,16 +70,15 @@ Deno.test(
         feed: result.parsed.feed,
         entries: result.parsed.items,
         fetchMeta: { ok: true },
-        plan: result.plan,
       }),
     })
 
     const result = await runtime.evaluate({ warnings: ['script 模式下 namespaces 不生效'] })
 
     assertEquals(calls.length, 1)
-    assertEquals(result.plan.profile, 'preview')
-    assertEquals(result.plan.effectDomain, 'preview')
+    assertEquals(calls[0]?.source.sourceId, 'playground')
     assertEquals(result.parser, 'xquery')
     assertEquals(result.warnings, ['script 模式下 namespaces 不生效'])
+    assertEquals('plan' in result, false)
   },
 )
