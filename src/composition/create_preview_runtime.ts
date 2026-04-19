@@ -7,6 +7,7 @@ import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capt
 import {
   createRunSourceUseCaseForRuntime,
   createRuntimePipeline,
+  createRuntimeRenderers,
   createRuntimeSourceInputGateway,
   createSourceRuntimeSharedDeps,
 } from './create_runtime_kernel.ts'
@@ -41,6 +42,7 @@ export function createPreviewComposition(input: {
     onCaptured: input.onCaptured,
   })
 
+  const runtimeRenderers = createRuntimeRenderers(shared)
   const runSourceUseCase = createRunSourceUseCaseForRuntime({
     requireFullPipeline: true,
     now: input.now ?? (() => new Date().toISOString()),
@@ -56,9 +58,9 @@ export function createPreviewComposition(input: {
         email: captureExecutor,
       },
     }),
-    renderContent: (template, context) => shared.contentRuntime.renderContent(template, context),
+    renderContent: runtimeRenderers.renderContent,
     renderPayload: (payload, context) =>
-      shared.contentRuntime.renderPayload(asPreviewPushPayload(payload), context),
+      runtimeRenderers.renderPayload(asPreviewPushPayload(payload), context),
   })
 
   return {

@@ -1,7 +1,7 @@
 import { assert, assertEquals } from '@std/assert'
 import { join } from '@std/path'
 import { withOwnedRuntime } from '../../test_runtime.ts'
-import { createDaemonRuntime } from './create_daemon_runtime.ts'
+import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
 import { startDaemon } from './start_daemon.ts'
 
 function parseRecord(line: string): Record<string, unknown> | null {
@@ -50,7 +50,7 @@ Deno.test('[contract] daemon logger: emitted attributes 不应包含 app.runtime
     consoleProxy.error = capture
 
     await withOwnedRuntime(({ runtimeDir }) => {
-      const daemon = createDaemonRuntime({
+      const daemon = createProductionRuntime({
         config: {
           runtimeDir,
           language: 'zh-CN',

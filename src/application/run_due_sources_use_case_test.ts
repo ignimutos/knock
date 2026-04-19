@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects, assert } from '@std/assert'
 import type { RunSourceResult } from './run_source_use_case.ts'
 import { RunDueSourcesUseCase } from './run_due_sources_use_case.ts'
 
@@ -162,3 +162,65 @@ Deno.test(
     ])
   },
 )
+
+Deno.test('[contract] runDueSourcesUseCase: 无 sourceId 时应并发执行 due sources', async () => {
+  const started: string[] = []
+  let releaseFirst: (() => void) | undefined
+  let secondStarted = false
+
+  const firstDone = new Promise<void>((resolve) => {
+    releaseFirst = resolve
+  })
+
+  const useCase = new RunDueSourcesUseCase({
+    now: () => '2026-04-13T12:10:00.000Z',
+    sourceQueryService: {
+      getSource: () => Promise.resolve(undefined),
+      getBindings: () => Promise.resolve([]),
+      listDueSources: () =>
+        Promise.resolve([
+          {
+            source: {
+              kind: 'fetch',
+              sourceId: 'first',
+              fetcher: 'http',
+              parser: 'syndication',
+            },
+            bindings: [],
+          },
+          {
+            source: {
+              kind: 'fetch',
+              sourceId: 'second',
+              fetcher: 'http',
+              parser: 'syndication',
+            },
+            bindings: [],
+          },
+        ]),
+    },
+    runSourceUseCase: {
+      execute: async (input) => {
+        started.push(input.source.sourceId)
+        if (input.source.sourceId === 'first') {
+          await firstDone
+          return {} as RunSourceResult
+        }
+        secondStarted = true
+        return {} as RunSourceResult
+      },
+    },
+  })
+
+  const execution = useCase.execute({
+    trigger: 'immediate',
+    scheduledAt: '2026-04-13T12:11:00.000Z',
+  })
+
+  await Promise.resolve()
+  assert(secondStarted)
+  assertEquals(started, ['first', 'second'])
+
+  releaseFirst?.()
+  await execution
+})

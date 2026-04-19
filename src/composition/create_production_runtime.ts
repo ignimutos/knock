@@ -17,6 +17,7 @@ import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run
 import {
   createRunSourceUseCaseForRuntime,
   createRuntimePipeline,
+  createRuntimeRenderers,
   createRuntimeSourceInputGateway,
   createRuntimeKernel,
   createSourceRuntimeSharedDeps,
@@ -108,9 +109,7 @@ export function createProductionRuntime(
           }),
         },
       }),
-      renderContent: (template, context) => shared.contentRuntime.renderContent(template, context),
-      renderPayload: (payload, context) =>
-        shared.contentRuntime.renderPayload(payload as never, context),
+      ...createRuntimeRenderers(shared),
       shouldPassFilter: ({ item, feed, source, filterTemplate }) =>
         shared.contentRuntime.shouldPassFilter(
           filterTemplate,

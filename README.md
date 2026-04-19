@@ -18,16 +18,20 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 ### 主干结构
 
 ```text
-src/main.ts                 CLI 入口与 mode 分流
-src/config/schema.ts        配置契约与校验规则
-src/config/resolve_config.ts 配置解析与默认语义
-src/core/                   daemon 启动与核心流程编排
-src/sources/                syndication / xquery / summary 解析能力
-src/deliveries/             file / push / email 投递能力
-src/db/                     SQLite 客户端、schema 与状态存储
-web/                        网页调试页与 API 路由
-config.example.yml          完整参考配置
-deno.json                   任务脚本入口
+src/main.ts                  CLI 入口与 mode 分流
+src/config/                  配置契约、加载、校验与解析
+src/definitions/             canonical delivery/source/binding 定义编译
+src/composition/             生产/预览运行时组合根
+src/application/             用例、pipeline 与 stage 编排
+src/infrastructure/          SQLite、source gateway、delivery executor 适配层
+src/core/                    通用 runtime（日志、Liquid、AI、调度、HTTP）
+src/sources/                 syndication / xquery / summary 解析能力
+src/deliveries/              file / push / email 通道能力
+src/interfaces/              CLI、daemon、web 等入口适配面
+src/db/                      SQLite 客户端、schema 与状态存储
+web/                         网页调试页与 API 路由
+config.example.yml           完整参考配置
+deno.json                    任务脚本入口
 ```
 
 ## 快速开始

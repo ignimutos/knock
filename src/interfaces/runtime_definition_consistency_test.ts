@@ -9,7 +9,7 @@ import {
   type RunSourceResult,
 } from '../application/run_source_use_case.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
-import { createDaemonRuntime } from './daemon/create_daemon_runtime.ts'
+import { createProductionRuntime } from '../composition/create_production_runtime.ts'
 import { executePreviewSource } from './web/preview_runtime.ts'
 
 type RuntimeExecution = {
@@ -157,7 +157,7 @@ sources:
         })
 
         currentCollector = daemonCalls
-        const daemon = createDaemonRuntime({
+        const daemon = createProductionRuntime({
           config,
           keepAlive: false,
         })

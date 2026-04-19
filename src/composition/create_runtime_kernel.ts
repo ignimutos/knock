@@ -194,6 +194,17 @@ export function createRuntimeSourceInputGateway(
   }
 }
 
+export function createRuntimeRenderers(shared: SourceRuntimeSharedDeps): {
+  renderContent: NonNullable<RunSourceUseCaseDeps['renderContent']>
+  renderPayload: NonNullable<RunSourceUseCaseDeps['renderPayload']>
+} {
+  return {
+    renderContent: (template, context) => shared.contentRuntime.renderContent(template, context),
+    renderPayload: (payload, context) =>
+      shared.contentRuntime.renderPayload(payload as never, context),
+  }
+}
+
 function createNoopRunRepository(): RunRepository {
   return {
     insert: () => Promise.resolve(),

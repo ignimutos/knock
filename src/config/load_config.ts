@@ -1,4 +1,3 @@
-import { exists } from '@std/fs'
 import { dirname, join, resolve } from '@std/path'
 import { parse } from '@std/yaml'
 import type { Logger } from '../core/logger.ts'
@@ -26,13 +25,27 @@ function getRuntimeDir(options: LoadConfigOptions): string {
   return join(Deno.cwd(), 'runtime')
 }
 
-async function findConfigFile(runtimeDir: string): Promise<string> {
+export async function findConfigFile(runtimeDir: string): Promise<string> {
   const yml = join(runtimeDir, 'config.yml')
-  const yaml = join(runtimeDir, 'config.yaml')
+  try {
+    await Deno.stat(yml)
+    return yml
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error
+    }
+  }
 
-  if (await exists(yml)) return yml
-  if (await exists(yaml)) return yaml
-  throw new Error(`配置文件不存在: ${yml} 或 ${yaml}`)
+  const yaml = join(runtimeDir, 'config.yaml')
+  try {
+    await Deno.stat(yaml)
+    return yaml
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      throw new Error(`配置文件不存在: ${yml} 或 ${yaml}`)
+    }
+    throw error
+  }
 }
 
 function normalizeCapabilityLookupPath(path: string): string {
@@ -79,16 +92,18 @@ function expandEnvInConfig(parsed: Record<string, unknown>): Record<string, unkn
   return expandEnvValue(parsed, '') as Record<string, unknown>
 }
 
-function parseConfigDocument(raw: string): Record<string, unknown> {
+export function parseRawConfigDocument(raw: string): Record<string, unknown> {
   parseWithFirstIssue(rawConfigSyntaxSchema, raw, '配置文件格式非法')
 
-  const parsed = parseWithFirstIssue(
+  return parseWithFirstIssue(
     phase1ConfigSchema,
     (parse(raw) ?? {}) as Record<string, unknown>,
     '配置非法',
   )
+}
 
-  return expandEnvInConfig(parsed)
+function parseConfigDocument(raw: string): Record<string, unknown> {
+  return expandEnvInConfig(parseRawConfigDocument(raw))
 }
 
 export async function loadConfig(options: LoadConfigOptions = {}): Promise<AppConfigResolved> {

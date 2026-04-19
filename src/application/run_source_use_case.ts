@@ -194,6 +194,7 @@ export class RunSourceUseCase {
         skippedCount: 0,
       }
       const bindings = plan.bindings.filter((binding) => binding.sourceId === plan.source.sourceId)
+      const deliveryIds = bindings.map((binding) => binding.deliveryId)
       const filterStage = new FilterStage({
         shouldPassFilter: ({ item, filterTemplate }) => {
           if (!this.deps.shouldPassFilter || filterTemplate === undefined) {
@@ -235,6 +236,7 @@ export class RunSourceUseCase {
         plan,
         feed: parsed.feed,
         bindings,
+        deliveryIds,
         filterStage,
         deduplicationStage,
         renderStage,

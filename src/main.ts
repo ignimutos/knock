@@ -1,11 +1,9 @@
-import { exists } from '@std/fs'
 import { dirname, join, resolve } from '@std/path'
-import { parse } from '@std/yaml'
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
+import { findConfigFile, loadConfig, parseRawConfigDocument } from './config/load_config.ts'
 import { resolveLoggingConfig } from './config/resolve_config.ts'
-import { loggingSchema, rawConfigSyntaxSchema, timezoneSchema } from './config/schema.ts'
-import { loadConfig } from './config/load_config.ts'
+import { loggingSchema, timezoneSchema } from './config/schema.ts'
 import { createLogger } from './core/logger.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
 import {
@@ -15,7 +13,7 @@ import {
   type AllCliCommand,
   type CliCommand,
 } from './interfaces/cli/parse_cli_command.ts'
-import { createDaemonRuntime } from './interfaces/daemon/create_daemon_runtime.ts'
+import { createProductionRuntime } from './composition/create_production_runtime.ts'
 import { startDaemon } from './interfaces/daemon/start_daemon.ts'
 import { parseWithFirstIssue } from './zod_utils.ts'
 
@@ -122,11 +120,18 @@ async function findStartWebConfigPath(
 ): Promise<string | undefined> {
   if (configPath) return configPath
 
-  const yml = join(runtimeDir, 'config.yml')
-  if (await exists(yml)) return yml
-  const yaml = join(runtimeDir, 'config.yaml')
-  if (await exists(yaml)) return yaml
-  return undefined
+  try {
+    return await findConfigFile(runtimeDir)
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message ===
+        `配置文件不存在: ${join(runtimeDir, 'config.yml')} 或 ${join(runtimeDir, 'config.yaml')}`
+    ) {
+      return undefined
+    }
+    throw error
+  }
 }
 
 function assertNoEnvExpansion(value: unknown, path: string): void {
@@ -155,12 +160,7 @@ async function loadStartWebLoggingRuntime() {
   if (!configPath) return undefined
 
   const raw = await Deno.readTextFile(configPath)
-  parseWithFirstIssue(rawConfigSyntaxSchema, raw, '配置文件格式非法')
-  const document = parse(raw)
-  const parsed =
-    document && typeof document === 'object' && !Array.isArray(document)
-      ? (document as Record<string, unknown>)
-      : {}
+  const parsed = parseRawConfigDocument(raw)
 
   assertNoEnvExpansion(parsed.timezone, 'timezone')
   assertNoEnvExpansion(parsed.timestampFormat, 'timestampFormat')
@@ -198,7 +198,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
     timestampFormat: config.timestampFormat,
   })
 
-  const daemon = createDaemonRuntime({
+  const daemon = createProductionRuntime({
     config,
     httpFetcher: input.httpFetcher,
     httpProxyClientFactory: input.httpProxyClientFactory,

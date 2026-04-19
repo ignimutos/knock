@@ -346,6 +346,7 @@ function createPipelineHarness(options: PipelineHarnessOptions = {}) {
     plan,
     feed,
     bindings,
+    deliveryIds: bindings.map((binding) => binding.deliveryId),
     filterStage: new FilterStage({
       shouldPassFilter: options.shouldPassFilter,
     }),

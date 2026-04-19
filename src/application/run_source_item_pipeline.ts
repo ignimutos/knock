@@ -37,6 +37,7 @@ export interface RunSourceItemPipelineDeps {
   plan: RunPlan
   feed: UnifiedFeedFields
   bindings: DeliveryBinding[]
+  deliveryIds: string[]
   filterStage: FilterStage
   deduplicationStage: DeduplicationStage
   renderStage: RenderStage
@@ -49,15 +50,6 @@ export interface RunSourceItemPipelineDeps {
 }
 
 interface DeliveryProcessingResult {
-  attempts: Array<{
-    attempt: DeliveryAttempt
-    result: {
-      status: 'delivered' | 'failed'
-      reason?: string
-      startedAt: string
-      finishedAt: string
-    }
-  }>
   delivered: number
   failed: number
   duplicateDeliveries: number
@@ -106,7 +98,7 @@ export class RunSourceItemPipeline {
       fingerprint: item.normalized.id,
       sourceId: item.sourceId,
       effectDomain: item.effectDomain,
-      deliveries: this.deps.bindings.map((binding) => binding.deliveryId),
+      deliveries: this.deps.deliveryIds,
       recordedAt: this.deps.now(),
     })
 
@@ -142,7 +134,6 @@ export class RunSourceItemPipeline {
     item: PipelineItem,
     deliveryStatuses: Record<string, 'new' | 'duplicate'>,
   ): Promise<DeliveryProcessingResult> {
-    const attempts: DeliveryProcessingResult['attempts'] = []
     let delivered = 0
     let failed = 0
     let duplicateDeliveries = 0
@@ -184,7 +175,6 @@ export class RunSourceItemPipeline {
         logger: this.deps.deliveryDispatchLogger,
       }).run(attemptPlan)
       await this.deps.deliveryAttemptRepository.finish(attempt.attemptId, attemptResult)
-      attempts.push({ attempt, result: attemptResult })
 
       if (attemptResult.status === 'delivered') {
         await this.deps.deduplicationRepository.registerDeliveryFingerprint({
@@ -204,7 +194,6 @@ export class RunSourceItemPipeline {
     }
 
     return {
-      attempts,
       delivered,
       failed,
       duplicateDeliveries,

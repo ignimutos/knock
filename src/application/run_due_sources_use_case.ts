@@ -41,11 +41,10 @@ export class RunDueSourcesUseCase {
       scheduledAt,
       command.trigger,
     )
-    const results: RunSourceResult[] = []
 
-    for (const dueSource of dueSources) {
-      results.push(
-        await this.deps.runSourceUseCase.execute({
+    return await Promise.all(
+      dueSources.map((dueSource) =>
+        this.deps.runSourceUseCase.execute({
           source: dueSource.source,
           profile: 'production',
           effectDomain: 'production',
@@ -53,9 +52,7 @@ export class RunDueSourcesUseCase {
           scheduledAt,
           bindings: dueSource.bindings,
         }),
-      )
-    }
-
-    return results
+      ),
+    )
   }
 }
