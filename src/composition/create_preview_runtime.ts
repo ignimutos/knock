@@ -6,9 +6,7 @@ import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capt
 import {
   createRunSourceUseCaseForRuntime,
   createRuntimePipeline,
-  createRuntimeRenderers,
-  createRuntimeSourceInputGateway,
-  createSourceRuntimeSharedDeps,
+  createSourceExecutionCore,
 } from './create_runtime_kernel.ts'
 import { previewEffectPolicy } from './effect_policy.ts'
 
@@ -30,26 +28,21 @@ export function createPreviewComposition(input: {
   previewSourceUseCase: PreviewSourceUseCase
 } {
   const factsDb = input.factsDb ?? createInMemoryDb()
-  const shared = createSourceRuntimeSharedDeps({
+  const core = createSourceExecutionCore({
     config: input.config,
     factsDb,
     fetcher: input.fetcher ?? fetch,
-    sourceConfigsById: Object.fromEntries(
-      input.config.sources.map((source) => [source.id, source]),
-    ),
   })
 
   const captureExecutor = createCaptureDeliveryExecutor({
     onCaptured: input.onCaptured,
   })
-
-  const runtimeRenderers = createRuntimeRenderers(shared)
   const runSourceUseCase = createRunSourceUseCaseForRuntime({
     requireFullPipeline: true,
     now: input.now ?? (() => new Date().toISOString()),
     createRunId: () => `run-preview-${crypto.randomUUID()}`,
-    sourceInputGateway: createRuntimeSourceInputGateway(shared),
-    sourceParser: shared.sourceParser,
+    sourceInputGateway: core.sourceInputGateway,
+    sourceParser: core.sourceParser,
     pipeline: createRuntimePipeline({
       factsDb,
       policy: previewEffectPolicy,
@@ -59,9 +52,9 @@ export function createPreviewComposition(input: {
         email: captureExecutor,
       },
     }),
-    renderContent: runtimeRenderers.renderContent,
+    renderContent: core.runtimeRenderers.renderContent,
     renderPayload: (payload, context) =>
-      runtimeRenderers.renderPayload(asPreviewPushPayload(payload), context),
+      core.runtimeRenderers.renderPayload(asPreviewPushPayload(payload), context),
   })
 
   return {

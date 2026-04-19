@@ -46,6 +46,22 @@ export interface RuntimeKernel {
   sourceConfigs: ResolvedSourceConfig[]
 }
 
+export interface SourceExecutionCore {
+  shared: SourceRuntimeSharedDeps
+  sourceInputGateway: SourceInputGateway
+  sourceParser: SourceParser
+  runtimeRenderers: {
+    renderContent: NonNullable<RunSourceUseCaseDeps['renderContent']>
+    renderPayload: NonNullable<RunSourceUseCaseDeps['renderPayload']>
+  }
+}
+
+function indexSourceConfigsById(
+  sources: ResolvedSourceConfig[],
+): Record<string, ResolvedSourceConfig> {
+  return Object.fromEntries(sources.map((source) => [source.id, source]))
+}
+
 export function createSourceRuntimeSharedDeps(input: {
   config: AppConfigResolved
   factsDb: FactsDbClient
@@ -139,6 +155,31 @@ function assertFullPipeline(input: {
     !input.deliveryExecutors?.email
   ) {
     throw new Error('production run source wiring 缺少完整 pipeline 依赖')
+  }
+}
+
+export function createSourceExecutionCore(input: {
+  config: AppConfigResolved
+  factsDb: FactsDbClient
+  fetcher?: CreateHttpClientOptions['fetcher']
+  proxyClientFactory?: CreateHttpClientOptions['proxyClientFactory']
+  generateText?: Parameters<typeof createAiRuntime>[0]['generateText']
+  aiLogger?: Logger
+  contentLogger?: Logger
+  parserLogger?: Logger
+  httpLogger?: Logger
+  byparrLogger?: Logger
+}): SourceExecutionCore {
+  const shared = createSourceRuntimeSharedDeps({
+    ...input,
+    sourceConfigsById: indexSourceConfigsById(input.config.sources),
+  })
+
+  return {
+    shared,
+    sourceInputGateway: createRuntimeSourceInputGateway(shared),
+    sourceParser: shared.sourceParser,
+    runtimeRenderers: createRuntimeRenderers(shared),
   }
 }
 

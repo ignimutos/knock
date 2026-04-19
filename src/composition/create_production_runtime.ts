@@ -17,10 +17,8 @@ import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run
 import {
   createRunSourceUseCaseForRuntime,
   createRuntimePipeline,
-  createRuntimeRenderers,
-  createRuntimeSourceInputGateway,
   createRuntimeKernel,
-  createSourceRuntimeSharedDeps,
+  createSourceExecutionCore,
 } from './create_runtime_kernel.ts'
 import { productionEffectPolicy } from './effect_policy.ts'
 
@@ -71,12 +69,9 @@ export function createProductionRuntime(
   const definitionSet = compileDefinitionsFromResolvedConfig(options.config)
 
   const runSourceUseCase = (() => {
-    const shared = createSourceRuntimeSharedDeps({
+    const core = createSourceExecutionCore({
       config: options.config,
       factsDb,
-      sourceConfigsById: Object.fromEntries(
-        options.config.sources.map((source) => [source.id, source]),
-      ),
       fetcher: options.httpFetcher ?? fetch,
       proxyClientFactory: options.httpProxyClientFactory ?? Deno.createHttpClient,
       aiLogger: logger.child({ module: 'core.ai.runtime' }),
@@ -89,8 +84,8 @@ export function createProductionRuntime(
     return createRunSourceUseCaseForRuntime({
       now,
       createRunId: () => crypto.randomUUID(),
-      sourceInputGateway: createRuntimeSourceInputGateway(shared),
-      sourceParser: shared.sourceParser,
+      sourceInputGateway: core.sourceInputGateway,
+      sourceParser: core.sourceParser,
       pipeline: createRuntimePipeline({
         factsDb,
         policy: productionEffectPolicy,
@@ -100,7 +95,7 @@ export function createProductionRuntime(
             logger: logger.child({ module: 'delivery.file' }),
           }),
           push: createHttpDeliveryExecutor({
-            httpClient: shared.httpClient,
+            httpClient: core.shared.httpClient,
             logger: logger.child({ module: 'delivery.http' }),
           }),
           email: createEmailDeliveryExecutor({
@@ -112,11 +107,11 @@ export function createProductionRuntime(
           }),
         },
       }),
-      ...createRuntimeRenderers(shared),
+      ...core.runtimeRenderers,
       shouldPassFilter: ({ item, feed, source, filterTemplate }) =>
-        shared.contentRuntime.shouldPassFilter(
+        core.shared.contentRuntime.shouldPassFilter(
           filterTemplate,
-          shared.contentRuntime.buildContext(item, feed, {
+          core.shared.contentRuntime.buildContext(item, feed, {
             id: source.id,
             name: source.title,
             enabled: true,

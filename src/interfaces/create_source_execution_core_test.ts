@@ -4,7 +4,7 @@ import { createLogger } from '../core/logger.ts'
 import { CollectSourceUseCase } from '../application/collect_source_use_case.ts'
 import {
   createRunSourceUseCaseForRuntime,
-  createSourceRuntimeSharedDeps,
+  createSourceExecutionCore,
 } from '../composition/create_runtime_kernel.ts'
 
 Deno.test(
@@ -205,10 +205,11 @@ Deno.test(
 )
 
 Deno.test(
-  '[contract] createSourceRuntimeSharedDeps: 应保留 ai/content logger 注入能力',
+  '[contract] createSourceExecutionCore: 应复用 shared deps 并暴露统一 fetch/parse/render 入口',
   async () => {
     const lines: string[] = []
-    const shared = createSourceRuntimeSharedDeps({
+    const factsDb = createInMemoryDb()
+    const core = createSourceExecutionCore({
       config: {
         runtimeDir: '/tmp/runtime',
         language: 'zh-CN',
@@ -260,7 +261,6 @@ Deno.test(
           },
         },
         deliveries: [],
-        sources: [],
         logging: {
           level: 'info',
           sinks: {
@@ -270,9 +270,20 @@ Deno.test(
             },
           },
         },
+        sources: [
+          {
+            id: 's1',
+            enabled: true,
+            http: {
+              url: 'https://example.com/feed.xml',
+            },
+            syndication: {},
+            deliveries: [],
+          },
+        ],
       },
-      factsDb: createInMemoryDb(),
-      sourceConfigsById: {},
+      factsDb,
+      fetcher: () => Promise.resolve(new Response('<rss />')),
       contentLogger: createLogger({
         enabled: true,
         level: 'info',
@@ -281,7 +292,7 @@ Deno.test(
       }),
     })
 
-    await shared.contentRuntime.renderContent('{{ entry.title | to_telegram_html }}', {
+    await core.shared.contentRuntime.renderContent('{{ entry.title | to_telegram_html }}', {
       entry: { title: '<b>Hello</b><script>alert(1)</script>' },
       source: { id: 's1' },
       feed: {},
@@ -291,5 +302,24 @@ Deno.test(
       lines.some((line) => line.includes('content.render')),
       true,
     )
+
+    const fetched = await core.sourceInputGateway.fetch({
+      runId: 'run-http-core',
+      source: {
+        kind: 'fetch',
+        sourceId: 's1',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'preview',
+      effectDomain: 'preview',
+      trigger: 'preview',
+      scheduledAt: '2026-04-17T12:00:00.000Z',
+      bindings: [],
+    })
+
+    assertEquals(fetched.kind, 'fetch')
+    assertEquals(typeof core.runtimeRenderers.renderContent, 'function')
+    assertEquals(typeof core.runtimeRenderers.renderPayload, 'function')
   },
 )
