@@ -85,6 +85,8 @@ sqlite:
 deliveries:
   # 本地文件投递示例
   local:
+    # 是否启用该 delivery（可选；默认: true）
+    enabled: true
     file:
       # 输出文件路径；相对路径基于 runtimeDir（必填）
       path: outputs/releases.md
@@ -298,6 +300,7 @@ sources:
           subject: "[release][{{ source.id }}] {{ entry.title }}"
     # 条目过滤表达式；渲染结果必须为 `true` / `false` 字符串（可选）
     # match_* 的最后一个布尔参数可反转结果，例如 `{{ title | match_regex: "release", "i", true }}`
+    # extract_regex 可提取捕获组，再配合 assign + if 比较；例如 `{% assign amount = title | extract_regex: "([0-9]+)(?=元)" | default: "0" %}{% if amount > 1800 %}true{% else %}false{% endif %}`
     filter: '{{ title | match_regex: "release", "i" }}'
     # parser：syndication / xquery 二选一
     # 同时省略 syndication 与 xquery 时，等价 syndication: {}

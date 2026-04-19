@@ -39,6 +39,22 @@ function parseInvertArg(filterName: string, invert: unknown): boolean {
   throw new Error(`${filterName} 的 invert 参数必须是布尔值`)
 }
 
+function compileRegex(_filterName: string, pattern: unknown, flags?: unknown): RegExp {
+  const resolvedFlags = flags === undefined ? undefined : toLiquidString(flags)
+  return new RegExp(toLiquidString(pattern), resolvedFlags)
+}
+
+function parseRegexGroupArg(group: unknown): number {
+  if (group === undefined) return 1
+  if (typeof group === 'number' && Number.isSafeInteger(group) && group >= 0) {
+    return group
+  }
+  if (typeof group === 'string' && /^\d+$/.test(group.trim())) {
+    return Number(group.trim())
+  }
+  throw new Error('extract_regex 的 group 参数必须是非负整数')
+}
+
 type AiFilterName = 'ai_translate' | 'ai_summarize'
 type AiFilterTokenValue = { kind?: number }
 type AiFilterNamedTokenArg = [string?, AiFilterTokenValue?]
@@ -668,15 +684,36 @@ function registerSharedLiquidFilters(engine: Liquid, logger?: Logger): void {
     'match_regex',
     (value: unknown, pattern: unknown, flagsOrInvert?: unknown, invert?: unknown): boolean => {
       const text = toLiquidString(value)
-      const flags =
-        typeof flagsOrInvert === 'boolean'
-          ? undefined
-          : flagsOrInvert === undefined
-            ? undefined
-            : toLiquidString(flagsOrInvert)
-      const matched = new RegExp(toLiquidString(pattern), flags).test(text)
+      const matched = compileRegex(
+        'match_regex',
+        pattern,
+        typeof flagsOrInvert === 'boolean' ? undefined : flagsOrInvert,
+      ).test(text)
       const resolvedInvert = typeof flagsOrInvert === 'boolean' ? flagsOrInvert : invert
       return parseInvertArg('match_regex', resolvedInvert) ? !matched : matched
+    },
+  )
+
+  engine.registerFilter(
+    'extract_regex',
+    (value: unknown, pattern: unknown, flagsOrGroup?: unknown, group?: unknown): string => {
+      const text = toLiquidString(value)
+      const flags = typeof flagsOrGroup === 'string' ? flagsOrGroup : undefined
+      const regex = compileRegex('extract_regex', pattern, flags)
+      const match = regex.exec(text)
+      if (!match) return ''
+
+      const explicitGroup = flags !== undefined ? group : flagsOrGroup
+      if (match.length === 1 && explicitGroup === undefined) {
+        return match[0] ?? ''
+      }
+
+      const groupIndex = parseRegexGroupArg(explicitGroup)
+      if (groupIndex >= match.length) {
+        throw new Error(`extract_regex 的 group ${groupIndex} 超出可用捕获组范围`)
+      }
+
+      return match[groupIndex] ?? ''
     },
   )
 

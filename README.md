@@ -87,13 +87,14 @@ deno task start --config <your-config.yml>
 ## 配置设计原则
 
 1. `deliveries.<id>` 是 canonical delivery 定义区，`sources.<id>.deliveries` 是 keyed override 区；source 通过 delivery ID 引用并覆写消息子树。
-2. `sources.<id>.deliveries` 只允许覆写 `file.content`、`push.request.payload`、`email.message`。
-3. 覆写合并语义：对象 deep merge、数组整体替换、标量直接替换，v1 不支持 null-delete。
-4. 每个 source 选择一种抓取入口：`http` 或 `byparr`。
-5. 每个 source 选择一种解析器：`syndication` 或 `xquery`；当两者都省略时，运行时语义等价于 `syndication: {}`。
-6. `summary` source 采用互斥模型：启用 `summary` 后，source 进入汇总模式，并使用独立窗口语义。
-7. 配置加载阶段先展开 `${ENV_VAR}`，运行阶段再渲染 Liquid 模板；同一字符串中两者并存时，执行顺序保持为“先 ENV，后 Liquid”。
-8. `sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `runtime_dir` 解析。
+2. `deliveries.<id>.enabled` 可控制该 canonical delivery 是否参与装配；默认 `true`，设为 `false` 后不会生成 source 侧 resolved delivery/binding。
+3. `sources.<id>.deliveries` 只允许覆写 `file.content`、`push.request.payload`、`email.message`。
+4. 覆写合并语义：对象 deep merge、数组整体替换、标量直接替换，v1 不支持 null-delete。
+5. 每个 source 选择一种抓取入口：`http` 或 `byparr`。
+6. 每个 source 选择一种解析器：`syndication` 或 `xquery`；当两者都省略时，运行时语义等价于 `syndication: {}`。
+7. `summary` source 采用互斥模型：启用 `summary` 后，source 进入汇总模式，并使用独立窗口语义。
+8. 配置加载阶段先展开 `${ENV_VAR}`，运行阶段再渲染 Liquid 模板；同一字符串中两者并存时，执行顺序保持为“先 ENV，后 Liquid”。
+9. `sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `runtime_dir` 解析。
 
 ## 完整配置模型长这样：
 
@@ -123,6 +124,7 @@ ai:
 
 deliveries:
   local:
+    enabled: true
     file:
       path: outputs/releases.md
       content: |
@@ -262,6 +264,7 @@ logging:
 
 ### `deliveries` 键路径
 
+- `deliveries.<deliveryId>.enabled`
 - `deliveries.<deliveryId>.file.path`
 - `deliveries.<deliveryId>.file.content`
 - `deliveries.<deliveryId>.file.rotation.enabled`
@@ -361,6 +364,7 @@ logging:
 ### `deliveries`
 
 - 每个 delivery 选择一种目标：`file`、`push`、`email`。
+- `deliveries.<id>.enabled` 默认 `true`；设为 `false` 时，该 delivery 不参与 source 侧装配。
 - `file` 负责本地追加写入，支持 `rotation`。
 - `push` 负责 HTTP 投递，分为 `push.http`（传输层）与 `push.request`（负载层），支持 `response.predicate` 自定义成功判定。
 - `sources.<id>.deliveries` 仅覆写消息子树：file 覆写 `content`，push 覆写 `payload`，email 覆写 `message`。
@@ -382,6 +386,7 @@ logging:
 ### 高频 Liquid 过滤器
 
 - `match_regex`：正则匹配，适合 source 侧 `filter`。
+- `extract_regex`：提取正则命中或捕获组，适合先抽值再比较；例如 `{% assign amount = title | extract_regex: "([0-9]+)(?=元)" %}{% if amount > 1800 %}true{% else %}false{% endif %}`。
 - `strip_html`：去标签与空白归一，适合生成文本摘要。
 - `to_telegram_html`：将 HTML 规范化为 Telegram HTML 可发送子集。
 - `to_telegram_markdown_v2`：将 Markdown/纯文本转换为 Telegram MarkdownV2 可发送文本。
@@ -646,6 +651,7 @@ source 使用互斥组合：`http | byparr` 选择其一，`syndication | xquery
 ### 4) filter 报错
 
 `filter` 的渲染结果使用 `true/false` 字符串。
+需要从字段中提取数值再比较时，可用 `extract_regex`，再配合 `assign + if` 做比较，例如 `{% assign amount = title | extract_regex: "([0-9]+)(?=元)" | default: "0" %}{% if amount > 1800 %}true{% else %}false{% endif %}`。
 
 ### 5) summary 首次运行没有 entry
 

@@ -605,6 +605,52 @@ Deno.test(
   },
 )
 
+Deno.test(
+  '[contract] resolveConfig: delivery 显式 enabled=false 时应从 canonical 与 source resolved 列表剔除',
+  () => {
+    const input: AppConfigInput = {
+      runtimeDir: '/tmp/runtime',
+      deliveries: {
+        archive: {
+          enabled: false,
+          file: {
+            path: 'a.md',
+            content: '{{ entry.title }}',
+          },
+        },
+        webhook: {
+          push: {
+            http: {
+              url: 'https://example.com/hook',
+            },
+          },
+        },
+      },
+      sources: {
+        s1: {
+          http: {
+            url: 'https://example.com/feed.xml',
+          },
+          deliveries: {
+            archive: {},
+            webhook: {},
+          },
+        },
+      },
+    }
+
+    const resolved = resolveConfig(validateConfig(input))
+    assertEquals(
+      resolved.deliveries.map((delivery) => delivery.id),
+      ['webhook'],
+    )
+    assertEquals(
+      resolved.sources[0].deliveries.map((delivery) => delivery.deliveryId),
+      ['webhook'],
+    )
+  },
+)
+
 Deno.test('[contract] resolveConfig: delivery.file.rotation 未显式 enabled 时默认 false', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',

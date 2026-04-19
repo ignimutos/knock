@@ -861,6 +861,7 @@ export const xquerySchema = z
 
 export const deliverySchema = z
   .object({
+    enabled: optionalBoolean(),
     file: fileSchema.optional(),
     http: z.unknown().optional(),
     push: pushSchema.optional(),

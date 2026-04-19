@@ -249,6 +249,34 @@ Deno.test('[contract] validateConfig: source.deliveries keyed map 应通过', ()
   validateConfig(input)
 })
 
+Deno.test('[contract] validateConfig: delivery.enabled 应允许显式布尔值', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      local: {
+        enabled: false,
+        file: {
+          path: 'feed.md',
+          content: '{{ entry.title }}',
+        },
+      },
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          local: {},
+        },
+      },
+    },
+  }
+
+  const validated = validateConfig(input)
+  assertEquals(validated.deliveries.local.enabled, false)
+})
+
 Deno.test('[contract] validateConfig: source.deliveries 旧字符串数组应拒绝', () => {
   const input = {
     runtimeDir: '/tmp/runtime',

@@ -141,6 +141,7 @@ function normalizeDeliveries(
 ): DeliveryConfig[] {
   return normalizeObjectConfig<DeliveryConfig>(value).map((delivery) => ({
     id: delivery.id,
+    enabled: delivery.enabled ?? true,
     file: normalizeFileConfig(runtimeDir, delivery.file),
     push: clonePushConfig(delivery.push),
     email: cloneEmailConfig(delivery.email),
@@ -285,14 +286,18 @@ function resolveSourceDeliveries(
 ): ResolvedDeliveryConfig[] {
   const deliveryMap = new Map(deliveries.map((delivery) => [delivery.id, delivery]))
 
-  return Object.entries(sourceDeliveries).map(([deliveryId, override]) => {
+  return Object.entries(sourceDeliveries).flatMap(([deliveryId, override]) => {
     const delivery = deliveryMap.get(deliveryId)
 
     if (!delivery) {
       throw new Error(`source.${sourceId}.deliveries 引用了未定义 delivery: ${deliveryId}`)
     }
 
-    return applySourceDeliveryOverride(sourceId, delivery, override)
+    if (delivery.enabled === false) {
+      return []
+    }
+
+    return [applySourceDeliveryOverride(sourceId, delivery, override)]
   })
 }
 
@@ -497,7 +502,7 @@ export function resolveConfig(input: AppConfigValidated): AppConfigResolved {
     timestampFormat: input.timestampFormat,
     sqlite: resolveSqliteConfig(input.runtimeDir, input.sqlite),
     ai: resolveAiConfig(input.ai),
-    deliveries,
+    deliveries: deliveries.filter((delivery) => delivery.enabled !== false),
     sources: resolvedSources,
     logging: resolveLoggingConfig(input.runtimeDir, input.logging),
   }

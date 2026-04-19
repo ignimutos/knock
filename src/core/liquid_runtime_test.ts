@@ -156,6 +156,54 @@ Deno.test('[contract] liquidRuntime: sync 路径支持 match_regex', () => {
   assertEquals(out, 'true')
 })
 
+Deno.test('[contract] liquidRuntime: extract_regex 默认返回第一个捕获组', () => {
+  const out = renderLiquidSync("{{ item.title | extract_regex: '([0-9]+)(?=元)' }}", {
+    item: { title: '价格 1999元' },
+  })
+  assertEquals(out, '1999')
+})
+
+Deno.test('[contract] liquidRuntime: extract_regex 无捕获组时返回整个 match', () => {
+  const out = renderLiquidSync("{{ item.title | extract_regex: '[0-9]+(?=元)' }}", {
+    item: { title: '价格 1999元' },
+  })
+  assertEquals(out, '1999')
+})
+
+Deno.test('[contract] liquidRuntime: extract_regex 支持 flags 与显式 group', () => {
+  const out = renderLiquidSync("{{ item.title | extract_regex: '(release) +([0-9]+)', 'i', 2 }}", {
+    item: { title: 'Release 42' },
+  })
+  assertEquals(out, '42')
+})
+
+Deno.test('[contract] liquidRuntime: extract_regex 未匹配时返回空串', () => {
+  const out = renderLiquidSync("{{ item.title | extract_regex: '([0-9]+)(?=元)' }}", {
+    item: { title: '价格待定' },
+  })
+  assertEquals(out, '')
+})
+
+Deno.test('[contract] liquidRuntime: extract_regex group 越界时抛错', () => {
+  assertThrows(
+    () =>
+      renderLiquidSync("{{ item.title | extract_regex: '([0-9]+)(?=元)', 2 }}", {
+        item: { title: '价格 1999元' },
+      }),
+    Error,
+  )
+})
+
+Deno.test('[contract] liquidRuntime: extract_regex 非法 regex 会报错', async () => {
+  await assertRejects(
+    () =>
+      renderLiquid("{{ item.title | extract_regex: '[' }}", {
+        item: { title: 'Rust' },
+      }),
+    Error,
+  )
+})
+
 Deno.test('[contract] liquidRuntime: strip_html 可用于 async 渲染', async () => {
   const out = await renderLiquid('{{ item.content | strip_html }}', {
     item: { content: '<p>Hello <strong>world</strong></p>' },

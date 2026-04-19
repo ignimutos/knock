@@ -127,6 +127,30 @@ Deno.test('[contract] contentRuntime: shouldPassFilter 仍支持 entry 命名空
   assertEquals(passed, true)
 })
 
+Deno.test('[contract] contentRuntime: shouldPassFilter 支持 extract_regex 提取后比较', async () => {
+  const passed = await shouldPassFilter(
+    "{% assign amount = title | extract_regex: '([0-9]+)(?=元)' %}{% if amount > 1800 %}true{% else %}false{% endif %}",
+    {
+      title: '预算 1999元',
+      entry: { title: '预算 1999元' },
+    },
+  )
+
+  assertEquals(passed, true)
+})
+
+Deno.test('[contract] contentRuntime: shouldPassFilter 提取失败时可继续参与数值比较', async () => {
+  const passed = await shouldPassFilter(
+    "{% assign amount = title | extract_regex: '([0-9]+)(?=元)' | default: '0' %}{% if amount > 1800 %}true{% else %}false{% endif %}",
+    {
+      title: '预算待定',
+      entry: { title: '预算待定' },
+    },
+  )
+
+  assertEquals(passed, false)
+})
+
 Deno.test('[contract] contentRuntime: shouldPassFilter 渲染失败应报错并中止', async () => {
   await assertRejects(() => shouldPassFilter('{{', { entry: { title: 'Rust' } }), Error)
 })
