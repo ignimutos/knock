@@ -80,22 +80,5 @@ export function compileDefinitionsFromResolvedConfig(config: AppConfigResolved):
     sources,
     deliveries,
     bindings,
-    sourceConfigsById: Object.fromEntries(config.sources.map((source) => [source.id, source])),
-    policies: {
-      preview: {
-        persistFacts: false,
-        writeDedupe: false,
-        allowExternalSideEffects: false,
-        exposeToRecovery: false,
-        exposeToPrune: false,
-      },
-      production: {
-        persistFacts: true,
-        writeDedupe: true,
-        allowExternalSideEffects: true,
-        exposeToRecovery: true,
-        exposeToPrune: true,
-      },
-    },
   }
 }

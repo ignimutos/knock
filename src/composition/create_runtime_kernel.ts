@@ -15,7 +15,8 @@ import { createHttpClient, type CreateHttpClientOptions } from '../core/http_cli
 import type { Logger } from '../core/logger.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
-import type { DefinitionSet, EffectPolicy } from '../definitions/definition_set.ts'
+import type { DefinitionSet } from '../definitions/definition_set.ts'
+import type { EffectPolicy } from './effect_policy.ts'
 import { resolveSourceConfig, selectSourceInputGateway } from './runtime_source_helpers.ts'
 import { createDeliveryAttemptRepository } from '../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { createApplicationDeduplicationRepository } from '../infrastructure/sqlite/deduplication_repository.ts'
@@ -267,7 +268,7 @@ export function createRuntimeKernel(input: {
   now: () => string
   runSourceUseCase: Pick<RunSourceUseCase, 'execute'>
 }): RuntimeKernel {
-  const sourceConfigs = Object.values(input.definitions.sourceConfigsById)
+  const sourceConfigs = input.config.sources
   const sourceById = new Map(
     input.definitions.sources.map((source) => [source.sourceId, source] as const),
   )

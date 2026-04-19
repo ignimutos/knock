@@ -74,21 +74,6 @@ test('[contract] compileDefinitions: 应从 resolved config 生成单一 Definit
   assertEquals(rustWebhookBinding.definition.payloadTemplate, {
     text: 'override {{ entry.id }}',
   })
-
-  assertEquals(definitionSet.policies.preview, {
-    persistFacts: false,
-    writeDedupe: false,
-    allowExternalSideEffects: false,
-    exposeToRecovery: false,
-    exposeToPrune: false,
-  })
-  assertEquals(definitionSet.policies.production, {
-    persistFacts: true,
-    writeDedupe: true,
-    allowExternalSideEffects: true,
-    exposeToRecovery: true,
-    exposeToPrune: true,
-  })
 })
 
 test('[contract] compileDefinitions: unsupported delivery 应抛出防御性错误', () => {

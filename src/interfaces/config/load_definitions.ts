@@ -4,17 +4,12 @@ import { compileDefinitionsFromResolvedConfig } from '../../definitions/compile_
 import type { AppConfigResolved } from '../../config/types.ts'
 import type { DefinitionSet } from '../../definitions/definition_set.ts'
 
-export type LoadedDefinitions = Pick<
-  DefinitionSet,
-  'sources' | 'deliveries' | 'bindings' | 'sourceConfigsById'
->
+export type LoadedDefinitions = DefinitionSet
 
 export function buildLoadedDefinitionsFromResolvedConfig(
   config: AppConfigResolved,
 ): LoadedDefinitions {
-  const { policies: _ignoredPolicies, ...loadedDefinitions } =
-    compileDefinitionsFromResolvedConfig(config)
-  return loadedDefinitions
+  return compileDefinitionsFromResolvedConfig(config)
 }
 
 export async function loadDefinitions(options: LoadConfigOptions = {}): Promise<LoadedDefinitions> {

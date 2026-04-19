@@ -2,7 +2,6 @@ import { PreviewSourceUseCase } from '../application/preview_source_use_case.ts'
 import type { DeliveryAttemptPlan } from '../application/ports/delivery_executor.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import { createInMemoryDb, type FactsDbClient } from '../db/client.ts'
-import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capture_delivery_executor.ts'
 import {
   createRunSourceUseCaseForRuntime,
@@ -11,6 +10,7 @@ import {
   createRuntimeSourceInputGateway,
   createSourceRuntimeSharedDeps,
 } from './create_runtime_kernel.ts'
+import { previewEffectPolicy } from './effect_policy.ts'
 
 function asPreviewPushPayload(payload: unknown): Record<string, unknown> | undefined {
   if (payload === undefined) return undefined
@@ -30,12 +30,13 @@ export function createPreviewComposition(input: {
   previewSourceUseCase: PreviewSourceUseCase
 } {
   const factsDb = input.factsDb ?? createInMemoryDb()
-  const definitionSet = compileDefinitionsFromResolvedConfig(input.config)
   const shared = createSourceRuntimeSharedDeps({
     config: input.config,
     factsDb,
     fetcher: input.fetcher ?? fetch,
-    sourceConfigsById: definitionSet.sourceConfigsById,
+    sourceConfigsById: Object.fromEntries(
+      input.config.sources.map((source) => [source.id, source]),
+    ),
   })
 
   const captureExecutor = createCaptureDeliveryExecutor({
@@ -51,7 +52,7 @@ export function createPreviewComposition(input: {
     sourceParser: shared.sourceParser,
     pipeline: createRuntimePipeline({
       factsDb,
-      policy: definitionSet.policies.preview,
+      policy: previewEffectPolicy,
       deliveryExecutors: {
         file: captureExecutor,
         push: captureExecutor,

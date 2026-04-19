@@ -22,6 +22,7 @@ import {
   createRuntimeKernel,
   createSourceRuntimeSharedDeps,
 } from './create_runtime_kernel.ts'
+import { productionEffectPolicy } from './effect_policy.ts'
 
 export interface ProductionRuntime {
   runDueSourcesUseCase: {
@@ -73,7 +74,9 @@ export function createProductionRuntime(
     const shared = createSourceRuntimeSharedDeps({
       config: options.config,
       factsDb,
-      sourceConfigsById: definitionSet.sourceConfigsById,
+      sourceConfigsById: Object.fromEntries(
+        options.config.sources.map((source) => [source.id, source]),
+      ),
       fetcher: options.httpFetcher ?? fetch,
       proxyClientFactory: options.httpProxyClientFactory ?? Deno.createHttpClient,
       aiLogger: logger.child({ module: 'core.ai.runtime' }),
@@ -90,7 +93,7 @@ export function createProductionRuntime(
       sourceParser: shared.sourceParser,
       pipeline: createRuntimePipeline({
         factsDb,
-        policy: definitionSet.policies.production,
+        policy: productionEffectPolicy,
         deliveryExecutors: {
           file: createFileDeliveryExecutor({
             runtimeDir: options.config.runtimeDir,
