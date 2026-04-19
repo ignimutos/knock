@@ -1,5 +1,10 @@
+import { exists } from '@std/fs'
+import { dirname, join, resolve } from '@std/path'
+import { parse } from '@std/yaml'
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
+import { resolveLoggingConfig } from './config/resolve_config.ts'
+import { loggingSchema, rawConfigSyntaxSchema, timezoneSchema } from './config/schema.ts'
 import { loadConfig } from './config/load_config.ts'
 import { createLogger } from './core/logger.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
@@ -87,6 +92,98 @@ function normalizeStartAppInput(options: StartAppOptions = {}): StartAppInput {
   }
 }
 
+const webLoggingConfigSchema = z.object({
+  timezone: timezoneSchema.optional(),
+  timestampFormat: z.string().default('yyyy-MM-dd HH:mm:ss'),
+  logging: loggingSchema,
+})
+
+function getStartWebConfigLookup(): {
+  runtimeDir: string
+  configPath?: string
+} {
+  const configPath = Deno.env.get('KNOCK_CONFIG_PATH')
+  if (configPath) {
+    const resolvedConfigPath = resolve(configPath)
+    return {
+      runtimeDir: dirname(resolvedConfigPath),
+      configPath: resolvedConfigPath,
+    }
+  }
+
+  return {
+    runtimeDir: resolve(Deno.env.get('KNOCK_RUNTIME_DIR') ?? join(Deno.cwd(), 'runtime')),
+  }
+}
+
+async function findStartWebConfigPath(
+  runtimeDir: string,
+  configPath?: string,
+): Promise<string | undefined> {
+  if (configPath) return configPath
+
+  const yml = join(runtimeDir, 'config.yml')
+  if (await exists(yml)) return yml
+  const yaml = join(runtimeDir, 'config.yaml')
+  if (await exists(yaml)) return yaml
+  return undefined
+}
+
+function assertNoEnvExpansion(value: unknown, path: string): void {
+  if (typeof value === 'string') {
+    if (value.includes('${')) {
+      throw new Error(`${path} 不支持环境变量展开`)
+    }
+    return
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoEnvExpansion(item, `${path}[${index}]`))
+    return
+  }
+
+  if (!value || typeof value !== 'object') return
+
+  for (const [key, child] of Object.entries(value)) {
+    assertNoEnvExpansion(child, `${path}.${key}`)
+  }
+}
+
+async function loadStartWebLoggingRuntime() {
+  const lookup = getStartWebConfigLookup()
+  const configPath = await findStartWebConfigPath(lookup.runtimeDir, lookup.configPath)
+  if (!configPath) return undefined
+
+  const raw = await Deno.readTextFile(configPath)
+  parseWithFirstIssue(rawConfigSyntaxSchema, raw, '配置文件格式非法')
+  const document = parse(raw)
+  const parsed =
+    document && typeof document === 'object' && !Array.isArray(document)
+      ? (document as Record<string, unknown>)
+      : {}
+
+  assertNoEnvExpansion(parsed.timezone, 'timezone')
+  assertNoEnvExpansion(parsed.timestampFormat, 'timestampFormat')
+  assertNoEnvExpansion(parsed.logging, 'logging')
+
+  const config = parseWithFirstIssue(
+    webLoggingConfigSchema,
+    {
+      timezone: parsed.timezone,
+      timestampFormat: parsed.timestampFormat,
+      logging: parsed.logging,
+    },
+    'web logging 配置非法',
+  )
+
+  return {
+    runtimeDir: lookup.runtimeDir,
+    timezone: config.timezone ?? 'UTC',
+    timestampFormat: config.timestampFormat,
+    logging: resolveLoggingConfig(lookup.runtimeDir, config.logging),
+  }
+}
+
 export async function startApp(options: StartAppOptions = {}): Promise<StartAppResult> {
   const input = normalizeStartAppInput(options)
   const config = await loadConfig({
@@ -131,34 +228,51 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 }
 
 export async function startWeb(options: { host: string; port: number }) {
+  const loggingRuntime = await loadStartWebLoggingRuntime()
+  if (loggingRuntime) {
+    await configureLoggingRuntime(loggingRuntime)
+  }
+
   const { default: webApp } = await import('../web/main.ts')
   const logger = createLogger({
     enabled: true,
-    level: 'info',
+    level: loggingRuntime?.logging.level ?? 'info',
     module: 'web.startup',
     component: 'web',
-    timezone: 'UTC',
-    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    timezone: loggingRuntime?.timezone ?? 'UTC',
+    timestampFormat: loggingRuntime?.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss',
   })
 
-  await webApp.listen({
-    hostname: options.host,
-    port: options.port,
-    onListen: ({ hostname, port }) => {
-      logger.info('Web 服务开始监听', {
-        'web.operation': 'startup',
-        'web.outcome': 'listening',
-        'web.host': hostname,
-        'web.port': port,
-        'web.url': `http://${hostname}:${port}/`,
-      })
-    },
-  })
+  try {
+    await webApp.listen({
+      hostname: options.host,
+      port: options.port,
+      onListen: ({ hostname, port }) => {
+        const url = `http://${hostname}:${port}/`
+        logger.info(`Web 服务开始监听 ${url}`, {
+          'web.operation': 'startup',
+          'web.outcome': 'listening',
+          'web.host': hostname,
+          'web.port': port,
+          'web.url': url,
+        })
+      },
+    })
+  } finally {
+    await shutdownLoggingRuntime()
+  }
 }
 
 export async function runAllModes(command: AllCliCommand): Promise<void> {
+  const childEnv = {
+    ...Deno.env.toObject(),
+    ...(command.configPath ? { KNOCK_CONFIG_PATH: command.configPath } : {}),
+    ...(command.runtimeDir ? { KNOCK_RUNTIME_DIR: command.runtimeDir } : {}),
+  }
+
   const daemonChild = new Deno.Command(Deno.execPath(), {
     args: buildChildArgs(command, 'daemon'),
+    env: childEnv,
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -166,6 +280,7 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
 
   const webChild = new Deno.Command(Deno.execPath(), {
     args: buildChildArgs(command, 'web'),
+    env: childEnv,
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',

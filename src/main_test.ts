@@ -1,4 +1,6 @@
 import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
+import { join } from '@std/path'
+import { withOwnedRuntime } from './test_runtime.ts'
 import type { StartAppOptions } from './main.ts'
 import { dispatchCliCommand, main } from './main.ts'
 import {
@@ -424,55 +426,88 @@ Deno.test(
   },
 )
 
-Deno.test('[contract] startWeb: 启动时应输出包含 host、port 与 url 的结构化日志', async () => {
-  const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-  const { port } = listener.addr as Deno.NetAddr
-  listener.close()
+Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host、port 与 url', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    await Deno.writeTextFile(
+      join(runtimeDir, 'config.yml'),
+      [
+        'deliveries:',
+        '  telegram:',
+        '    enabled: false',
+        '    push:',
+        '      http:',
+        '        url: https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage',
+        '      request:',
+        '        payload:',
+        '          chat_id: ${TELEGRAM_CHAT_ID}',
+        '          text: hello',
+        'sources: {}',
+        'logging:',
+        '  level: info',
+        '  sinks:',
+        '    console:',
+        '      type: console',
+        '      format: pretty',
+      ].join('\n'),
+    )
 
-  const child = new Deno.Command(Deno.execPath(), {
-    args: [
-      'run',
-      '--allow-read',
-      '--allow-write',
-      '--allow-env',
-      '--allow-net',
-      '--allow-ffi',
-      '--allow-run',
-      'src/main.ts',
-      '--mode',
-      'web',
-      '--web_host',
-      '127.0.0.1',
-      '--web_port',
-      String(port),
-    ],
-    cwd: Deno.cwd(),
-    stdout: 'piped',
-    stderr: 'piped',
-  }).spawn()
+    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+    const { port } = listener.addr as Deno.NetAddr
+    listener.close()
 
-  try {
-    const output = await readCommandOutput(child.stdout, 3000)
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        'run',
+        '--allow-read',
+        '--allow-write',
+        '--allow-env',
+        '--allow-net',
+        '--allow-ffi',
+        '--allow-run',
+        'src/main.ts',
+        '--mode',
+        'web',
+        '--web_host',
+        '127.0.0.1',
+        '--web_port',
+        String(port),
+      ],
+      cwd: Deno.cwd(),
+      env: {
+        ...Deno.env.toObject(),
+        KNOCK_RUNTIME_DIR: runtimeDir,
+      },
+      stdout: 'piped',
+      stderr: 'piped',
+    }).spawn()
 
-    assertStringIncludes(output, '"web.host":"127.0.0.1"')
-    assertStringIncludes(output, `"web.port":${port}`)
-    assertStringIncludes(output, `"web.url":"http://127.0.0.1:${port}/"`)
-  } finally {
     try {
-      child.kill('SIGTERM')
-    } catch {
-      // noop
+      const output = await readCommandOutput(child.stdout, 3000)
+
+      assertStringIncludes(output, '\u001b[')
+      assertStringIncludes(output, 'info')
+      assertStringIncludes(output, 'startup')
+      assertStringIncludes(output, `Web 服务开始监听 http://127.0.0.1:${port}/`)
+      assertEquals(output.includes('"web.host"'), false)
+      assertEquals(output.includes('TELEGRAM_BOT_TOKEN'), false)
+      assertEquals(output.includes('TELEGRAM_CHAT_ID'), false)
+    } finally {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // noop
+      }
+      try {
+        await child.stdout?.cancel()
+      } catch {
+        // noop
+      }
+      try {
+        await child.stderr?.cancel()
+      } catch {
+        // noop
+      }
+      await child.status
     }
-    try {
-      await child.stdout?.cancel()
-    } catch {
-      // noop
-    }
-    try {
-      await child.stderr?.cancel()
-    } catch {
-      // noop
-    }
-    await child.status
-  }
+  })
 })
