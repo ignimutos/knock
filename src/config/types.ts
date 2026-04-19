@@ -15,9 +15,11 @@ import {
   type LogFileRotationConfig as SchemaLogFileRotationConfig,
   type LogFileSinkConfig as SchemaLogFileSinkConfig,
   type LogLevel as SchemaLogLevel,
+  type LoggingConfigInput,
   type PushConfig,
   type SourceConfigInput,
   type SummarySourceConfig,
+  type SqliteConfigInput,
   type SqliteJournalMode as SchemaSqliteJournalMode,
   type SqliteRetentionVacuumMode as SchemaSqliteRetentionVacuumMode,
 } from './schema.ts'
@@ -32,6 +34,17 @@ export type SqliteJournalMode = SchemaSqliteJournalMode
 export type SqliteRetentionVacuumMode = SchemaSqliteRetentionVacuumMode
 export type EmailMessageConfig = SchemaEmailMessageConfig
 export type HttpPayload = SchemaHttpPayload
+
+export interface ConfigDocument {
+  language?: string
+  timezone?: string
+  timestampFormat?: string
+  sqlite?: SqliteConfigInput
+  ai?: AiConfigInput
+  deliveries?: Record<string, DeliveryConfigInput>
+  sources?: Record<string, SourceConfigInput>
+  logging?: LoggingConfigInput
+}
 
 export interface LoggingConfigResolved {
   level: LogLevel

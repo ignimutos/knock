@@ -1,14 +1,19 @@
+import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
+import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
 import { Cron } from 'croner'
 import type nodemailer from 'nodemailer'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import { createLogger } from '../core/logger.ts'
 import { createScheduler } from '../core/scheduler.ts'
-import { createFactsDbClient } from '../db/client.ts'
+import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
+import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import { createEmailDelivery } from '../deliveries/email.ts'
 import { createEmailDeliveryExecutor } from '../infrastructure/deliveries/email_delivery_executor.ts'
 import { createFileDeliveryExecutor } from '../infrastructure/deliveries/file_delivery_executor.ts'
 import { createHttpDeliveryExecutor } from '../infrastructure/deliveries/http_delivery_executor.ts'
+import { createPruneFactsRepository } from '../infrastructure/sqlite/prune_facts_repository.ts'
 import { markInterruptedAttempts } from '../infrastructure/sqlite/recovery.ts'
+import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run_query_service.ts'
 import {
   createRunSourceUseCaseForRuntime,
   createRuntimePipeline,
@@ -21,6 +26,8 @@ export interface ProductionRuntime {
   runDueSourcesUseCase: {
     execute: ReturnType<typeof createRuntimeKernel>['runDueSourcesUseCase']['execute']
   }
+  queryRunsUseCase: QueryRunsUseCase
+  pruneFactsUseCase: PruneFactsUseCase
   recoverInterruptedAttempts: () => Promise<void>
   runImmediate: () => Promise<void>
   enterDaemon: () => Promise<void>
@@ -35,6 +42,7 @@ export interface CreateProductionRuntimeOptions {
   keepAlive?: boolean
   keepAliveSignal?: Promise<void>
   now?: () => string
+  factsDb?: FactsDbClient
   runDueSourcesUseCase?: ProductionRuntime['runDueSourcesUseCase']
   scheduleDueSources?: (task: () => Promise<void>) => { stop: () => void }
 }
@@ -52,18 +60,19 @@ export function createProductionRuntime(
     timezone: options.config.timezone,
     timestampFormat: options.config.timestampFormat,
   })
-  const factsDb = createFactsDbClient({
-    sqlite: options.config.sqlite,
-    logger: logger.child({ module: 'db.sqlite' }),
-  })
+  const factsDb =
+    options.factsDb ??
+    createFactsDbClient({
+      sqlite: options.config.sqlite,
+      logger: logger.child({ module: 'db.sqlite' }),
+    })
+  const definitionSet = compileDefinitionsFromResolvedConfig(options.config)
 
   const runSourceUseCase = (() => {
     const shared = createSourceRuntimeSharedDeps({
       config: options.config,
       factsDb,
-      sourceConfigsById: Object.fromEntries(
-        options.config.sources.map((source) => [source.id, source]),
-      ),
+      sourceConfigsById: definitionSet.sourceConfigsById,
       fetcher: options.httpFetcher ?? fetch,
       proxyClientFactory: options.httpProxyClientFactory ?? Deno.createHttpClient,
       aiLogger: logger.child({ module: 'core.ai.runtime' }),
@@ -80,6 +89,7 @@ export function createProductionRuntime(
       sourceParser: shared.sourceParser,
       pipeline: createRuntimePipeline({
         factsDb,
+        policy: definitionSet.policies.production,
         deliveryExecutors: {
           file: createFileDeliveryExecutor({
             runtimeDir: options.config.runtimeDir,
@@ -120,10 +130,18 @@ export function createProductionRuntime(
   const scheduler = createScheduler(logger.child({ module: 'scheduler.source' }))
   const kernel = createRuntimeKernel({
     config: options.config,
+    definitions: definitionSet,
     now,
     runSourceUseCase,
   })
   const runDueSourcesUseCase = options.runDueSourcesUseCase ?? kernel.runDueSourcesUseCase
+  const queryRunsUseCase = new QueryRunsUseCase({
+    sourceRunQueryService: createSourceRunQueryService(factsDb),
+  })
+  const pruneFactsUseCase = new PruneFactsUseCase({
+    now,
+    pruneFactsRepository: createPruneFactsRepository(factsDb),
+  })
   const scheduledJobs: { stop: () => void }[] = []
   const scheduleDueSources =
     options.scheduleDueSources ??
@@ -132,6 +150,8 @@ export function createProductionRuntime(
 
   return {
     runDueSourcesUseCase,
+    queryRunsUseCase,
+    pruneFactsUseCase,
     recoverInterruptedAttempts: () => markInterruptedAttempts(factsDb, now()),
     async runImmediate() {
       await scheduler.runSource('__run_due_sources__', async () => {

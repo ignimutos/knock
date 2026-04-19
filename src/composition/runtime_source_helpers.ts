@@ -1,5 +1,5 @@
-import type { ResolvedSourceConfig } from '../config/types.ts'
 import type { SourceInputGateway } from '../application/ports/source_input_gateway.ts'
+import type { ResolvedSourceConfig } from '../config/types.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
 
 export function resolveSourceConfig(

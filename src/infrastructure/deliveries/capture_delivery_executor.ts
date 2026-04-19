@@ -11,8 +11,9 @@ export function createCaptureDeliveryExecutor(
   deps: CaptureDeliveryExecutorDeps = {},
 ): DeliveryExecutor {
   return {
-    async execute(plan: DeliveryAttemptPlan): Promise<void> {
+    execute(plan: DeliveryAttemptPlan): Promise<void> {
       deps.onCaptured?.(plan)
+      return Promise.resolve()
     },
   }
 }

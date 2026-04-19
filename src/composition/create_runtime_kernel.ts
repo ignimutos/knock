@@ -15,11 +15,8 @@ import { createHttpClient, type CreateHttpClientOptions } from '../core/http_cli
 import type { Logger } from '../core/logger.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
-import { buildLoadedDefinitionsFromResolvedConfig } from '../interfaces/config/load_definitions.ts'
-import {
-  resolveSourceConfig,
-  selectSourceInputGateway,
-} from '../interfaces/source_runtime_helpers.ts'
+import type { DefinitionSet, EffectPolicy } from '../definitions/definition_set.ts'
+import { resolveSourceConfig, selectSourceInputGateway } from './runtime_source_helpers.ts'
 import { createDeliveryAttemptRepository } from '../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { createApplicationDeduplicationRepository } from '../infrastructure/sqlite/deduplication_repository.ts'
 import { createItemRepository } from '../infrastructure/sqlite/item_repository.ts'
@@ -197,32 +194,75 @@ export function createRuntimeSourceInputGateway(
   }
 }
 
+function createNoopRunRepository(): RunRepository {
+  return {
+    insert: () => Promise.resolve(),
+    update: () => Promise.resolve(),
+  }
+}
+
+function createNoopItemRepository(): ItemRepository {
+  return {
+    insertMany: () => Promise.resolve(),
+    updateStatus: () => Promise.resolve(),
+  }
+}
+
+function createNoopDeliveryAttemptRepository(): DeliveryAttemptRepository {
+  return {
+    insertPlanned: () => Promise.resolve(),
+    finish: () => Promise.resolve(),
+  }
+}
+
+function createNoopDeduplicationRepository(): DeduplicationRepository {
+  return {
+    isItemDuplicate: () => Promise.resolve(false),
+    registerItemFingerprint: () => Promise.resolve(),
+    isDeliveryDuplicate: () => Promise.resolve(false),
+    registerDeliveryFingerprint: () => Promise.resolve(),
+  }
+}
+
 export function createRuntimePipeline(input: {
   factsDb: FactsDbClient
   deliveryExecutors: Partial<DeliveryExecutorRegistry>
+  policy: EffectPolicy
 }) {
+  const persistence = input.policy.persistFacts
+    ? {
+        runRepository: createRunRepository(input.factsDb),
+        itemRepository: createItemRepository(input.factsDb),
+        deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
+      }
+    : {
+        runRepository: createNoopRunRepository(),
+        itemRepository: createNoopItemRepository(),
+        deliveryAttemptRepository: createNoopDeliveryAttemptRepository(),
+      }
+
   return {
-    runRepository: createRunRepository(input.factsDb),
-    itemRepository: createItemRepository(input.factsDb),
-    deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
-    deduplicationRepository: createApplicationDeduplicationRepository(input.factsDb),
+    ...persistence,
+    deduplicationRepository: input.policy.writeDedupe
+      ? createApplicationDeduplicationRepository(input.factsDb)
+      : createNoopDeduplicationRepository(),
     deliveryExecutors: input.deliveryExecutors,
   }
 }
 
 export function createRuntimeKernel(input: {
   config: AppConfigResolved
+  definitions: DefinitionSet
   now: () => string
   runSourceUseCase: Pick<RunSourceUseCase, 'execute'>
 }): RuntimeKernel {
-  const definitions = buildLoadedDefinitionsFromResolvedConfig(input.config)
-  const sourceConfigs = Object.values(definitions.sourceConfigsById)
+  const sourceConfigs = Object.values(input.definitions.sourceConfigsById)
   const sourceById = new Map(
-    definitions.sources.map((source) => [source.sourceId, source] as const),
+    input.definitions.sources.map((source) => [source.sourceId, source] as const),
   )
-  const bindingsBySourceId = new Map<string, (typeof definitions.bindings)[number][]>()
+  const bindingsBySourceId = new Map<string, (typeof input.definitions.bindings)[number][]>()
 
-  for (const binding of definitions.bindings) {
+  for (const binding of input.definitions.bindings) {
     const existing = bindingsBySourceId.get(binding.sourceId) ?? []
     existing.push(binding)
     bindingsBySourceId.set(binding.sourceId, existing)

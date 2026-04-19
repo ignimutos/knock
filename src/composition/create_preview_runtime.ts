@@ -1,9 +1,9 @@
 import { PreviewSourceUseCase } from '../application/preview_source_use_case.ts'
 import type { DeliveryAttemptPlan } from '../application/ports/delivery_executor.ts'
 import type { AppConfigResolved } from '../config/types.ts'
-import { createInMemoryDb } from '../db/client.ts'
+import { createInMemoryDb, type FactsDbClient } from '../db/client.ts'
+import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capture_delivery_executor.ts'
-import { buildLoadedDefinitionsFromResolvedConfig } from '../interfaces/config/load_definitions.ts'
 import {
   createRunSourceUseCaseForRuntime,
   createRuntimePipeline,
@@ -22,18 +22,19 @@ function asPreviewPushPayload(payload: unknown): Record<string, unknown> | undef
 export function createPreviewComposition(input: {
   config: AppConfigResolved
   fetcher?: typeof fetch
+  factsDb?: FactsDbClient
   now?: () => string
   onCaptured?: (plan: DeliveryAttemptPlan) => void
 }): {
   previewSourceUseCase: PreviewSourceUseCase
 } {
-  const factsDb = createInMemoryDb()
-  const definitions = buildLoadedDefinitionsFromResolvedConfig(input.config)
+  const factsDb = input.factsDb ?? createInMemoryDb()
+  const definitionSet = compileDefinitionsFromResolvedConfig(input.config)
   const shared = createSourceRuntimeSharedDeps({
     config: input.config,
     factsDb,
     fetcher: input.fetcher ?? fetch,
-    sourceConfigsById: definitions.sourceConfigsById,
+    sourceConfigsById: definitionSet.sourceConfigsById,
   })
 
   const captureExecutor = createCaptureDeliveryExecutor({
@@ -48,6 +49,7 @@ export function createPreviewComposition(input: {
     sourceParser: shared.sourceParser,
     pipeline: createRuntimePipeline({
       factsDb,
+      policy: definitionSet.policies.preview,
       deliveryExecutors: {
         file: captureExecutor,
         push: captureExecutor,

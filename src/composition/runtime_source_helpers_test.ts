@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from '@std/assert'
-import { resolveSourceConfig, selectSourceInputGateway } from './source_runtime_helpers.ts'
+import { resolveSourceConfig, selectSourceInputGateway } from './runtime_source_helpers.ts'
 
 Deno.test('[contract] sourceRuntimeHelpers: resolveSourceConfig 应返回命中的 source config', () => {
   const source = {
