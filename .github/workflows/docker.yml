@@ -96,6 +96,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Verify Docker Hub README exists
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: test -s docker/README.md
+
+      - name: Update Docker Hub description
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE_REPOSITORY }}
+          short-description: Knock is a Deno subscription fetch and delivery daemon.
+          readme-filepath: ./docker/README.md
+
       - name: Telegram Notify
         uses: proDreams/actions-telegram-notifier@main
         if: always()

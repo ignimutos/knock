@@ -590,7 +590,7 @@ docker run --rm \
 
 将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。
 
-Docker Hub 镜像页说明文档维护在 `docker/README.md`，由 `.github/workflows/docker-hub-readme.yml` 同步。
+Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 
 ## 日志
 
