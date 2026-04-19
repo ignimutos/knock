@@ -464,6 +464,7 @@ Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host�
         '--allow-net',
         '--allow-ffi',
         '--allow-run',
+        '--allow-sys',
         'src/main.ts',
         '--mode',
         'web',
