@@ -1,9 +1,6 @@
 import { z } from 'zod'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
-import {
-  executePreviewSource,
-  toPreviewExecutionResult,
-} from '../interfaces/web/preview_runtime.ts'
+import { evaluatePlaygroundPreview } from './playground_preview.ts'
 import {
   byparrSchema,
   sourceHttpSchema,
@@ -117,59 +114,11 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
     ...parsed.source,
     deliveries: [],
   }
-  const config: AppConfigResolved = {
-    runtimeDir: Deno.cwd(),
-    language: 'zh-CN',
-    timezone: 'UTC',
-    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-    sqlite: {
-      path: `${Deno.cwd()}/.tmp/playground-preview.db`,
-      busyTimeout: '5s',
-      journalMode: 'WAL',
-      retention: {
-        maxAge: '1d',
-        maxEntriesPerSource: 100,
-        vacuum: 'off',
-      },
-    },
-    ai: undefined,
-    deliveries: [],
-    sources: [resolvedSource],
-    logging: {
-      level: 'info',
-      sinks: {
-        console: {
-          type: 'console',
-          format: 'jsonl',
-        },
-      },
-    },
-  }
 
-  const previewExecutor = input.previewExecutor
-  const result = previewExecutor
-    ? await previewExecutor({
-        config,
-        source: resolvedSource,
-        fetcher: input.fetcher,
-      })
-    : toPreviewExecutionResult({
-        warnings: parsed.warnings,
-        result: await executePreviewSource({
-          config,
-          source: resolvedSource,
-          fetcher: input.fetcher,
-        }),
-      })
-
-  const warnings = previewExecutor ? [...parsed.warnings, ...result.warnings] : result.warnings
-
-  return {
-    warnings,
-    fetchMeta: result.fetchMeta,
-    parser: result.parser,
-    rawContent: result.rawContent,
-    feed: result.feed,
-    entries: result.entries,
-  }
+  return await evaluatePlaygroundPreview({
+    source: resolvedSource,
+    warnings: parsed.warnings,
+    fetcher: input.fetcher,
+    previewExecutor: input.previewExecutor,
+  })
 }
