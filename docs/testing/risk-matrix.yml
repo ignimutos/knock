@@ -55,6 +55,7 @@
   required_layer: flow+contract
   owner_tests:
     - src/deliveries/http_test.ts
+    - src/application/run_source_execution_pipeline_test.ts
 
 - id: R08
   domain: delivery
