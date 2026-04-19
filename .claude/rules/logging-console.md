@@ -18,7 +18,7 @@ paths:
 - pipeline filter/dedupe/delivery/finalize 事件来自 `RunSourceUseCase` 与 `DeliveryStage` / 相关 stages。
 - 控制台层只负责展示这些底层记录；MUST NOT 按已删除的 `source_runtime` / `delivery_runtime` helper 想象另一套字段来源。
 - 控制台 sink 仅在 `logging.sinks.console` 显式配置时创建。
-- `logging.sinks.console.format` 支持 `pretty` 与 `jsonl`；`pretty` 现统一使用 `@logtape/pretty` 原生 renderer，默认按级别着色，并可按 native 形式展开 `resource` / `attributes` properties。
+- `logging.sinks.console.format` 支持 `pretty` 与 `jsonl`；`pretty` 为高密度单行优先展示，默认按级别着色，不再默认整块展开 `resource` / `attributes`。
 - 文件 sink 仅在 `logging.sinks.file` 显式配置时创建，第一版仅支持 `jsonl`。
 - `pretty` 只是展示层；MUST NOT 改变底层 OTel 数据模型、字段归属或语义边界。
 - `pretty` MUST 基于已经脱敏后的 record 渲染；MUST NOT 直接消费未脱敏原始输入。

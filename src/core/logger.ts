@@ -1,7 +1,7 @@
 import type { LogRecord, Logger as LogTapeLogger, TextFormatter } from '@logtape/logtape'
 import { getLogger as getLogTapeLogger } from '@logtape/logtape'
-import { getPrettyFormatter as getNativePrettyFormatter } from '@logtape/pretty'
 import { redactByPattern } from '@logtape/redaction'
+import { bold, cyan, dim, gray, green, magenta, red, yellow } from '@std/fmt/colors'
 import { fromFileUrl } from '@std/path'
 import { DateTime } from 'luxon'
 import type { LogLevel } from '../config/types.ts'
@@ -362,6 +362,58 @@ function normalizeAttributeFields(fields: Record<string, unknown>): Record<strin
   return sanitizeFields(normalized)
 }
 
+const PRETTY_INFO_ATTRIBUTE_KEYS = new Set([
+  'source.id',
+  'source.run_id',
+  'delivery.id',
+  'web.request_id',
+  'http.request.method',
+  'http.route',
+  'http.response.status_code',
+  'web.duration_ms',
+])
+
+function selectPrettyAttributes(record: OTelLogRecord): Record<string, unknown> {
+  if (record.severityText !== 'INFO') {
+    return record.attributes
+  }
+
+  return Object.fromEntries(
+    Object.entries(record.attributes).filter(([key]) => PRETTY_INFO_ATTRIBUTE_KEYS.has(key)),
+  )
+}
+
+function colorizePrettySeverity(level: string): string {
+  switch (level) {
+    case 'trace':
+      return dim(level)
+    case 'debug':
+      return magenta(level)
+    case 'info':
+      return green(level)
+    case 'warn':
+      return yellow(level)
+    case 'error':
+      return red(level)
+    case 'fatal':
+      return bold(red(level))
+    default:
+      return level
+  }
+}
+
+function colorizePrettyScope(scope: string): string {
+  return cyan(scope)
+}
+
+function colorizePrettyTimestamp(timestamp: string): string {
+  return gray(timestamp)
+}
+
+function colorizePrettyKey(key: string): string {
+  return dim(key)
+}
+
 function toPathname(location: string): string {
   if (location.startsWith('file://')) {
     try {
@@ -531,12 +583,23 @@ export function createPrettyFormatter(options: {
   timezone: string
   timestampFormat: string
 }): TextFormatter {
-  return getNativePrettyFormatter({
-    colors: true,
-    properties: true,
-    timestamp: (timestamp) =>
-      formatTime(new Date(timestamp), options.timezone, options.timestampFormat),
-  })
+  return (record: LogRecord): string => {
+    const otelRecord = toOtelLogRecord(record)
+    const scope = otelRecord.scope.name.split('.').at(-1) ?? otelRecord.scope.name
+    const component = otelRecord.resource.attributes['knock.component']
+    const attributes = selectPrettyAttributes(otelRecord)
+    const timestamp = formatTime(
+      new Date(Number(otelRecord.timeUnixNano) / 1_000_000),
+      options.timezone,
+      options.timestampFormat,
+    )
+    const severity = otelRecord.severityText.toLowerCase()
+    const inline = Object.entries(attributes)
+      .map(([key, value]) => `${colorizePrettyKey(key)}=${String(value)}`)
+      .join(' ')
+
+    return `${colorizePrettyTimestamp(timestamp)} ${colorizePrettySeverity(severity)} ${colorizePrettyScope(scope)} ${otelRecord.body}${component ? ` ${colorizePrettyKey('component')}=${String(component)}` : ''}${inline ? ` ${inline}` : ''}`
+  }
 }
 
 export function getKnockLogTapeLogger(category: string[]): LogTapeLogger {
