@@ -590,6 +590,8 @@ docker run --rm \
 
 将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。
 
+Docker Hub 镜像页说明文档维护在 `docker/README.md`，由 `.github/workflows/docker-hub-readme.yml` 同步。
+
 ## 日志
 
 日志按显式 sink 配置输出：console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。JSONL 字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
