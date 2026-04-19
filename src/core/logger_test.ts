@@ -65,50 +65,55 @@ Deno.test('[contract] R11 logger: console format=jsonl 应输出仓库 OTel JSON
   assertEquals(getAttributes(record)['delivery.id'], 'telegram')
 })
 
-Deno.test('[contract] R11 logger: runtime pretty 应输出高密度单行并隐藏块状字段', async () => {
-  const stdout: string[] = []
+Deno.test(
+  '[contract] R11 logger: runtime pretty 应通过 @logtape/pretty 输出颜色与 properties',
+  async () => {
+    const stdout: string[] = []
 
-  await configureLoggingRuntime({
-    logging: {
-      level: 'info',
-      sinks: {
-        console: {
-          type: 'console',
-          format: 'pretty',
+    await configureLoggingRuntime({
+      logging: {
+        level: 'info',
+        sinks: {
+          console: {
+            type: 'console',
+            format: 'pretty',
+          },
         },
       },
-    },
-    runtimeDir: '/tmp/runtime',
-    timezone: 'UTC',
-    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-    consoleWriters: {
-      stdout: (line: string) => stdout.push(line),
-      warn: (line: string) => stdout.push(line),
-      stderr: (line: string) => stdout.push(line),
-    },
-  })
+      runtimeDir: '/tmp/runtime',
+      timezone: 'UTC',
+      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+      consoleWriters: {
+        stdout: (line: string) => stdout.push(line),
+        warn: (line: string) => stdout.push(line),
+        stderr: (line: string) => stdout.push(line),
+      },
+    })
 
-  createLogger({
-    enabled: true,
-    level: 'info',
-    module: 'pipeline.filter',
-    component: 'daemon',
-    now: () => new Date('2026-03-24T21:45:12.345Z'),
-  }).info('pipeline item filtered', {
-    'source.id': 'smzdm',
-    'source.run_id': 'a81ce6e0-4906-485b-a41d-3bf3075af785',
-  })
-  await shutdownLoggingRuntime()
+    createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'pipeline.filter',
+      component: 'daemon',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+    }).info('pipeline item filtered', {
+      'source.id': 'smzdm',
+      'source.run_id': 'a81ce6e0-4906-485b-a41d-3bf3075af785',
+    })
+    await shutdownLoggingRuntime()
 
-  const line = stdout.at(-1) ?? ''
-  assertStringIncludes(line, '2026-03-24 21:45:12')
-  assertStringIncludes(line, 'info')
-  assertStringIncludes(line, 'filter')
-  assertStringIncludes(line, 'component=daemon')
-  assertStringIncludes(line, 'source.id=smzdm')
-  assertEquals(line.includes('resource:'), false)
-  assertEquals(line.includes('attributes:'), false)
-})
+    const line = stdout.at(-1) ?? ''
+    assertStringIncludes(line, '\u001b[')
+    assertStringIncludes(line, '2026-03-24 21:45:12')
+    assertStringIncludes(line, 'info')
+    assertStringIncludes(line, 'knock')
+    assertStringIncludes(line, 'filter')
+    assertStringIncludes(line, 'resource:')
+    assertStringIncludes(line, 'attributes:')
+    assertStringIncludes(line, 'knock.component')
+    assertStringIncludes(line, 'source.id')
+  },
+)
 
 function buildStackWithLocation(
   options: {
@@ -593,57 +598,61 @@ Deno.test('[contract] R11 logger: format=pretty 时应通过 @logtape/pretty 渲
   })
 
   assertEquals(stdout.length, 2)
+  assertStringIncludes(stdout[0], '\u001b[')
   assertStringIncludes(stdout[0], '2026-03-25 05:45:12')
-  assertStringIncludes(stdout[0], 'http')
+  assertStringIncludes(stdout[0], 'knock·delivery·http')
   assertStringIncludes(stdout[0], '推送完成')
+  assertStringIncludes(stdout[0], 'attributes:')
   assertEquals(stdout[0].includes('123456:ABCDEF-SECRET'), false)
   assertEquals(stdout[0].includes('user:pass@'), false)
+  assertStringIncludes(stdout[1], '\u001b[')
   assertStringIncludes(stdout[1], '2026-03-25 05:45:12')
-  assertStringIncludes(stdout[1], 'http')
+  assertStringIncludes(stdout[1], 'knock·delivery·http')
   assertStringIncludes(stdout[1], '再次推送完成')
   assertEquals(stdout[1].includes('123456:ABCDEF-SECRET'), false)
   assertEquals(stdout[1].includes('user:pass@'), false)
 })
 
-Deno.test(
-  '[contract] R11 logger: pretty info 应隐藏低价值调试字段，只保留最小字段集与关键信息',
-  () => {
-    const stdout: string[] = []
-
-    const logger = createLogger({
-      enabled: true,
-      level: 'info',
-      format: 'pretty',
-      module: 'web.api',
-      component: 'web',
-      timezone: 'UTC',
-      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-      now: () => new Date('2026-03-24T21:45:12.345Z'),
-      writeStdout: (line: string) => stdout.push(line),
-    })
-
-    logger.info('API 请求完成', {
-      route: '/api/xquery/evaluate',
-      method: 'POST',
-      'web.request_id': 'web.req.1',
-      'web.duration_ms': 18,
-      'http.response.status_code': 200,
-      'pipeline.warning_count': 2,
-    })
-
-    assertEquals(stdout.length, 1)
-    assertStringIncludes(stdout[0], '2026-03-24 21:45:12')
-    assertStringIncludes(stdout[0], 'api')
-    assertStringIncludes(stdout[0], 'API 请求完成')
-    assertStringIncludes(stdout[0], 'web.req.1')
-    assertStringIncludes(stdout[0], '/api/xquery/evaluate')
-    assertEquals(stdout[0].includes('code.filepath'), false)
-    assertEquals(stdout[0].includes('pipeline.warning_count'), false)
-  },
-)
-
-Deno.test('[contract] R11 logger: pretty debug 应保留真实诊断字段', () => {
+Deno.test('[contract] R11 logger: pretty 应显示 native properties 块', () => {
   const stdout: string[] = []
+
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    format: 'pretty',
+    module: 'web.api',
+    component: 'web',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+  })
+
+  logger.info('API 请求完成', {
+    route: '/api/xquery/evaluate',
+    method: 'POST',
+    'web.request_id': 'web.req.1',
+    'web.duration_ms': 18,
+    'http.response.status_code': 200,
+    'pipeline.warning_count': 2,
+  })
+
+  assertEquals(stdout.length, 1)
+  assertStringIncludes(stdout[0], '\u001b[')
+  assertStringIncludes(stdout[0], '2026-03-24 21:45:12')
+  assertStringIncludes(stdout[0], 'knock·web·api')
+  assertStringIncludes(stdout[0], 'API 请求完成')
+  assertStringIncludes(stdout[0], 'resource:')
+  assertStringIncludes(stdout[0], 'attributes:')
+  assertStringIncludes(stdout[0], 'web.req.1')
+  assertStringIncludes(stdout[0], '/api/xquery/evaluate')
+  assertStringIncludes(stdout[0], 'pipeline.warning_count')
+})
+
+Deno.test('[contract] R11 logger: pretty 应按级别输出不同 native 样式', () => {
+  const stdout: string[] = []
+  const warn: string[] = []
+  const stderr: string[] = []
 
   const logger = createLogger({
     enabled: true,
@@ -655,19 +664,26 @@ Deno.test('[contract] R11 logger: pretty debug 应保留真实诊断字段', () 
     timestampFormat: 'yyyy-MM-dd HH:mm:ss',
     now: () => new Date('2026-03-24T21:45:12.345Z'),
     writeStdout: (line: string) => stdout.push(line),
+    writeWarn: (line: string) => warn.push(line),
+    writeStderr: (line: string) => stderr.push(line),
   })
 
-  logger.debug('API 请求开始', {
-    route: '/api/xquery/evaluate',
-    method: 'POST',
-    'web.request_id': 'web.req.2',
-    'pipeline.warning_count': 2,
-  })
+  logger.info('info message', { 'web.request_id': 'web.req.2' })
+  logger.warn('warn message', { 'web.request_id': 'web.req.3' })
+  logger.error('error message', { 'web.request_id': 'web.req.4' })
 
   assertEquals(stdout.length, 1)
-  assertStringIncludes(stdout[0], 'API 请求开始')
-  assertStringIncludes(stdout[0], 'pipeline.warning_count')
-  assertStringIncludes(stdout[0], '/src/core/logger_test.ts')
+  assertEquals(warn.length, 1)
+  assertEquals(stderr.length, 1)
+  assertStringIncludes(stdout[0], '\u001b[')
+  assertStringIncludes(warn[0], '\u001b[')
+  assertStringIncludes(stderr[0], '\u001b[')
+  assertStringIncludes(stdout[0], '✨')
+  assertStringIncludes(warn[0], '⚡')
+  assertStringIncludes(stderr[0], '❌')
+  assertStringIncludes(stdout[0], 'info')
+  assertStringIncludes(warn[0], 'warning')
+  assertStringIncludes(stderr[0], 'error')
 })
 
 Deno.test(

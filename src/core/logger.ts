@@ -1,5 +1,7 @@
 import type { LogRecord, Logger as LogTapeLogger, TextFormatter } from '@logtape/logtape'
 import { getLogger as getLogTapeLogger } from '@logtape/logtape'
+import { getPrettyFormatter as getNativePrettyFormatter } from '@logtape/pretty'
+import { redactByPattern } from '@logtape/redaction'
 import { fromFileUrl } from '@std/path'
 import { DateTime } from 'luxon'
 import type { LogLevel } from '../config/types.ts'
@@ -360,27 +362,6 @@ function normalizeAttributeFields(fields: Record<string, unknown>): Record<strin
   return sanitizeFields(normalized)
 }
 
-const PRETTY_INFO_ATTRIBUTE_KEYS = new Set([
-  'source.id',
-  'source.run_id',
-  'delivery.id',
-  'web.request_id',
-  'http.request.method',
-  'http.route',
-  'http.response.status_code',
-  'web.duration_ms',
-])
-
-function selectPrettyAttributes(record: OTelLogRecord): Record<string, unknown> {
-  if (record.severityText !== 'INFO') {
-    return record.attributes
-  }
-
-  return Object.fromEntries(
-    Object.entries(record.attributes).filter(([key]) => PRETTY_INFO_ATTRIBUTE_KEYS.has(key)),
-  )
-}
-
 function toPathname(location: string): string {
   if (location.startsWith('file://')) {
     try {
@@ -550,16 +531,12 @@ export function createPrettyFormatter(options: {
   timezone: string
   timestampFormat: string
 }): TextFormatter {
-  return (record: LogRecord): string => {
-    const otelRecord = toOtelLogRecord(record)
-    const scope = otelRecord.scope.name.split('.').at(-1) ?? otelRecord.scope.name
-    const component = otelRecord.resource.attributes['knock.component']
-    const attributes = selectPrettyAttributes(otelRecord)
-    const inline = Object.entries(attributes)
-      .map(([key, value]) => `${key}=${String(value)}`)
-      .join(' ')
-    return `${formatTime(new Date(Number(otelRecord.timeUnixNano) / 1_000_000), options.timezone, options.timestampFormat)} ${otelRecord.severityText.toLowerCase()} ${scope} ${otelRecord.body}${component ? ` component=${component}` : ''}${inline ? ` ${inline}` : ''}`
-  }
+  return getNativePrettyFormatter({
+    colors: true,
+    properties: true,
+    timestamp: (timestamp) =>
+      formatTime(new Date(timestamp), options.timezone, options.timestampFormat),
+  })
 }
 
 export function getKnockLogTapeLogger(category: string[]): LogTapeLogger {
@@ -625,7 +602,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
 
     const formatter =
       format === 'pretty'
-        ? createPrettyFormatter({ timezone, timestampFormat })
+        ? redactByPattern(createPrettyFormatter({ timezone, timestampFormat }), SENSITIVE_PATTERNS)
         : createRepositoryJsonlFormatter()
     const line = formatter(record).trimEnd()
 
