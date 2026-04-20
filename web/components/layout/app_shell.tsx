@@ -24,6 +24,12 @@ export function AppShell(props: {
               首页
             </a>
             <a
+              href="/reader"
+              class="nav-link"
+            >
+              Reader
+            </a>
+            <a
               href="/xquery"
               class="nav-link"
             >

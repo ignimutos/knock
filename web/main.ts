@@ -4,8 +4,10 @@ import { renderToString } from 'preact-render-to-string'
 import { createLogger, type Logger } from '../src/core/logger.ts'
 import AppDocument from './routes/_app.tsx'
 import IndexPage from './routes/index.tsx'
+import ReaderPage from './routes/reader.tsx'
 import XqueryPage from './routes/xquery.tsx'
 import SyndicationPage from './routes/syndication.tsx'
+import { loadReaderOverview } from '../src/web/reader_overview.ts'
 import { type EvaluateLogMeta, handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
 import { handler as evaluateSyndicationHandler } from './routes/api/syndication/evaluate.ts'
 
@@ -82,6 +84,10 @@ export function withApiRequestLogging(
 export const app = new App()
   .use(staticFiles())
   .get('/', () => renderPage(IndexPage))
+  .get('/reader', async () => {
+    const overview = await loadReaderOverview()
+    return renderPage(() => ReaderPage({ overview }))
+  })
   .get('/xquery', () => renderPage(XqueryPage))
   .get('/syndication', () => renderPage(SyndicationPage))
   .post(

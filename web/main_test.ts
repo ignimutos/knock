@@ -6,6 +6,16 @@ Deno.test('[contract] web main: 应暴露 fresh app 默认导出', () => {
   assertEquals(typeof app.listen, 'function')
 })
 
+Deno.test('[contract] web main: 应注册 reader 页面路由', async () => {
+  const response = await app.handler()(new Request('http://localhost/reader'))
+
+  assertEquals(response.status, 200)
+  assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
+  const html = await response.text()
+  assertStringIncludes(html, 'RSS Reader')
+  assertStringIncludes(html, 'id="reader-source-list"')
+})
+
 Deno.test('[contract] web main: 应注册 syndication 页面路由', async () => {
   const response = await app.handler()(new Request('http://localhost/syndication'))
 

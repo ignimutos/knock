@@ -138,7 +138,10 @@
       "integrity": "604d2121ed4ffb7aad35b47e729e2298d0cd7a7ddf1cb4171d27a61fa7d840a5"
     },
     "@logtape/redaction@2.0.5": {
-      "integrity": "b79610d8b2f8253378fca3cdb2c106a78f8b9e14e68644b24cf51b8118fa0818"
+      "integrity": "b79610d8b2f8253378fca3cdb2c106a78f8b9e14e68644b24cf51b8118fa0818",
+      "dependencies": [
+        "jsr:@logtape/logtape"
+      ]
     },
     "@std/assert@1.0.19": {
       "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",

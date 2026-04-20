@@ -3,9 +3,21 @@ import { AppShell } from '../components/layout/app_shell.tsx'
 export default function IndexPage() {
   return (
     <AppShell
-      title="Knock"
-      subtitle="一个面向抓取与投递调试的控制台：先在页面上验证，再进入自动化运行。"
+      title="Knock Web"
+      subtitle="面向最终 Web RSS 阅读器的工作台：先在 Reader 浏览真实 source 内容，再用 Playground 调试抓取与解析。"
     >
+      <section class="panel reader-home-panel">
+        <h2>RSS Reader</h2>
+        <p>
+          浏览所有 source 的最近 feed / entry 快照，把阅读面放在前台，推送能力继续留在 delivery 层。
+        </p>
+        <a
+          href="/reader"
+          class="cta-link"
+        >
+          打开 Reader →
+        </a>
+      </section>
       <section class="card-grid">
         <article class="panel">
           <h2>XQuery Playground</h2>
