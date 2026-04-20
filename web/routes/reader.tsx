@@ -76,12 +76,6 @@ function getInitialSource(overview: ReaderOverview): ReaderSourceOverview | unde
   return overview.sources[0]
 }
 
-function getInitialEntry(
-  source: ReaderSourceOverview | undefined,
-): ReaderEntrySnapshot | undefined {
-  return source?.entries[0]
-}
-
 function SourceList(props: { sources: ReaderOverview['sources'] }) {
   return (
     <div
@@ -236,6 +230,63 @@ function FeedBanner(props: { source?: ReaderSourceOverview }) {
   )
 }
 
+function EntryExpandedPanel(props: { entry: ReaderEntrySnapshot; expanded: boolean }) {
+  const entry = props.entry
+
+  return (
+    <div
+      class={`reader-entry-expand-shell${props.expanded ? ' is-expanded' : ''}`}
+      aria-hidden={props.expanded ? 'false' : 'true'}
+    >
+      <article class="reader-entry-expanded">
+        <header class="reader-article-head">
+          <div>
+            <p class="reader-kicker">entry 阅读面</p>
+            <h3 class="reader-article-title">{entry.title || entry.id}</h3>
+          </div>
+          <span class={`reader-run-badge is-${entry.status}`}>{formatStatus(entry.status)}</span>
+        </header>
+        <dl class="reader-meta-grid reader-entry-meta-grid">
+          <div>
+            <dt>published</dt>
+            <dd>{entry.published || '—'}</dd>
+          </div>
+          <div>
+            <dt>updated</dt>
+            <dd>{entry.updated || '—'}</dd>
+          </div>
+          <div>
+            <dt>entry id</dt>
+            <dd>{entry.id}</dd>
+          </div>
+          <div>
+            <dt>status</dt>
+            <dd>{formatStatus(entry.status)}</dd>
+          </div>
+        </dl>
+        {entry.link ? (
+          <a
+            href={entry.link}
+            class="reader-link"
+            target="_blank"
+            rel="noreferrer"
+          >
+            打开原文
+          </a>
+        ) : null}
+        <section class="reader-article-section">
+          <h4>摘要</h4>
+          <p class="reader-article-copy">{stripMarkup(entry.description) || '暂无摘要。'}</p>
+        </section>
+        <section class="reader-article-section">
+          <h4>内容</h4>
+          <pre class="reader-article-content">{stripMarkup(entry.content) || '暂无正文。'}</pre>
+        </section>
+      </article>
+    </div>
+  )
+}
+
 function EntryList(props: { source?: ReaderSourceOverview }) {
   const entries = props.source?.entries ?? []
 
@@ -244,7 +295,7 @@ function EntryList(props: { source?: ReaderSourceOverview }) {
       <div class="reader-entry-stack-head">
         <div>
           <p class="reader-kicker">entries</p>
-          <p class="reader-stack-copy">↑↓ 在当前列表内漫游，←→ 在 source / entry 间切换焦点。</p>
+          <p class="reader-stack-copy">↑↓ 在当前列表内漫游，回车或点击后直接在当前条目下展开。</p>
         </div>
         <p
           id="reader-summary"
@@ -263,92 +314,36 @@ function EntryList(props: { source?: ReaderSourceOverview }) {
           <p class="reader-empty">最近快照里还没有 entry。</p>
         ) : (
           entries.map((entry, index) => (
-            <button
-              type="button"
-              class={`reader-entry-button${index === 0 ? ' is-active' : ''}`}
-              data-entry-index={String(index)}
-              aria-selected={index === 0 ? 'true' : 'false'}
+            <section
+              class={`reader-entry-item${index === 0 ? ' is-expanded' : ''}`}
+              data-entry-item={String(index)}
             >
-              <span class="reader-entry-row">
-                <span class="reader-entry-name">{entry.title || entry.id}</span>
-                <span class={`reader-run-badge is-${entry.status}`}>
-                  {formatStatus(entry.status)}
+              <button
+                type="button"
+                class={`reader-entry-button${index === 0 ? ' is-active' : ''}`}
+                data-entry-index={String(index)}
+                aria-selected={index === 0 ? 'true' : 'false'}
+                aria-expanded={index === 0 ? 'true' : 'false'}
+              >
+                <span class="reader-entry-row">
+                  <span class="reader-entry-name">{entry.title || entry.id}</span>
+                  <span class={`reader-run-badge is-${entry.status}`}>
+                    {formatStatus(entry.status)}
+                  </span>
                 </span>
-              </span>
-              <span class="reader-entry-excerpt">
-                {stripMarkup(entry.description || entry.content) || '暂无摘要。'}
-              </span>
-            </button>
+                <span class="reader-entry-excerpt">
+                  {stripMarkup(entry.description || entry.content) || '暂无摘要。'}
+                </span>
+              </button>
+              <EntryExpandedPanel
+                entry={entry}
+                expanded={index === 0}
+              />
+            </section>
           ))
         )}
       </div>
     </section>
-  )
-}
-
-function EntryPanel(props: { entry?: ReaderEntrySnapshot }) {
-  if (!props.entry) {
-    return (
-      <article
-        id="reader-entry-panel"
-        class="reader-entry-panel"
-      >
-        <p class="reader-empty">选择 entry 后，这里会显示正文。</p>
-      </article>
-    )
-  }
-
-  const entry = props.entry
-
-  return (
-    <article
-      id="reader-entry-panel"
-      class="reader-entry-panel"
-    >
-      <header class="reader-article-head">
-        <div>
-          <p class="reader-kicker">entry 阅读面</p>
-          <h2 class="reader-article-title">{entry.title || entry.id}</h2>
-        </div>
-        <span class={`reader-run-badge is-${entry.status}`}>{formatStatus(entry.status)}</span>
-      </header>
-      <dl class="reader-meta-grid">
-        <div>
-          <dt>published</dt>
-          <dd>{entry.published || '—'}</dd>
-        </div>
-        <div>
-          <dt>updated</dt>
-          <dd>{entry.updated || '—'}</dd>
-        </div>
-        <div>
-          <dt>entry id</dt>
-          <dd>{entry.id}</dd>
-        </div>
-        <div>
-          <dt>status</dt>
-          <dd>{formatStatus(entry.status)}</dd>
-        </div>
-      </dl>
-      {entry.link ? (
-        <a
-          href={entry.link}
-          class="reader-link"
-          target="_blank"
-          rel="noreferrer"
-        >
-          打开原文
-        </a>
-      ) : null}
-      <section class="reader-article-section">
-        <h3>摘要</h3>
-        <p class="reader-article-copy">{stripMarkup(entry.description) || '暂无摘要。'}</p>
-      </section>
-      <section class="reader-article-section">
-        <h3>内容</h3>
-        <pre class="reader-article-content">{stripMarkup(entry.content) || '暂无正文。'}</pre>
-      </section>
-    </article>
   )
 }
 
@@ -358,7 +353,6 @@ const readerPageScript = `(() => {
   const sourceCard = document.getElementById('reader-source-card')
   const feedBanner = document.getElementById('reader-feed-banner')
   const entryList = document.getElementById('reader-entry-list')
-  const entryPanel = document.getElementById('reader-entry-panel')
   const summary = document.getElementById('reader-summary')
 
   if (!(bootstrap instanceof HTMLScriptElement) ||
@@ -366,7 +360,6 @@ const readerPageScript = `(() => {
     !(sourceCard instanceof HTMLElement) ||
     !(feedBanner instanceof HTMLElement) ||
     !(entryList instanceof HTMLElement) ||
-    !(entryPanel instanceof HTMLElement) ||
     !(summary instanceof HTMLElement)
   ) return
 
@@ -421,7 +414,7 @@ const readerPageScript = `(() => {
 
   const getSource = () => sources[sourceIndex]
   const getEntries = () => Array.isArray(getSource()?.entries) ? getSource().entries : []
-  const getEntry = () => getEntries()[entryIndex]
+  const isEntryExpanded = (index) => entryIndex === index
 
   const createRunBadge = (status) => {
     const badge = make('span', 'reader-run-badge is-' + (status || 'idle'), formatStatus(status))
@@ -452,6 +445,7 @@ const readerPageScript = `(() => {
       button.type = 'button'
       button.dataset.sourceIndex = String(index)
       button.setAttribute('aria-selected', index === sourceIndex ? 'true' : 'false')
+      button.setAttribute('tabindex', index === sourceIndex ? '0' : '-1')
 
       const headline = make('span', 'reader-source-headline')
       headline.appendChild(make('span', 'reader-source-name', source.name || source.id))
@@ -557,10 +551,16 @@ const readerPageScript = `(() => {
     }
 
     entries.forEach((entry, index) => {
-      const button = make('button', 'reader-entry-button' + (index === entryIndex ? ' is-active' : ''))
+      const expanded = isEntryExpanded(index)
+      const item = make('section', 'reader-entry-item' + (expanded ? ' is-expanded' : ''))
+      item.dataset.entryItem = String(index)
+
+      const button = make('button', 'reader-entry-button' + (expanded ? ' is-active' : ''))
       button.type = 'button'
       button.dataset.entryIndex = String(index)
-      button.setAttribute('aria-selected', index === entryIndex ? 'true' : 'false')
+      button.setAttribute('aria-selected', expanded ? 'true' : 'false')
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+      button.setAttribute('tabindex', expanded ? '0' : '-1')
 
       const row = make('span', 'reader-entry-row')
       row.appendChild(make('span', 'reader-entry-name', entry.title || entry.id))
@@ -568,69 +568,66 @@ const readerPageScript = `(() => {
       button.appendChild(row)
       button.appendChild(make('span', 'reader-entry-excerpt', stripMarkup(entry.description || entry.content) || '暂无摘要。'))
       button.addEventListener('click', () => {
-        entryIndex = index
-        renderEntryPanel()
+        entryIndex = expanded ? -1 : index
         renderEntryList()
-        focusSelectedEntry()
+        if (!expanded) {
+          focusSelectedEntry()
+        }
       })
-      entryList.appendChild(button)
+      item.appendChild(button)
+
+      const shell = make('div', 'reader-entry-expand-shell' + (expanded ? ' is-expanded' : ''))
+      shell.setAttribute('aria-hidden', expanded ? 'false' : 'true')
+
+      const article = make('article', 'reader-entry-expanded')
+
+      const head = make('header', 'reader-article-head')
+      const titleWrap = make('div')
+      titleWrap.appendChild(make('p', 'reader-kicker', 'entry 阅读面'))
+      titleWrap.appendChild(make('h3', 'reader-article-title', entry.title || entry.id))
+      head.appendChild(titleWrap)
+      head.appendChild(createRunBadge(entry.status))
+      article.appendChild(head)
+
+      const meta = make('dl', 'reader-meta-grid reader-entry-meta-grid')
+      meta.appendChild(createMetaPair('published', entry.published || '—'))
+      meta.appendChild(createMetaPair('updated', entry.updated || '—'))
+      meta.appendChild(createMetaPair('entry id', entry.id || '—'))
+      meta.appendChild(createMetaPair('status', formatStatus(entry.status)))
+      article.appendChild(meta)
+
+      if (typeof entry.link === 'string' && entry.link !== '') {
+        const link = make('a', 'reader-link', '打开原文')
+        link.href = entry.link
+        link.target = '_blank'
+        link.rel = 'noreferrer'
+        article.appendChild(link)
+      }
+
+      const summarySection = make('section', 'reader-article-section')
+      summarySection.appendChild(make('h4', '', '摘要'))
+      summarySection.appendChild(make('p', 'reader-article-copy', stripMarkup(entry.description) || '暂无摘要。'))
+      article.appendChild(summarySection)
+
+      const contentSection = make('section', 'reader-article-section')
+      contentSection.appendChild(make('h4', '', '内容'))
+      contentSection.appendChild(make('pre', 'reader-article-content', stripMarkup(entry.content) || '暂无正文。'))
+      article.appendChild(contentSection)
+
+      shell.appendChild(article)
+      item.appendChild(shell)
+      entryList.appendChild(item)
     })
-  }
-
-  const renderEntryPanel = () => {
-    const entry = getEntry()
-    entryPanel.replaceChildren()
-
-    if (!entry) {
-      entryPanel.appendChild(make('p', 'reader-empty', '选择 entry 后，这里会显示正文。'))
-      return
-    }
-
-    const head = make('header', 'reader-article-head')
-    const titleWrap = make('div')
-    titleWrap.appendChild(make('p', 'reader-kicker', 'entry 阅读面'))
-    titleWrap.appendChild(make('h2', 'reader-article-title', entry.title || entry.id))
-    head.appendChild(titleWrap)
-    head.appendChild(createRunBadge(entry.status))
-
-    const meta = make('dl', 'reader-meta-grid')
-    meta.appendChild(createMetaPair('published', entry.published || '—'))
-    meta.appendChild(createMetaPair('updated', entry.updated || '—'))
-    meta.appendChild(createMetaPair('entry id', entry.id || '—'))
-    meta.appendChild(createMetaPair('status', formatStatus(entry.status)))
-
-    entryPanel.appendChild(head)
-    entryPanel.appendChild(meta)
-
-    if (typeof entry.link === 'string' && entry.link !== '') {
-      const link = make('a', 'reader-link', '打开原文')
-      link.href = entry.link
-      link.target = '_blank'
-      link.rel = 'noreferrer'
-      entryPanel.appendChild(link)
-    }
-
-    const summarySection = make('section', 'reader-article-section')
-    summarySection.appendChild(make('h3', '', '摘要'))
-    summarySection.appendChild(make('p', 'reader-article-copy', stripMarkup(entry.description) || '暂无摘要。'))
-
-    const contentSection = make('section', 'reader-article-section')
-    contentSection.appendChild(make('h3', '', '内容'))
-    contentSection.appendChild(make('pre', 'reader-article-content', stripMarkup(entry.content) || '暂无正文。'))
-
-    entryPanel.appendChild(summarySection)
-    entryPanel.appendChild(contentSection)
   }
 
   const render = () => {
     if (sourceIndex >= sources.length) sourceIndex = 0
     const entries = getEntries()
-    if (entryIndex >= entries.length) entryIndex = 0
+    if (entryIndex >= entries.length) entryIndex = entries.length === 0 ? -1 : 0
     renderSourceList()
     renderSourceCard()
     renderFeedBanner()
     renderEntryList()
-    renderEntryPanel()
   }
 
   document.addEventListener('keydown', (event) => {
@@ -664,16 +661,16 @@ const readerPageScript = `(() => {
       const entries = getEntries()
       if (entries.length === 0) return
       event.preventDefault()
-      entryIndex = Math.min(entries.length - 1, Math.max(0, entryIndex + delta))
+      const activeIndex = entryIndex < 0 ? 0 : entryIndex
+      entryIndex = Math.min(entries.length - 1, Math.max(0, activeIndex + delta))
       renderEntryList()
-      renderEntryPanel()
       focusSelectedEntry()
       return
     }
 
     event.preventDefault()
     sourceIndex = Math.min(sources.length - 1, Math.max(0, sourceIndex + delta))
-    entryIndex = 0
+    entryIndex = -1
     render()
     focusSelectedSource()
   })
@@ -683,7 +680,6 @@ const readerPageScript = `(() => {
 
 export default function ReaderPage(props: { overview: ReaderOverview }) {
   const source = getInitialSource(props.overview)
-  const entry = getInitialEntry(source)
 
   return (
     <AppShell
@@ -714,7 +710,6 @@ export default function ReaderPage(props: { overview: ReaderOverview }) {
         <section class="reader-main-column">
           <FeedBanner source={source} />
           <EntryList source={source} />
-          <EntryPanel entry={entry} />
         </section>
       </section>
       <script
