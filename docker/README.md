@@ -9,6 +9,7 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 工作目录：`/app`
 - 默认运行目录：`/app/runtime`
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
+- 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
 - 默认命令：`deno task start`
 - 已发布标签：`latest`、`sha-<git-sha>`
 
@@ -41,13 +42,22 @@ sources:
 
 `config.yml` 支持 `${ENV_VAR}` 展开；`sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `/app/runtime` 解析。
 
+容器启动默认变量说明：
+
+- `KNOCK_CONFIG_PATH=/app/runtime/config.yml`
+- `KNOCK_WEB_HOST=0.0.0.0`
+- `KNOCK_WEB_PORT=8000`
+- `KNOCK_IMMEDIATE=true|false`
+
+这些变量只在镜像默认入口 `deno task start` 下生效；入口脚本只补齐 `start` 可接受的默认参数。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
+
 ## 一次性执行 daemon
 
 ```bash
 docker run --rm \
   -v "$(pwd)/runtime:/app/runtime" \
-  <image> \
-  deno task daemon --immediate
+  -e KNOCK_IMMEDIATE=true \
+  <image>
 ```
 
 这里的 `<image>` 请替换成当前 Docker Hub 仓库名，例如 `<namespace>/knock:latest`。
@@ -61,14 +71,17 @@ docker run -d \
   --name knock \
   -p 8000:8000 \
   -v "$(pwd)/runtime:/app/runtime" \
-  <image> \
-  deno task start --web_host 0.0.0.0
+  -e KNOCK_WEB_HOST=0.0.0.0 \
+  -e KNOCK_WEB_PORT=8000 \
+  <image>
 ```
 
 ## 常见用法
 
-- 只启动 Web：`deno task start --mode web --web_host 0.0.0.0`
-- 只启动 daemon：`deno task daemon`
-- 立即执行一次：`deno task daemon --immediate`
+- 修改 Web 监听地址：`docker run --rm -e KNOCK_WEB_HOST=0.0.0.0 <image>`
+- 修改 Web 监听端口：`docker run --rm -e KNOCK_WEB_PORT=9000 -p 9000:9000 <image>`
+- 指定配置文件：`docker run --rm -e KNOCK_CONFIG_PATH=/app/runtime/config.yml <image>`
+- 立即执行一次后退出：`docker run --rm -e KNOCK_IMMEDIATE=true <image>`
+- 显式参数覆盖环境变量：`docker run --rm -e KNOCK_WEB_PORT=8000 <image> deno task start --web_port 9000`
 
-如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可。
+如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可；入口脚本只会补齐未显式传入的 CLI 参数。

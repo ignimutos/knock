@@ -583,12 +583,13 @@ docker build -t knock:local .
 ```bash
 docker run --rm \
   -v "<宿主机持久化目录>:/app/runtime" \
+  -e KNOCK_CONFIG_PATH=/app/runtime/config.yml \
   -e WEBHOOK_URL=https://example.com/webhook \
   -e WEBHOOK_TOKEN=xxx \
-  knock:local --config /app/runtime/config.yml
+  knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入配置路径、密钥与令牌。入口脚本只会把这些变量补成 `deno task start` 可接受的默认参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器默认环境变量。
 
 Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 
