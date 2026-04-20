@@ -8,7 +8,8 @@ import ReaderPage from './routes/reader.tsx'
 import XqueryPage from './routes/xquery.tsx'
 import SyndicationPage from './routes/syndication.tsx'
 import { loadReaderOverview } from '../src/web/reader_overview.ts'
-import { type EvaluateLogMeta, handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
+import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
+import { handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
 import { handler as evaluateSyndicationHandler } from './routes/api/syndication/evaluate.ts'
 
 function createWebRequestId(now: number = Date.now()): string {

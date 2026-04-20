@@ -45,6 +45,9 @@ jobs:
       - name: Verify types
         run: deno task check
 
+      - name: Verify risk matrix contract
+        run: deno task test src/testing/risk_mapping_test.ts
+
       - name: Verify startup tests
         run: deno task test src/config/config_example_test.ts src/interfaces/cli/parse_cli_command_test.ts src/core/app_test.ts web/main_test.ts
 
