@@ -277,28 +277,51 @@ function createNoopDeduplicationRepository(): DeduplicationRepository {
   }
 }
 
+function createRuntimePersistence(input: { factsDb: FactsDbClient; persistFacts: boolean }): {
+  runRepository: RunRepository
+  itemRepository: ItemRepository
+  deliveryAttemptRepository: DeliveryAttemptRepository
+} {
+  if (input.persistFacts) {
+    return {
+      runRepository: createRunRepository(input.factsDb),
+      itemRepository: createItemRepository(input.factsDb),
+      deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
+    }
+  }
+
+  return {
+    runRepository: createNoopRunRepository(),
+    itemRepository: createNoopItemRepository(),
+    deliveryAttemptRepository: createNoopDeliveryAttemptRepository(),
+  }
+}
+
+function createRuntimeDeduplicationRepository(input: {
+  factsDb: FactsDbClient
+  writeDedupe: boolean
+}): DeduplicationRepository {
+  if (input.writeDedupe) {
+    return createApplicationDeduplicationRepository(input.factsDb)
+  }
+
+  return createNoopDeduplicationRepository()
+}
+
 export function createRuntimePipeline(input: {
   factsDb: FactsDbClient
   deliveryExecutors: Partial<DeliveryExecutorRegistry>
   policy: EffectPolicy
 }) {
-  const persistence = input.policy.persistFacts
-    ? {
-        runRepository: createRunRepository(input.factsDb),
-        itemRepository: createItemRepository(input.factsDb),
-        deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
-      }
-    : {
-        runRepository: createNoopRunRepository(),
-        itemRepository: createNoopItemRepository(),
-        deliveryAttemptRepository: createNoopDeliveryAttemptRepository(),
-      }
-
   return {
-    ...persistence,
-    deduplicationRepository: input.policy.writeDedupe
-      ? createApplicationDeduplicationRepository(input.factsDb)
-      : createNoopDeduplicationRepository(),
+    ...createRuntimePersistence({
+      factsDb: input.factsDb,
+      persistFacts: input.policy.persistFacts,
+    }),
+    deduplicationRepository: createRuntimeDeduplicationRepository({
+      factsDb: input.factsDb,
+      writeDedupe: input.policy.writeDedupe,
+    }),
     deliveryExecutors: input.deliveryExecutors,
   }
 }

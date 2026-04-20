@@ -3,7 +3,7 @@ import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
 import { Cron } from 'croner'
 import type nodemailer from 'nodemailer'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
-import { createLogger } from '../core/logger.ts'
+import { createLogger, type Logger } from '../core/logger.ts'
 import { createScheduler } from '../core/scheduler.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
@@ -47,84 +47,161 @@ export interface CreateProductionRuntimeOptions {
   scheduleDueSources?: (task: () => Promise<void>) => { stop: () => void }
 }
 
+interface ProductionRuntimeLoggers {
+  root: Logger
+  db: Logger
+  ai: Logger
+  content: Logger
+  parser: Logger
+  sourceHttp: Logger
+  sourceByparr: Logger
+  deliveryFile: Logger
+  deliveryHttp: Logger
+  deliveryEmail: Logger
+  scheduler: Logger
+}
+
+function createProductionRuntimeLoggers(config: AppConfigResolved): ProductionRuntimeLoggers {
+  const root = createLogger({
+    enabled: true,
+    level: config.logging.level,
+    module: 'app.startup',
+    component: 'daemon',
+    timezone: config.timezone,
+    timestampFormat: config.timestampFormat,
+  })
+
+  return {
+    root,
+    db: root.child({ module: 'db.sqlite' }),
+    ai: root.child({ module: 'core.ai.runtime' }),
+    content: root.child({ module: 'content.render' }),
+    parser: root.child({ module: 'source.parse' }),
+    sourceHttp: root.child({ module: 'source.fetch.http' }),
+    sourceByparr: root.child({ module: 'source.fetch.byparr' }),
+    deliveryFile: root.child({ module: 'delivery.file' }),
+    deliveryHttp: root.child({ module: 'delivery.http' }),
+    deliveryEmail: root.child({ module: 'delivery.email' }),
+    scheduler: root.child({ module: 'scheduler.source' }),
+  }
+}
+
+function createProductionSourceExecutionCore(input: {
+  config: AppConfigResolved
+  factsDb: FactsDbClient
+  loggers: ProductionRuntimeLoggers
+  httpFetcher?: typeof fetch
+  httpProxyClientFactory?: typeof Deno.createHttpClient
+}) {
+  return createSourceExecutionCore({
+    config: input.config,
+    factsDb: input.factsDb,
+    fetcher: input.httpFetcher ?? fetch,
+    proxyClientFactory: input.httpProxyClientFactory ?? Deno.createHttpClient,
+    aiLogger: input.loggers.ai,
+    contentLogger: input.loggers.content,
+    parserLogger: input.loggers.parser,
+    httpLogger: input.loggers.sourceHttp,
+    byparrLogger: input.loggers.sourceByparr,
+  })
+}
+
+function createProductionDeliveryExecutors(input: {
+  config: AppConfigResolved
+  core: ReturnType<typeof createSourceExecutionCore>
+  loggers: ProductionRuntimeLoggers
+  emailTransportFactory?: typeof nodemailer.createTransport
+}) {
+  return {
+    file: createFileDeliveryExecutor({
+      runtimeDir: input.config.runtimeDir,
+      logger: input.loggers.deliveryFile,
+    }),
+    push: createHttpDeliveryExecutor({
+      httpClient: input.core.shared.httpClient,
+      logger: input.loggers.deliveryHttp,
+    }),
+    email: createEmailDeliveryExecutor({
+      logger: input.loggers.deliveryEmail,
+      delivery: createEmailDelivery({
+        logger: input.loggers.deliveryEmail,
+        createTransport: input.emailTransportFactory,
+      }),
+    }),
+  }
+}
+
+function createProductionRunSourceUseCase(input: {
+  config: AppConfigResolved
+  factsDb: FactsDbClient
+  now: () => string
+  loggers: ProductionRuntimeLoggers
+  httpFetcher?: typeof fetch
+  httpProxyClientFactory?: typeof Deno.createHttpClient
+  emailTransportFactory?: typeof nodemailer.createTransport
+}) {
+  const core = createProductionSourceExecutionCore({
+    config: input.config,
+    factsDb: input.factsDb,
+    loggers: input.loggers,
+    httpFetcher: input.httpFetcher,
+    httpProxyClientFactory: input.httpProxyClientFactory,
+  })
+
+  return createRunSourceUseCaseForRuntime({
+    now: input.now,
+    createRunId: () => crypto.randomUUID(),
+    sourceInputGateway: core.sourceInputGateway,
+    sourceParser: core.sourceParser,
+    pipeline: createRuntimePipeline({
+      factsDb: input.factsDb,
+      policy: productionEffectPolicy,
+      deliveryExecutors: createProductionDeliveryExecutors({
+        config: input.config,
+        core,
+        loggers: input.loggers,
+        emailTransportFactory: input.emailTransportFactory,
+      }),
+    }),
+    ...core.runtimeRenderers,
+    shouldPassFilter: ({ item, feed, source, filterTemplate }) =>
+      core.shared.contentRuntime.shouldPassFilter(
+        filterTemplate,
+        core.shared.contentRuntime.buildContext(item, feed, {
+          id: source.id,
+          name: source.title,
+          enabled: true,
+          deliveries: [],
+          ...(source.runtime ? { runtime: source.runtime } : {}),
+        } as ResolvedSourceConfig),
+      ),
+    logger: input.loggers.scheduler,
+    requireFullPipeline: true,
+  })
+}
+
 export function createProductionRuntime(
   options: CreateProductionRuntimeOptions,
 ): ProductionRuntime {
   const now = options.now ?? (() => new Date().toISOString())
-
-  const logger = createLogger({
-    enabled: true,
-    level: options.config.logging.level,
-    module: 'app.startup',
-    component: 'daemon',
-    timezone: options.config.timezone,
-    timestampFormat: options.config.timestampFormat,
-  })
+  const loggers = createProductionRuntimeLoggers(options.config)
   const factsDb =
     options.factsDb ??
     createFactsDbClient({
       sqlite: options.config.sqlite,
-      logger: logger.child({ module: 'db.sqlite' }),
+      logger: loggers.db,
     })
   const definitionSet = compileDefinitionsFromResolvedConfig(options.config)
-
-  const runSourceUseCase = (() => {
-    const core = createSourceExecutionCore({
-      config: options.config,
-      factsDb,
-      fetcher: options.httpFetcher ?? fetch,
-      proxyClientFactory: options.httpProxyClientFactory ?? Deno.createHttpClient,
-      aiLogger: logger.child({ module: 'core.ai.runtime' }),
-      contentLogger: logger.child({ module: 'content.render' }),
-      parserLogger: logger.child({ module: 'source.parse' }),
-      httpLogger: logger.child({ module: 'source.fetch.http' }),
-      byparrLogger: logger.child({ module: 'source.fetch.byparr' }),
-    })
-
-    return createRunSourceUseCaseForRuntime({
-      now,
-      createRunId: () => crypto.randomUUID(),
-      sourceInputGateway: core.sourceInputGateway,
-      sourceParser: core.sourceParser,
-      pipeline: createRuntimePipeline({
-        factsDb,
-        policy: productionEffectPolicy,
-        deliveryExecutors: {
-          file: createFileDeliveryExecutor({
-            runtimeDir: options.config.runtimeDir,
-            logger: logger.child({ module: 'delivery.file' }),
-          }),
-          push: createHttpDeliveryExecutor({
-            httpClient: core.shared.httpClient,
-            logger: logger.child({ module: 'delivery.http' }),
-          }),
-          email: createEmailDeliveryExecutor({
-            logger: logger.child({ module: 'delivery.email' }),
-            delivery: createEmailDelivery({
-              logger: logger.child({ module: 'delivery.email' }),
-              createTransport: options.emailTransportFactory,
-            }),
-          }),
-        },
-      }),
-      ...core.runtimeRenderers,
-      shouldPassFilter: ({ item, feed, source, filterTemplate }) =>
-        core.shared.contentRuntime.shouldPassFilter(
-          filterTemplate,
-          core.shared.contentRuntime.buildContext(item, feed, {
-            id: source.id,
-            name: source.title,
-            enabled: true,
-            deliveries: [],
-            ...(source.runtime ? { runtime: source.runtime } : {}),
-          } as ResolvedSourceConfig),
-        ),
-      logger: logger.child({ module: 'scheduler.source' }),
-      requireFullPipeline: true,
-    })
-  })()
-
-  const scheduler = createScheduler(logger.child({ module: 'scheduler.source' }))
+  const runSourceUseCase = createProductionRunSourceUseCase({
+    config: options.config,
+    factsDb,
+    now,
+    loggers,
+    httpFetcher: options.httpFetcher,
+    httpProxyClientFactory: options.httpProxyClientFactory,
+    emailTransportFactory: options.emailTransportFactory,
+  })
+  const scheduler = createScheduler(loggers.scheduler)
   const kernel = createRuntimeKernel({
     config: options.config,
     definitions: definitionSet,

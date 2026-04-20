@@ -182,15 +182,24 @@ function deepMergeValue(base: unknown, override: unknown): unknown {
   return structuredClone(override)
 }
 
+function createResolvedDeliveryShell(
+  sourceId: string,
+  delivery: DeliveryConfig,
+): Omit<ResolvedDeliveryConfig, 'file' | 'push' | 'email'> {
+  return {
+    id: `${sourceId}__${delivery.id}`,
+    sourceId,
+    deliveryId: delivery.id,
+  }
+}
+
 function resolveFileDelivery(
   sourceId: string,
   delivery: DeliveryConfig,
   override: SourceFileDeliveryOverride,
 ): ResolvedDeliveryConfig {
   return {
-    id: `${sourceId}__${delivery.id}`,
-    sourceId,
-    deliveryId: delivery.id,
+    ...createResolvedDeliveryShell(sourceId, delivery),
     file: delivery.file
       ? {
           ...delivery.file,
@@ -210,9 +219,7 @@ function resolvePushDelivery(
   const push = clonePushConfig(delivery.push)
 
   return {
-    id: `${sourceId}__${delivery.id}`,
-    sourceId,
-    deliveryId: delivery.id,
+    ...createResolvedDeliveryShell(sourceId, delivery),
     file: undefined,
     push: push
       ? {
@@ -238,9 +245,7 @@ function resolveEmailDelivery(
   const email = cloneEmailConfig(delivery.email)
 
   return {
-    id: `${sourceId}__${delivery.id}`,
-    sourceId,
-    deliveryId: delivery.id,
+    ...createResolvedDeliveryShell(sourceId, delivery),
     file: undefined,
     push: undefined,
     email: email
@@ -249,6 +254,18 @@ function resolveEmailDelivery(
           message: deepMergeValue(email.message, override.message) as EmailConfig['message'],
         }
       : undefined,
+  }
+}
+
+function createEmptyResolvedDelivery(
+  sourceId: string,
+  delivery: DeliveryConfig,
+): ResolvedDeliveryConfig {
+  return {
+    ...createResolvedDeliveryShell(sourceId, delivery),
+    file: undefined,
+    push: undefined,
+    email: undefined,
   }
 }
 
@@ -269,23 +286,14 @@ function applySourceDeliveryOverride(
     return resolveEmailDelivery(sourceId, delivery, override as SourceEmailDeliveryOverride)
   }
 
-  return {
-    id: `${sourceId}__${delivery.id}`,
-    sourceId,
-    deliveryId: delivery.id,
-    file: undefined,
-    push: undefined,
-    email: undefined,
-  }
+  return createEmptyResolvedDelivery(sourceId, delivery)
 }
 
 function resolveSourceDeliveries(
   sourceId: string,
   sourceDeliveries: SourceDeliveriesConfig,
-  deliveries: DeliveryConfig[],
+  deliveryMap: ReadonlyMap<string, DeliveryConfig>,
 ): ResolvedDeliveryConfig[] {
-  const deliveryMap = new Map(deliveries.map((delivery) => [delivery.id, delivery]))
-
   return Object.entries(sourceDeliveries).flatMap(([deliveryId, override]) => {
     const delivery = deliveryMap.get(deliveryId)
 
@@ -480,6 +488,7 @@ export function resolveConfig(input: AppConfigValidated): AppConfigResolved {
   const timezone = input.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC'
   const language = resolveLanguage(input.language)
   const deliveries = normalizeDeliveries(input.runtimeDir, input.deliveries ?? {})
+  const deliveryMap = new Map(deliveries.map((delivery) => [delivery.id, delivery] as const))
   const sources = normalizeSources(input.sources ?? {})
 
   const resolvedSources: ResolvedSourceConfig[] = sources.map((source) => ({
@@ -492,7 +501,7 @@ export function resolveConfig(input: AppConfigValidated): AppConfigResolved {
       : (source.syndication ?? (source.xquery ? undefined : {})),
     xquery: source.summary ? undefined : source.xquery,
     enabled: source.enabled ?? true,
-    deliveries: resolveSourceDeliveries(source.id, source.deliveries ?? {}, deliveries),
+    deliveries: resolveSourceDeliveries(source.id, source.deliveries ?? {}, deliveryMap),
   }))
 
   return {

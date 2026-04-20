@@ -1,8 +1,8 @@
-import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
+import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from '@std/assert'
 import { join } from '@std/path'
 import { withOwnedRuntime } from './test_runtime.ts'
 import type { StartAppOptions } from './main.ts'
-import { dispatchCliCommand, main } from './main.ts'
+import { dispatchCliCommand, main, startWeb } from './main.ts'
 import {
   buildChildArgs,
   parseCliCommand,
@@ -312,12 +312,7 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进
 
   assertEquals(buildChildArgs(command, 'daemon'), [
     'run',
-    '--allow-read',
-    '--allow-write',
-    '--allow-env',
-    '--allow-net',
-    '--allow-ffi',
-    '--allow-run',
+    '--allow-all',
     'src/main.ts',
     '--mode',
     'daemon',
@@ -341,12 +336,7 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程
 
   assertEquals(buildChildArgs(command, 'web'), [
     'run',
-    '--allow-read',
-    '--allow-write',
-    '--allow-env',
-    '--allow-net',
-    '--allow-ffi',
-    '--allow-run',
+    '--allow-all',
     'src/main.ts',
     '--mode',
     'web',
@@ -418,13 +408,115 @@ Deno.test('[contract] main: 通过 main(args) 应走同一 dispatch 路径', asy
   assertEquals(calls, ['all'])
 })
 
-Deno.test(
-  '[contract] startWeb: web startup logger 应走共享 sink 配置而非硬编码 format',
-  async () => {
-    const source = await Deno.readTextFile(new URL('./main.ts', import.meta.url))
-    assertEquals(source.includes("format: 'json'"), false)
-  },
-)
+Deno.test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    await Deno.writeTextFile(
+      join(runtimeDir, 'config.yml'),
+      [
+        'sources: {}',
+        'logging:',
+        '  level: info',
+        '  sinks:',
+        '    console:',
+        '      type: console',
+        '      format: jsonl',
+      ].join('\n'),
+    )
+
+    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+    const { port } = listener.addr as Deno.NetAddr
+    listener.close()
+
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        'run',
+        '--allow-read',
+        '--allow-write',
+        '--allow-env',
+        '--allow-net',
+        '--allow-ffi',
+        '--allow-run',
+        '--allow-sys',
+        'src/main.ts',
+        '--mode',
+        'web',
+        '--web_host',
+        '127.0.0.1',
+        '--web_port',
+        String(port),
+      ],
+      cwd: Deno.cwd(),
+      env: {
+        ...Deno.env.toObject(),
+        KNOCK_RUNTIME_DIR: runtimeDir,
+      },
+      stdout: 'piped',
+      stderr: 'piped',
+    }).spawn()
+
+    try {
+      const output = await readCommandOutput(child.stdout, 3000)
+
+      assertEquals(output.includes('\u001b['), false)
+      assertStringIncludes(output, '"severityText":"INFO"')
+      assertStringIncludes(output, '"scope":{"name":"web.startup"}')
+      assertStringIncludes(output, '"web.host":"127.0.0.1"')
+      assertStringIncludes(output, `"web.url":"http://127.0.0.1:${port}/"`)
+    } finally {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // noop
+      }
+      try {
+        await child.stdout?.cancel()
+      } catch {
+        // noop
+      }
+      try {
+        await child.stderr?.cancel()
+      } catch {
+        // noop
+      }
+      await child.status
+    }
+  })
+})
+
+Deno.test('[contract] startWeb: 应拒绝 logging 路径中的环境变量展开', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    const originalRuntimeDir = Deno.env.get('KNOCK_RUNTIME_DIR')
+
+    await Deno.writeTextFile(
+      join(runtimeDir, 'config.yml'),
+      [
+        'sources: {}',
+        'logging:',
+        '  level: info',
+        '  sinks:',
+        '    console:',
+        '      type: console',
+        '      format: ${LOG_FORMAT}',
+      ].join('\n'),
+    )
+
+    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
+
+    try {
+      await assertRejects(
+        () => startWeb({ host: '127.0.0.1', port: 18080 }),
+        Error,
+        'logging.sinks.console.format 不支持环境变量展开',
+      )
+    } finally {
+      if (originalRuntimeDir === undefined) {
+        Deno.env.delete('KNOCK_RUNTIME_DIR')
+      } else {
+        Deno.env.set('KNOCK_RUNTIME_DIR', originalRuntimeDir)
+      }
+    }
+  })
+})
 
 Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host、port 与 url', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {

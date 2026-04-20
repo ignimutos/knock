@@ -637,10 +637,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
   const category = options.module.split('.')
   const logTapeLogger = getKnockLogTapeLogger(category)
 
-  const emitFallback = (level: LogLevel, message: string, fields: LogFields = {}) => {
-    if (!options.enabled) return
-    if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[options.level]) return
-
+  const buildLoggerRecord = (level: LogLevel, message: string, fields: LogFields = {}) => {
     const timestamp = now()
     const mergedFields = { ...baseFields, ...fields }
     const module = typeof mergedFields.module === 'string' ? mergedFields.module : options.module
@@ -650,9 +647,9 @@ export function createLogger(options: CreateLoggerOptions): Logger {
       ...normalizeAttributeFields(mergedFields),
     }
 
-    const record = {
-      category: ['knock', ...module.split('.')],
-      ...buildLogTapeRecord({
+    return {
+      module,
+      record: buildLogTapeRecord({
         level,
         message,
         module,
@@ -661,13 +658,24 @@ export function createLogger(options: CreateLoggerOptions): Logger {
         attributes,
         traceContext,
       }),
+    }
+  }
+
+  const emitFallback = (level: LogLevel, message: string, fields: LogFields = {}) => {
+    if (!options.enabled) return
+    if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[options.level]) return
+
+    const { module, record } = buildLoggerRecord(level, message, fields)
+    const fallbackRecord = {
+      category: ['knock', ...module.split('.')],
+      ...record,
     } satisfies LogRecord
 
     const formatter =
       format === 'pretty'
         ? redactByPattern(createPrettyFormatter({ timezone, timestampFormat }), SENSITIVE_PATTERNS)
         : createRepositoryJsonlFormatter()
-    const line = formatter(record).trimEnd()
+    const line = formatter(fallbackRecord).trimEnd()
 
     if (level === 'fatal' || level === 'error') {
       writeStderr(line)
@@ -684,24 +692,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
     if (!options.enabled) return
     if (LEVEL_WEIGHT[level] < LEVEL_WEIGHT[options.level]) return
 
-    const timestamp = now()
-    const mergedFields = { ...baseFields, ...fields }
-    const module = typeof mergedFields.module === 'string' ? mergedFields.module : options.module
-    const traceContext = normalizeTraceContext(mergedFields)
-    const attributes = {
-      ...getCodeAttributes(),
-      ...normalizeAttributeFields(mergedFields),
-    }
-
-    const record = buildLogTapeRecord({
-      level,
-      message,
-      module,
-      timestamp,
-      resourceAttributes,
-      attributes,
-      traceContext,
-    })
+    const { record } = buildLoggerRecord(level, message, fields)
 
     if (!logTapeRuntimeActive) {
       emitFallback(level, message, fields)
