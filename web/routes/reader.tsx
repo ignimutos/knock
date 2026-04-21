@@ -11,67 +11,76 @@ function toBootstrapJson(overview: ReaderOverview): string {
   return JSON.stringify(overview).replace(/</g, '\\u003c')
 }
 
+const STATUS_LABELS = {
+  success: '成功',
+  partial: '部分成功',
+  failed: '失败',
+  skipped: '跳过',
+  interrupted: '中断',
+  running: '运行中',
+  planned: '已计划',
+} as const
+
+const PARSER_LABELS: Record<ReaderSourceOverview['parser'], string> = {
+  syndication: 'syndication',
+  xquery: 'xquery',
+  summary: 'summary',
+}
+
+const TRANSPORT_LABELS: Record<ReaderSourceOverview['transport'], string> = {
+  http: 'http',
+  byparr: 'byparr',
+  summary: 'summary',
+}
+
+const STRIP_MARKUP_PATTERNS = [
+  ['<(br|/p|/div|/li|/h[1-6])[^>]*>', '\n'],
+  ['<[^>]+>', ' '],
+  ['&nbsp;', ' '],
+  ['&amp;', '&'],
+  ['&lt;', '<'],
+  ['&gt;', '>'],
+  ['\r', ''],
+  ['\n{3,}', '\n\n'],
+  ['[\t ]+', ' '],
+] as const
+
+const STRIP_MARKUP_REPLACERS = STRIP_MARKUP_PATTERNS.map(
+  ([pattern, replacement]) => [new RegExp(pattern, 'g'), replacement] as const,
+)
+
 function formatStatus(status: string | undefined): string {
-  switch (status) {
-    case 'success':
-      return '成功'
-    case 'partial':
-      return '部分成功'
-    case 'failed':
-      return '失败'
-    case 'skipped':
-      return '跳过'
-    case 'interrupted':
-      return '中断'
-    case 'running':
-      return '运行中'
-    case 'planned':
-      return '已计划'
-    default:
-      return '暂无'
-  }
+  return status && status in STATUS_LABELS
+    ? STATUS_LABELS[status as keyof typeof STATUS_LABELS]
+    : '暂无'
 }
 
-function formatParser(parser: ReaderSourceOverview['parser']): string {
-  switch (parser) {
-    case 'summary':
-      return 'summary'
-    case 'xquery':
-      return 'xquery'
-    default:
-      return 'syndication'
-  }
+function formatParser(parser: ReaderSourceOverview['parser'] | string | undefined): string {
+  return parser && parser in PARSER_LABELS
+    ? PARSER_LABELS[parser as keyof typeof PARSER_LABELS]
+    : 'syndication'
 }
 
-function formatTransport(transport: ReaderSourceOverview['transport']): string {
-  switch (transport) {
-    case 'summary':
-      return 'summary'
-    case 'byparr':
-      return 'byparr'
-    default:
-      return 'http'
-  }
+function formatTransport(
+  transport: ReaderSourceOverview['transport'] | string | undefined,
+): string {
+  return transport && transport in TRANSPORT_LABELS
+    ? TRANSPORT_LABELS[transport as keyof typeof TRANSPORT_LABELS]
+    : 'http'
 }
 
-function formatDeliveryKinds(kinds: ReaderSourceOverview['deliveryKinds']): string {
-  return kinds.length === 0 ? '无投递' : kinds.join(' · ')
+function formatDeliveryKinds(kinds: readonly string[] | undefined): string {
+  return Array.isArray(kinds) && kinds.length > 0 ? kinds.join(' · ') : '无投递'
 }
 
 function stripMarkup(value: string | undefined): string {
-  if (!value) return ''
+  if (typeof value !== 'string' || value.trim() === '') return ''
 
-  return value
-    .replace(/<(br|\/p|\/div|\/li|\/h[1-6])[^>]*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\r/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[\t ]+/g, ' ')
-    .trim()
+  let next = value
+  for (const [pattern, replacement] of STRIP_MARKUP_REPLACERS) {
+    next = next.replace(pattern, replacement)
+  }
+  return next.trim()
 }
 
 function getInitialSource(overview: ReaderOverview): ReaderSourceOverview | undefined {
@@ -82,20 +91,20 @@ function isSummarySource(source: ReaderSourceOverview | undefined): boolean {
   return source?.transport === 'summary' || source?.parser === 'summary'
 }
 
-function getFileOverrideText(override: SourceDeliveryOverride | undefined): string {
-  return override && 'content' in override && typeof override.content === 'string'
-    ? override.content
-    : ''
-}
-
-function getPayloadOverrideText(override: SourceDeliveryOverride | undefined): string {
-  return override && 'payload' in override && override.payload !== undefined
-    ? JSON.stringify(override.payload, null, 2)
-    : ''
-}
-
-function getMessageOverrideText(override: SourceDeliveryOverride | undefined): string {
-  return override && 'message' in override && override.message !== undefined
+function getOverrideTextareaValue(
+  kind: ReaderDeliveryCatalogItem['kind'],
+  override: SourceDeliveryOverride | undefined,
+): string {
+  if (!override) return ''
+  if (kind === 'file') {
+    return 'content' in override && typeof override.content === 'string' ? override.content : ''
+  }
+  if (kind === 'push') {
+    return 'payload' in override && override.payload !== undefined
+      ? JSON.stringify(override.payload, null, 2)
+      : ''
+  }
+  return 'message' in override && override.message !== undefined
     ? JSON.stringify(override.message, null, 2)
     : ''
 }
@@ -111,6 +120,107 @@ function deliveryOverrideLabel(kind: ReaderDeliveryCatalogItem['kind']): string 
   }
 }
 
+function inlineBrowserFunction(name: string, fn: { toString(): string }): string {
+  return `const ${name} = ${fn.toString()}`
+}
+
+type ReaderMetaItem = {
+  label: string
+  value: string
+}
+
+function MetaGrid(props: { className: string; items: readonly ReaderMetaItem[] }) {
+  return (
+    <dl class={props.className}>
+      {props.items.map((item) => (
+        <div key={item.label}>
+          <dt>{item.label}</dt>
+          <dd>{item.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function buildSourceListItemView(source: ReaderSourceOverview) {
+  return {
+    name: source.name || source.id,
+    enabled: source.enabled,
+    parserLabel: formatParser(source.parser),
+    transportLabel: formatTransport(source.transport),
+    deliveryKindsLabel: formatDeliveryKinds(source.deliveryKinds),
+  }
+}
+
+function buildSourceCardView(source?: ReaderSourceOverview) {
+  if (!source) {
+    return {
+      emptyMessage: '还没有可浏览的 source。',
+      meta: [] as ReaderMetaItem[],
+    }
+  }
+
+  return {
+    title: source.name || source.id,
+    status: source.lastRun?.status,
+    statusLabel: formatStatus(source.lastRun?.status),
+    meta: [
+      { label: 'parser', value: formatParser(source.parser) },
+      { label: 'transport', value: formatTransport(source.transport) },
+      { label: 'deliveries', value: String(source.deliveryCount) },
+      { label: 'entries', value: String(source.entries.length) },
+    ],
+    sourceUrl:
+      typeof source.sourceUrl === 'string' && source.sourceUrl !== ''
+        ? source.sourceUrl
+        : undefined,
+    feedTitle: source.feed?.title || '未命名 feed',
+    feedDescription: source.feed
+      ? stripMarkup(source.feed.description) || '暂无 feed 描述。'
+      : undefined,
+    feedEmptyMessage: source.feed ? undefined : '最近快照里还没有 feed 内容。',
+  }
+}
+
+function buildFeedBannerView(source?: ReaderSourceOverview) {
+  if (!source) {
+    return {
+      emptyMessage: '选择 source 后，这里会显示 feed 快照。',
+      meta: [] as ReaderMetaItem[],
+    }
+  }
+
+  return {
+    title: source.feed?.title || source.name || source.id,
+    statusLabel: formatStatus(source.lastRun?.status),
+    copy: stripMarkup(source.feed?.description) || '这个 source 暂时没有可展示的 feed 描述。',
+    meta: [
+      { label: 'published', value: source.feed?.published || '—' },
+      { label: 'language', value: source.feed?.language || '—' },
+      { label: 'generator', value: source.feed?.generator || '—' },
+      { label: 'counts', value: String(source.lastRun?.counts.parsedCount || 0) + ' parsed' },
+    ],
+  }
+}
+
+function buildEntryView(entry: ReaderEntrySnapshot) {
+  return {
+    title: entry.title || entry.id,
+    status: entry.status,
+    statusLabel: formatStatus(entry.status),
+    excerpt: stripMarkup(entry.description || entry.content) || '暂无摘要。',
+    meta: [
+      { label: 'published', value: entry.published || '—' },
+      { label: 'updated', value: entry.updated || '—' },
+      { label: 'entry id', value: entry.id },
+      { label: 'status', value: formatStatus(entry.status) },
+    ],
+    link: typeof entry.link === 'string' && entry.link !== '' ? entry.link : undefined,
+    summary: stripMarkup(entry.description) || '暂无摘要。',
+    content: stripMarkup(entry.content) || '暂无正文。',
+  }
+}
+
 function SourceList(props: { sources: ReaderOverview['sources'] }) {
   return (
     <div
@@ -119,148 +229,108 @@ function SourceList(props: { sources: ReaderOverview['sources'] }) {
       role="listbox"
       aria-label="Source 列表"
     >
-      {props.sources.map((source, index) => (
-        <button
-          type="button"
-          class={`reader-source-button${index === 0 ? ' is-active' : ''}`}
-          data-reader-source={source.id}
-          data-source-index={String(index)}
-          aria-selected={index === 0 ? 'true' : 'false'}
-        >
-          <span class="reader-source-headline">
-            <span class="reader-source-name">{source.name}</span>
-            <span class={`reader-state-badge is-${source.enabled ? 'enabled' : 'disabled'}`}>
-              {source.enabled ? '启用' : '停用'}
+      {props.sources.map((source, index) => {
+        const view = buildSourceListItemView(source)
+        return (
+          <button
+            key={source.id}
+            type="button"
+            class={`reader-source-button${index === 0 ? ' is-active' : ''}`}
+            data-reader-source={source.id}
+            data-source-index={String(index)}
+            aria-selected={index === 0 ? 'true' : 'false'}
+          >
+            <span class="reader-source-headline">
+              <span class="reader-source-name">{view.name}</span>
+              <span class={`reader-state-badge is-${view.enabled ? 'enabled' : 'disabled'}`}>
+                {view.enabled ? '启用' : '停用'}
+              </span>
             </span>
-          </span>
-          <span class="reader-source-meta">
-            <span>{formatParser(source.parser)}</span>
-            <span>{formatTransport(source.transport)}</span>
-            <span>{formatDeliveryKinds(source.deliveryKinds)}</span>
-          </span>
-        </button>
-      ))}
+            <span class="reader-source-meta">
+              <span>{view.parserLabel}</span>
+              <span>{view.transportLabel}</span>
+              <span>{view.deliveryKindsLabel}</span>
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
 
 function SourceCard(props: { source?: ReaderSourceOverview }) {
-  if (!props.source) {
-    return (
-      <section
-        id="reader-source-card"
-        class="reader-source-card"
-      >
-        <p class="reader-empty">还没有可浏览的 source。</p>
-      </section>
-    )
-  }
-
-  const source = props.source
+  const view = buildSourceCardView(props.source)
 
   return (
     <section
       id="reader-source-card"
       class="reader-source-card"
     >
-      <div class="reader-card-head">
-        <div>
-          <p class="reader-kicker">当前 source</p>
-          <h2 class="reader-card-title">{source.name}</h2>
-        </div>
-        <span class={`reader-run-badge is-${source.lastRun?.status ?? 'idle'}`}>
-          {formatStatus(source.lastRun?.status)}
-        </span>
-      </div>
-      <dl class="reader-meta-grid">
-        <div>
-          <dt>parser</dt>
-          <dd>{formatParser(source.parser)}</dd>
-        </div>
-        <div>
-          <dt>transport</dt>
-          <dd>{formatTransport(source.transport)}</dd>
-        </div>
-        <div>
-          <dt>deliveries</dt>
-          <dd>{source.deliveryCount}</dd>
-        </div>
-        <div>
-          <dt>entries</dt>
-          <dd>{source.entries.length}</dd>
-        </div>
-      </dl>
-      {source.sourceUrl ? (
-        <a
-          href={source.sourceUrl}
-          class="reader-link"
-          target="_blank"
-          rel="noreferrer"
-        >
-          打开源地址
-        </a>
-      ) : null}
-      {source.feed ? (
-        <div class="reader-feed-note">
-          <p class="reader-feed-title">{source.feed.title || '未命名 feed'}</p>
-          <p class="reader-feed-description">
-            {stripMarkup(source.feed.description) || '暂无 feed 描述。'}
-          </p>
-        </div>
+      {view.emptyMessage ? (
+        <p class="reader-empty">{view.emptyMessage}</p>
       ) : (
-        <p class="reader-empty">最近快照里还没有 feed 内容。</p>
+        <>
+          <div class="reader-card-head">
+            <div>
+              <p class="reader-kicker">当前 source</p>
+              <h2 class="reader-card-title">{view.title}</h2>
+            </div>
+            <span class={`reader-run-badge is-${view.status ?? 'idle'}`}>{view.statusLabel}</span>
+          </div>
+          <MetaGrid
+            className="reader-meta-grid"
+            items={view.meta}
+          />
+          {view.sourceUrl ? (
+            <a
+              href={view.sourceUrl}
+              class="reader-link"
+              target="_blank"
+              rel="noreferrer"
+            >
+              打开源地址
+            </a>
+          ) : null}
+          {view.feedDescription ? (
+            <div class="reader-feed-note">
+              <p class="reader-feed-title">{view.feedTitle}</p>
+              <p class="reader-feed-description">{view.feedDescription}</p>
+            </div>
+          ) : (
+            <p class="reader-empty">{view.feedEmptyMessage}</p>
+          )}
+        </>
       )}
     </section>
   )
 }
 
 function FeedBanner(props: { source?: ReaderSourceOverview }) {
-  if (!props.source) {
-    return (
-      <section
-        id="reader-feed-banner"
-        class="reader-feed-banner"
-      >
-        <p class="reader-empty">选择 source 后，这里会显示 feed 快照。</p>
-      </section>
-    )
-  }
-
-  const feed = props.source.feed
+  const view = buildFeedBannerView(props.source)
 
   return (
     <section
       id="reader-feed-banner"
       class="reader-feed-banner"
     >
-      <div class="reader-banner-head">
-        <div>
-          <p class="reader-kicker">feed 快照</p>
-          <h2 class="reader-banner-title">{feed?.title || props.source.name}</h2>
-        </div>
-        <p class="reader-banner-meta">最近快照 · {formatStatus(props.source.lastRun?.status)}</p>
-      </div>
-      <p class="reader-banner-copy">
-        {stripMarkup(feed?.description) || '这个 source 暂时没有可展示的 feed 描述。'}
-      </p>
-      <dl class="reader-feed-grid">
-        <div>
-          <dt>published</dt>
-          <dd>{feed?.published || '—'}</dd>
-        </div>
-        <div>
-          <dt>language</dt>
-          <dd>{feed?.language || '—'}</dd>
-        </div>
-        <div>
-          <dt>generator</dt>
-          <dd>{feed?.generator || '—'}</dd>
-        </div>
-        <div>
-          <dt>counts</dt>
-          <dd>{props.source.lastRun ? props.source.lastRun.counts.parsedCount : 0} parsed</dd>
-        </div>
-      </dl>
+      {view.emptyMessage ? (
+        <p class="reader-empty">{view.emptyMessage}</p>
+      ) : (
+        <>
+          <div class="reader-banner-head">
+            <div>
+              <p class="reader-kicker">feed 快照</p>
+              <h2 class="reader-banner-title">{view.title}</h2>
+            </div>
+            <p class="reader-banner-meta">最近快照 · {view.statusLabel}</p>
+          </div>
+          <p class="reader-banner-copy">{view.copy}</p>
+          <MetaGrid
+            className="reader-feed-grid"
+            items={view.meta}
+          />
+        </>
+      )}
     </section>
   )
 }
@@ -299,11 +369,7 @@ function DeliveryOverrideEditor(props: {
             class="textarea reader-delivery-textarea"
             data-delivery-field={props.delivery.id}
           >
-            {props.delivery.kind === 'file'
-              ? getFileOverrideText(override)
-              : props.delivery.kind === 'push'
-                ? getPayloadOverrideText(override)
-                : getMessageOverrideText(override)}
+            {getOverrideTextareaValue(props.delivery.kind, override)}
           </textarea>
         </label>
       </div>
@@ -473,6 +539,7 @@ function SourceManager(props: {
           ) : (
             props.allDeliveries.map((delivery) => (
               <DeliveryOverrideEditor
+                key={delivery.id}
                 delivery={delivery}
                 source={source}
               />
@@ -561,7 +628,7 @@ function SourceManager(props: {
 }
 
 function EntryExpandedPanel(props: { entry: ReaderEntrySnapshot; expanded: boolean }) {
-  const entry = props.entry
+  const view = buildEntryView(props.entry)
 
   return (
     <div
@@ -572,31 +639,17 @@ function EntryExpandedPanel(props: { entry: ReaderEntrySnapshot; expanded: boole
         <header class="reader-article-head">
           <div>
             <p class="reader-kicker">entry 阅读面</p>
-            <h3 class="reader-article-title">{entry.title || entry.id}</h3>
+            <h3 class="reader-article-title">{view.title}</h3>
           </div>
-          <span class={`reader-run-badge is-${entry.status}`}>{formatStatus(entry.status)}</span>
+          <span class={`reader-run-badge is-${view.status}`}>{view.statusLabel}</span>
         </header>
-        <dl class="reader-meta-grid reader-entry-meta-grid">
-          <div>
-            <dt>published</dt>
-            <dd>{entry.published || '—'}</dd>
-          </div>
-          <div>
-            <dt>updated</dt>
-            <dd>{entry.updated || '—'}</dd>
-          </div>
-          <div>
-            <dt>entry id</dt>
-            <dd>{entry.id}</dd>
-          </div>
-          <div>
-            <dt>status</dt>
-            <dd>{formatStatus(entry.status)}</dd>
-          </div>
-        </dl>
-        {entry.link ? (
+        <MetaGrid
+          className="reader-meta-grid reader-entry-meta-grid"
+          items={view.meta}
+        />
+        {view.link ? (
           <a
-            href={entry.link}
+            href={view.link}
             class="reader-link"
             target="_blank"
             rel="noreferrer"
@@ -606,11 +659,11 @@ function EntryExpandedPanel(props: { entry: ReaderEntrySnapshot; expanded: boole
         ) : null}
         <section class="reader-article-section">
           <h4>摘要</h4>
-          <p class="reader-article-copy">{stripMarkup(entry.description) || '暂无摘要。'}</p>
+          <p class="reader-article-copy">{view.summary}</p>
         </section>
         <section class="reader-article-section">
           <h4>内容</h4>
-          <pre class="reader-article-content">{stripMarkup(entry.content) || '暂无正文。'}</pre>
+          <pre class="reader-article-content">{view.content}</pre>
         </section>
       </article>
     </div>
@@ -643,34 +696,34 @@ function EntryList(props: { source?: ReaderSourceOverview }) {
         {entries.length === 0 ? (
           <p class="reader-empty">最近快照里还没有 entry。</p>
         ) : (
-          entries.map((entry, index) => (
-            <section
-              class={`reader-entry-item${index === 0 ? ' is-expanded' : ''}`}
-              data-entry-item={String(index)}
-            >
-              <button
-                type="button"
-                class={`reader-entry-button${index === 0 ? ' is-active' : ''}`}
-                data-entry-index={String(index)}
-                aria-selected={index === 0 ? 'true' : 'false'}
-                aria-expanded={index === 0 ? 'true' : 'false'}
+          entries.map((entry, index) => {
+            const view = buildEntryView(entry)
+            return (
+              <section
+                key={entry.itemId}
+                class={`reader-entry-item${index === 0 ? ' is-expanded' : ''}`}
+                data-entry-item={String(index)}
               >
-                <span class="reader-entry-row">
-                  <span class="reader-entry-name">{entry.title || entry.id}</span>
-                  <span class={`reader-run-badge is-${entry.status}`}>
-                    {formatStatus(entry.status)}
+                <button
+                  type="button"
+                  class={`reader-entry-button${index === 0 ? ' is-active' : ''}`}
+                  data-entry-index={String(index)}
+                  aria-selected={index === 0 ? 'true' : 'false'}
+                  aria-expanded={index === 0 ? 'true' : 'false'}
+                >
+                  <span class="reader-entry-row">
+                    <span class="reader-entry-name">{view.title}</span>
+                    <span class={`reader-run-badge is-${view.status}`}>{view.statusLabel}</span>
                   </span>
-                </span>
-                <span class="reader-entry-excerpt">
-                  {stripMarkup(entry.description || entry.content) || '暂无摘要。'}
-                </span>
-              </button>
-              <EntryExpandedPanel
-                entry={entry}
-                expanded={index === 0}
-              />
-            </section>
-          ))
+                  <span class="reader-entry-excerpt">{view.excerpt}</span>
+                </button>
+                <EntryExpandedPanel
+                  entry={entry}
+                  expanded={index === 0}
+                />
+              </section>
+            )
+          })
         )}
       </div>
     </section>
@@ -678,6 +731,33 @@ function EntryList(props: { source?: ReaderSourceOverview }) {
 }
 
 const readerPageScript = `(() => {
+  const STATUS_LABELS = ${JSON.stringify({ success: '成功', partial: '部分成功', failed: '失败', skipped: '跳过', interrupted: '中断', running: '运行中', planned: '已计划' })}
+  const PARSER_LABELS = ${JSON.stringify({ syndication: 'syndication', xquery: 'xquery', summary: 'summary' })}
+  const TRANSPORT_LABELS = ${JSON.stringify({ http: 'http', byparr: 'byparr', summary: 'summary' })}
+  const STRIP_MARKUP_PATTERNS = ${JSON.stringify([
+    ['<(br|/p|/div|/li|/h[1-6])[^>]*>', '\\n'],
+    ['<[^>]+>', ' '],
+    ['&nbsp;', ' '],
+    ['&amp;', '&'],
+    ['&lt;', '<'],
+    ['&gt;', '>'],
+    ['\\r', ''],
+    ['\\n{3,}', '\\n\\n'],
+    ['[\\t ]+', ' '],
+  ])}
+  const STRIP_MARKUP_REPLACERS = STRIP_MARKUP_PATTERNS.map(
+    ([pattern, replacement]) => [new RegExp(pattern, 'g'), replacement],
+  )
+  ${inlineBrowserFunction('formatStatus', formatStatus)}
+  ${inlineBrowserFunction('formatParser', formatParser)}
+  ${inlineBrowserFunction('formatTransport', formatTransport)}
+  ${inlineBrowserFunction('formatDeliveryKinds', formatDeliveryKinds)}
+  ${inlineBrowserFunction('stripMarkup', stripMarkup)}
+  ${inlineBrowserFunction('getOverrideTextareaValue', getOverrideTextareaValue)}
+  ${inlineBrowserFunction('buildSourceListItemView', buildSourceListItemView)}
+  ${inlineBrowserFunction('buildSourceCardView', buildSourceCardView)}
+  ${inlineBrowserFunction('buildFeedBannerView', buildFeedBannerView)}
+  ${inlineBrowserFunction('buildEntryView', buildEntryView)}
   const bootstrap = document.getElementById('reader-bootstrap')
   const sourceList = document.getElementById('reader-source-list')
   const sourceCard = document.getElementById('reader-source-card')
@@ -745,43 +825,12 @@ const readerPageScript = `(() => {
   }
 
   const storageKey = 'knock.reader.sourceId'
-  const sources = Array.isArray(overview?.sources) ? overview.sources : []
+  let sources = Array.isArray(overview?.sources) ? overview.sources : []
   const deliveries = Array.isArray(overview?.deliveries) ? overview.deliveries : []
   let sourceIndex = 0
   let entryIndex = 0
   let confirmResolver = undefined
 
-  const stripMarkup = (value) => {
-    if (typeof value !== 'string' || value.trim() === '') return ''
-    return value
-      .replace(/<(br|\\/p|\\/div|\\/li|\\/h[1-6])[^>]*>/gi, '\\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/\\r/g, '')
-      .replace(/\\n{3,}/g, '\\n\\n')
-      .replace(/[\\t ]+/g, ' ')
-      .trim()
-  }
-
-  const formatStatus = (status) => {
-    switch (status) {
-      case 'success': return '成功'
-      case 'partial': return '部分成功'
-      case 'failed': return '失败'
-      case 'skipped': return '跳过'
-      case 'interrupted': return '中断'
-      case 'running': return '运行中'
-      case 'planned': return '已计划'
-      default: return '暂无'
-    }
-  }
-
-  const formatParser = (parser) => parser === 'summary' ? 'summary' : parser === 'xquery' ? 'xquery' : 'syndication'
-  const formatTransport = (transport) => transport === 'summary' ? 'summary' : transport === 'byparr' ? 'byparr' : 'http'
-  const formatDeliveryKinds = (kinds) => Array.isArray(kinds) && kinds.length > 0 ? kinds.join(' · ') : '无投递'
   const make = (tag, className, text) => {
     const node = document.createElement(tag)
     if (className) node.className = className
@@ -918,21 +967,7 @@ const readerPageScript = `(() => {
       if (!(field instanceof HTMLTextAreaElement) || !(editor instanceof HTMLElement)) {
         return
       }
-      const kind = editor.dataset.deliveryKind
-      const override = overrides[deliveryId]
-      if (kind === 'file') {
-        field.value = isRecord(override) && typeof override.content === 'string' ? override.content : ''
-        return
-      }
-      if (kind === 'push') {
-        field.value = isRecord(override) && 'payload' in override && override.payload !== undefined
-          ? JSON.stringify(override.payload, null, 2)
-          : ''
-        return
-      }
-      field.value = isRecord(override) && 'message' in override && override.message !== undefined
-        ? JSON.stringify(override.message, null, 2)
-        : ''
+      field.value = getOverrideTextareaValue(editor.dataset.deliveryKind, overrides[deliveryId])
     })
   }
 
@@ -958,6 +993,7 @@ const readerPageScript = `(() => {
   const renderSourceList = () => {
     sourceList.replaceChildren()
     sources.forEach((source, index) => {
+      const view = buildSourceListItemView(source)
       const button = make('button', 'reader-source-button' + (index === sourceIndex ? ' is-active' : ''))
       button.type = 'button'
       button.dataset.sourceIndex = String(index)
@@ -965,13 +1001,13 @@ const readerPageScript = `(() => {
       button.setAttribute('tabindex', index === sourceIndex ? '0' : '-1')
 
       const headline = make('span', 'reader-source-headline')
-      headline.appendChild(make('span', 'reader-source-name', source.name || source.id))
-      headline.appendChild(make('span', 'reader-state-badge is-' + (source.enabled ? 'enabled' : 'disabled'), source.enabled ? '启用' : '停用'))
+      headline.appendChild(make('span', 'reader-source-name', view.name))
+      headline.appendChild(make('span', 'reader-state-badge is-' + (view.enabled ? 'enabled' : 'disabled'), view.enabled ? '启用' : '停用'))
 
       const meta = make('span', 'reader-source-meta')
-      meta.appendChild(make('span', '', formatParser(source.parser)))
-      meta.appendChild(make('span', '', formatTransport(source.transport)))
-      meta.appendChild(make('span', '', formatDeliveryKinds(source.deliveryKinds)))
+      meta.appendChild(make('span', '', view.parserLabel))
+      meta.appendChild(make('span', '', view.transportLabel))
+      meta.appendChild(make('span', '', view.deliveryKindsLabel))
 
       button.appendChild(headline)
       button.appendChild(meta)
@@ -987,70 +1023,68 @@ const readerPageScript = `(() => {
   }
 
   const renderSourceCard = () => {
-    const source = getSource()
+    const view = buildSourceCardView(getSource())
     sourceCard.replaceChildren()
 
-    if (!source) {
-      sourceCard.appendChild(make('p', 'reader-empty', '还没有可浏览的 source。'))
+    if (view.emptyMessage) {
+      sourceCard.appendChild(make('p', 'reader-empty', view.emptyMessage))
       return
     }
 
     const head = make('div', 'reader-card-head')
     const titleWrap = make('div')
     titleWrap.appendChild(make('p', 'reader-kicker', '当前 source'))
-    titleWrap.appendChild(make('h2', 'reader-card-title', source.name || source.id))
+    titleWrap.appendChild(make('h2', 'reader-card-title', view.title))
     head.appendChild(titleWrap)
-    head.appendChild(createRunBadge(source.lastRun?.status))
+    head.appendChild(createRunBadge(view.status))
 
     const meta = make('dl', 'reader-meta-grid')
-    meta.appendChild(createMetaPair('parser', formatParser(source.parser)))
-    meta.appendChild(createMetaPair('transport', formatTransport(source.transport)))
-    meta.appendChild(createMetaPair('deliveries', String(source.deliveryCount || 0)))
-    meta.appendChild(createMetaPair('entries', String(getEntries().length)))
+    view.meta.forEach((item) => {
+      meta.appendChild(createMetaPair(item.label, item.value))
+    })
 
     sourceCard.appendChild(head)
     sourceCard.appendChild(meta)
 
-    if (typeof source.sourceUrl === 'string' && source.sourceUrl !== '') {
+    if (typeof view.sourceUrl === 'string' && view.sourceUrl !== '') {
       const link = make('a', 'reader-link', '打开源地址')
-      link.href = source.sourceUrl
+      link.href = view.sourceUrl
       link.target = '_blank'
       link.rel = 'noreferrer'
       sourceCard.appendChild(link)
     }
 
-    if (source.feed) {
+    if (view.feedDescription) {
       const note = make('div', 'reader-feed-note')
-      note.appendChild(make('p', 'reader-feed-title', source.feed.title || '未命名 feed'))
-      note.appendChild(make('p', 'reader-feed-description', stripMarkup(source.feed.description) || '暂无 feed 描述。'))
+      note.appendChild(make('p', 'reader-feed-title', view.feedTitle || '未命名 feed'))
+      note.appendChild(make('p', 'reader-feed-description', view.feedDescription))
       sourceCard.appendChild(note)
     } else {
-      sourceCard.appendChild(make('p', 'reader-empty', '最近快照里还没有 feed 内容。'))
+      sourceCard.appendChild(make('p', 'reader-empty', view.feedEmptyMessage))
     }
   }
 
   const renderFeedBanner = () => {
-    const source = getSource()
+    const view = buildFeedBannerView(getSource())
     feedBanner.replaceChildren()
 
-    if (!source) {
-      feedBanner.appendChild(make('p', 'reader-empty', '选择 source 后，这里会显示 feed 快照。'))
+    if (view.emptyMessage) {
+      feedBanner.appendChild(make('p', 'reader-empty', view.emptyMessage))
       return
     }
 
     const head = make('div', 'reader-banner-head')
     const titleWrap = make('div')
     titleWrap.appendChild(make('p', 'reader-kicker', 'feed 快照'))
-    titleWrap.appendChild(make('h2', 'reader-banner-title', source.feed?.title || source.name || source.id))
+    titleWrap.appendChild(make('h2', 'reader-banner-title', view.title))
     head.appendChild(titleWrap)
-    head.appendChild(make('p', 'reader-banner-meta', '最近快照 · ' + formatStatus(source.lastRun?.status)))
+    head.appendChild(make('p', 'reader-banner-meta', '最近快照 · ' + view.statusLabel))
 
-    const copy = make('p', 'reader-banner-copy', stripMarkup(source.feed?.description) || '这个 source 暂时没有可展示的 feed 描述。')
+    const copy = make('p', 'reader-banner-copy', view.copy)
     const meta = make('dl', 'reader-feed-grid')
-    meta.appendChild(createMetaPair('published', source.feed?.published || '—'))
-    meta.appendChild(createMetaPair('language', source.feed?.language || '—'))
-    meta.appendChild(createMetaPair('generator', source.feed?.generator || '—'))
-    meta.appendChild(createMetaPair('counts', String(source.lastRun?.counts?.parsedCount || 0) + ' parsed'))
+    view.meta.forEach((item) => {
+      meta.appendChild(createMetaPair(item.label, item.value))
+    })
 
     feedBanner.appendChild(head)
     feedBanner.appendChild(copy)
@@ -1096,6 +1130,7 @@ const readerPageScript = `(() => {
     }
 
     entries.forEach((entry, index) => {
+      const view = buildEntryView(entry)
       const expanded = isEntryExpanded(index)
       const item = make('section', 'reader-entry-item' + (expanded ? ' is-expanded' : ''))
       item.dataset.entryItem = String(index)
@@ -1108,10 +1143,10 @@ const readerPageScript = `(() => {
       button.setAttribute('tabindex', expanded ? '0' : '-1')
 
       const row = make('span', 'reader-entry-row')
-      row.appendChild(make('span', 'reader-entry-name', entry.title || entry.id))
-      row.appendChild(createRunBadge(entry.status))
+      row.appendChild(make('span', 'reader-entry-name', view.title))
+      row.appendChild(createRunBadge(view.status))
       button.appendChild(row)
-      button.appendChild(make('span', 'reader-entry-excerpt', stripMarkup(entry.description || entry.content) || '暂无摘要。'))
+      button.appendChild(make('span', 'reader-entry-excerpt', view.excerpt))
       button.addEventListener('click', () => {
         entryIndex = expanded ? -1 : index
         renderEntryList()
@@ -1129,21 +1164,20 @@ const readerPageScript = `(() => {
       const head = make('header', 'reader-article-head')
       const titleWrap = make('div')
       titleWrap.appendChild(make('p', 'reader-kicker', 'entry 阅读面'))
-      titleWrap.appendChild(make('h3', 'reader-article-title', entry.title || entry.id))
+      titleWrap.appendChild(make('h3', 'reader-article-title', view.title))
       head.appendChild(titleWrap)
-      head.appendChild(createRunBadge(entry.status))
+      head.appendChild(createRunBadge(view.status))
       article.appendChild(head)
 
       const meta = make('dl', 'reader-meta-grid reader-entry-meta-grid')
-      meta.appendChild(createMetaPair('published', entry.published || '—'))
-      meta.appendChild(createMetaPair('updated', entry.updated || '—'))
-      meta.appendChild(createMetaPair('entry id', entry.id || '—'))
-      meta.appendChild(createMetaPair('status', formatStatus(entry.status)))
+      view.meta.forEach((itemView) => {
+        meta.appendChild(createMetaPair(itemView.label, itemView.value))
+      })
       article.appendChild(meta)
 
-      if (typeof entry.link === 'string' && entry.link !== '') {
+      if (typeof view.link === 'string' && view.link !== '') {
         const link = make('a', 'reader-link', '打开原文')
-        link.href = entry.link
+        link.href = view.link
         link.target = '_blank'
         link.rel = 'noreferrer'
         article.appendChild(link)
@@ -1151,12 +1185,12 @@ const readerPageScript = `(() => {
 
       const summarySection = make('section', 'reader-article-section')
       summarySection.appendChild(make('h4', '', '摘要'))
-      summarySection.appendChild(make('p', 'reader-article-copy', stripMarkup(entry.description) || '暂无摘要。'))
+      summarySection.appendChild(make('p', 'reader-article-copy', view.summary))
       article.appendChild(summarySection)
 
       const contentSection = make('section', 'reader-article-section')
       contentSection.appendChild(make('h4', '', '内容'))
-      contentSection.appendChild(make('pre', 'reader-article-content', stripMarkup(entry.content) || '暂无正文。'))
+      contentSection.appendChild(make('pre', 'reader-article-content', view.content))
       article.appendChild(contentSection)
 
       shell.appendChild(article)
@@ -1174,6 +1208,16 @@ const readerPageScript = `(() => {
     renderFeedBanner()
     renderManager()
     renderEntryList()
+  }
+
+  const applyOverview = (nextOverview, preferredSourceId) => {
+    if (!isRecord(nextOverview)) return
+    sources = Array.isArray(nextOverview.sources) ? nextOverview.sources : []
+    const nextIndex = typeof preferredSourceId === 'string' && preferredSourceId !== ''
+      ? sources.findIndex((source) => source?.id === preferredSourceId)
+      : 0
+    sourceIndex = nextIndex >= 0 ? nextIndex : 0
+    render()
   }
 
   const requestAction = async (path, payload) => {
@@ -1288,9 +1332,9 @@ const readerPageScript = `(() => {
     setButtonState(managerSave, true, '保存配置', '保存中…')
     try {
       const result = await requestAction('/api/sources/update', payload)
-      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 配置已保存')
       storeSourceId(source.id)
-      window.location.reload()
+      applyOverview(result?.overview, source.id)
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 配置已保存')
     } catch (error) {
       showManagerError(error instanceof Error ? error.message : '保存失败')
     } finally {
@@ -1305,9 +1349,9 @@ const readerPageScript = `(() => {
     setButtonState(managerRun, true, '强制获取', '抓取中…')
     try {
       const result = await requestAction('/api/sources/run', { sourceId: source.id })
-      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 强制获取完成')
       storeSourceId(source.id)
-      window.location.reload()
+      applyOverview(result?.overview, source.id)
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 强制获取完成')
     } catch (error) {
       showManagerError(error instanceof Error ? error.message : '强制获取失败')
     } finally {
@@ -1330,9 +1374,9 @@ const readerPageScript = `(() => {
     setButtonState(managerClear, true, '清空历史', '清理中…')
     try {
       const result = await requestAction('/api/sources/clear', { sourceId: source.id })
-      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 历史已清空')
       storeSourceId(source.id)
-      window.location.reload()
+      applyOverview(result?.overview, source.id)
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 历史已清空')
     } catch (error) {
       showManagerError(error instanceof Error ? error.message : '清空历史失败')
     } finally {

@@ -128,6 +128,29 @@ export function parseRawConfigDocument(raw: string): Record<string, unknown> {
   )
 }
 
+export function compileConfigDocument(options: {
+  document: Record<string, unknown>
+  runtimeDir: string
+  configPath: string
+  envMode?: 'strict' | 'preserve_unknown'
+}): LoadedCompiledConfig {
+  const runtimeDir = resolve(options.runtimeDir)
+  const configPath = resolve(options.configPath)
+  const validatedInput = validateConfig({
+    ...expandEnvInConfig(options.document, options.envMode),
+    runtimeDir,
+  })
+  const config = resolveConfig(validatedInput)
+
+  return {
+    config,
+    definitions: compileDefinitionsFromResolvedConfig(config),
+    diagnostics: [],
+    configPath,
+    runtimeDir,
+  }
+}
+
 function parseConfigDocument(
   raw: string,
   envMode: LoadCompiledConfigOptions['envMode'],

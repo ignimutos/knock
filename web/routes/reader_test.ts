@@ -1,4 +1,4 @@
-import { assertStringIncludes } from '@std/assert'
+import { assertFalse, assertStringIncludes } from '@std/assert'
 import { renderToString } from 'preact-render-to-string'
 import type { ReaderOverview } from '../../src/web/reader_overview.ts'
 import ReaderPage from './reader.tsx'
@@ -111,3 +111,38 @@ Deno.test('[contract] web pages: Reader 页应保留键盘漫游与 bootstrap �
   assertStringIncludes(html, 'aria-expanded="true"')
   assertStringIncludes(html, 'JSON.parse(bootstrap.textContent')
 })
+
+Deno.test(
+  '[contract] web pages: Reader action 成功后应消费返回的 overview 而不是整页 reload',
+  () => {
+    const html = renderToString(ReaderPage({ overview }))
+
+    assertStringIncludes(html, 'const applyOverview = (nextOverview, preferredSourceId) => {')
+    assertStringIncludes(html, 'applyOverview(result?.overview, source.id)')
+    assertFalse(html.includes('window.location.reload()'))
+  },
+)
+
+Deno.test('[contract] web pages: Reader 状态与类型文案映射应在 SSR 与脚本侧共用同一常量源', () => {
+  const html = renderToString(ReaderPage({ overview }))
+
+  assertStringIncludes(html, 'const STATUS_LABELS = {')
+  assertStringIncludes(html, 'const PARSER_LABELS = {')
+  assertStringIncludes(html, 'const TRANSPORT_LABELS = {')
+})
+
+Deno.test(
+  '[contract] web pages: Reader 文本清洗与 override 文本转换应在 SSR 与脚本侧共用同一规则源',
+  () => {
+    const html = renderToString(ReaderPage({ overview }))
+
+    assertStringIncludes(html, 'const STRIP_MARKUP_PATTERNS = ')
+    assertStringIncludes(html, 'const STRIP_MARKUP_REPLACERS = STRIP_MARKUP_PATTERNS.map(')
+    assertStringIncludes(html, 'for (const [pattern, replacement] of STRIP_MARKUP_REPLACERS)')
+    assertStringIncludes(html, 'const getOverrideTextareaValue = function getOverrideTextareaValue')
+    assertStringIncludes(html, 'const buildSourceCardView = function buildSourceCardView')
+    assertStringIncludes(html, 'const buildEntryView = function buildEntryView')
+    assertStringIncludes(html, 'Latest posts')
+    assertStringIncludes(html, '{\n  &quot;text&quot;: &quot;{{ entry.title }}&quot;\n}')
+  },
+)

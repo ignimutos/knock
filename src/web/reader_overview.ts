@@ -7,11 +7,7 @@ import type {
   SourceDeliveryOverride,
 } from '../config/types.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
-import {
-  findConfigFile,
-  loadCompiledConfig,
-  parseRawConfigDocument,
-} from '../config/load_compiled_config.ts'
+import { loadCompiledConfig, parseRawConfigDocument } from '../config/load_compiled_config.ts'
 import { pipelineItems, sourceRuns } from '../infrastructure/sqlite/schema.ts'
 
 export interface ReaderRunSummary {
@@ -119,8 +115,7 @@ async function loadReaderConfig(): Promise<{
     configPath: lookup.configPath,
     envMode: 'preserve_unknown',
   })
-  const configPath = lookup.configPath ?? (await findConfigFile(lookup.runtimeDir))
-  const rawDocument = parseRawConfigDocument(await Deno.readTextFile(configPath))
+  const rawDocument = parseRawConfigDocument(await Deno.readTextFile(loaded.configPath))
   return {
     config: loaded.config,
     rawDocument,

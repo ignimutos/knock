@@ -3,17 +3,17 @@ import { stringify } from '@std/yaml'
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
-import type { HttpPayload, SourceDeliveryOverride } from '../../config/types.ts'
+import { httpPayloadSchema } from '../../config/schema.ts'
+import type { SourceDeliveryOverride } from '../../config/types.ts'
 import {
+  compileConfigDocument,
   findConfigFile,
   loadCompiledConfig,
   parseRawConfigDocument,
 } from '../../config/load_compiled_config.ts'
-import { validateConfig } from '../../config/validate_config.ts'
-import { createFactsDbClient, runInTransaction } from '../../db/client.ts'
-import { deliveryAttempts, pipelineItems, sourceRuns } from '../../infrastructure/sqlite/schema.ts'
-import type { ReaderOverview } from '../../web/reader_overview.ts'
-import { loadReaderOverview } from '../../web/reader_overview.ts'
+import { createFactsDbClient, type FactsDbClient, runInTransaction } from '../../db/client.ts'
+import { sourceRuns } from '../../infrastructure/sqlite/schema.ts'
+import { buildReaderOverview, type ReaderOverview } from '../../web/reader_overview.ts'
 
 export class SourceManagementError extends Error {
   constructor(
@@ -32,17 +32,6 @@ export class SourceManagementError extends Error {
 }
 
 const requiredStringSchema = z.string().trim().min(1)
-
-const httpPayloadSchema: z.ZodType<HttpPayload> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(httpPayloadSchema),
-    z.record(z.string(), httpPayloadSchema),
-  ]),
-)
 
 const sourceDeliveryOverrideSchema: z.ZodType<SourceDeliveryOverride> = z.lazy(() =>
   z.union([
@@ -326,16 +315,42 @@ async function writeValidatedConfigDocument(input: {
   document: Record<string, unknown>
   runtimeDir: string
   configPath: string
-}): Promise<void> {
-  validateConfig({
-    ...input.document,
+}) {
+  const compiled = compileConfigDocument({
+    document: input.document,
     runtimeDir: input.runtimeDir,
+    configPath: input.configPath,
+    envMode: 'preserve_unknown',
   })
   await Deno.writeTextFile(input.configPath, stringify(input.document))
+  return compiled
 }
 
-async function loadFreshOverview(): Promise<ReaderOverview> {
-  return await loadReaderOverview()
+async function buildCurrentOverview(input: {
+  loaded: Awaited<ReturnType<typeof loadCompiledConfig>>
+  factsDb?: FactsDbClient
+  rawDocument?: Record<string, unknown>
+}): Promise<ReaderOverview> {
+  const rawDocument =
+    input.rawDocument ?? parseRawConfigDocument(await Deno.readTextFile(input.loaded.configPath))
+  if (input.factsDb) {
+    return buildReaderOverview({
+      config: input.loaded.config,
+      rawDocument,
+      factsDb: input.factsDb,
+    })
+  }
+
+  const factsDb = createFactsDbClient({ sqlite: input.loaded.config.sqlite })
+  try {
+    return buildReaderOverview({
+      config: input.loaded.config,
+      rawDocument,
+      factsDb,
+    })
+  } finally {
+    factsDb.$client.close()
+  }
 }
 
 export async function updateSourceConfig(input: unknown): Promise<{
@@ -345,11 +360,14 @@ export async function updateSourceConfig(input: unknown): Promise<{
   const request = parseSourceConfigUpdate(input)
   const loaded = await loadRawConfigDocument()
   applySourceConfigUpdate(loaded.document, request)
-  await writeValidatedConfigDocument(loaded)
+  const overviewLoaded = await writeValidatedConfigDocument(loaded)
 
   return {
     message: `source ${request.sourceId} 配置已保存`,
-    overview: await loadFreshOverview(),
+    overview: await buildCurrentOverview({
+      loaded: overviewLoaded,
+      rawDocument: loaded.document,
+    }),
   }
 }
 
@@ -384,7 +402,7 @@ export async function runSourceNow(input: unknown): Promise<{
       message: result.started
         ? `source ${request.sourceId} 强制获取完成`
         : `source ${request.sourceId} 正在运行，已跳过本次强制获取`,
-      overview: await loadFreshOverview(),
+      overview: await buildCurrentOverview({ loaded }),
     }
   } finally {
     runtime.stop()
@@ -410,13 +428,14 @@ export async function clearSourceHistory(input: unknown): Promise<{
 
   const factsDb = createFactsDbClient({ sqlite: loaded.config.sqlite })
   try {
+    const effectDomain = 'production'
     const running = factsDb
       .select({ runId: sourceRuns.runId })
       .from(sourceRuns)
       .where(
         and(
           eq(sourceRuns.sourceId, request.sourceId),
-          eq(sourceRuns.effectDomain, 'production'),
+          eq(sourceRuns.effectDomain, effectDomain),
           eq(sourceRuns.status, 'running'),
         ),
       )
@@ -425,69 +444,49 @@ export async function clearSourceHistory(input: unknown): Promise<{
       throwConflict(`source ${request.sourceId} 正在运行，不能清空历史`)
     }
 
+    const deleteAttempts = factsDb.$client.prepare(`
+      DELETE FROM delivery_attempts
+      WHERE effect_domain = ?
+        AND source_run_id IN (
+          SELECT run_id
+          FROM source_runs
+          WHERE source_id = ? AND effect_domain = ?
+        )
+    `)
+    const deleteItems = factsDb.$client.prepare(`
+      DELETE FROM pipeline_items
+      WHERE effect_domain = ?
+        AND source_run_id IN (
+          SELECT run_id
+          FROM source_runs
+          WHERE source_id = ? AND effect_domain = ?
+        )
+    `)
+    const deleteRuns = factsDb.$client.prepare(`
+      DELETE FROM source_runs
+      WHERE source_id = ? AND effect_domain = ?
+    `)
+
     const result = runInTransaction(factsDb, () => {
-      const runIds = factsDb
-        .select({ runId: sourceRuns.runId })
-        .from(sourceRuns)
-        .where(
-          and(eq(sourceRuns.sourceId, request.sourceId), eq(sourceRuns.effectDomain, 'production')),
-        )
-        .all()
-        .map((row) => row.runId)
-
-      if (runIds.length === 0) {
-        return {
-          deletedRuns: 0,
-          deletedItems: 0,
-          deletedAttempts: 0,
-        }
-      }
-
-      let deletedAttempts = 0
-      let deletedItems = 0
-      for (const runId of runIds) {
-        deletedAttempts += Number(
-          factsDb
-            .delete(deliveryAttempts)
-            .where(
-              and(
-                eq(deliveryAttempts.sourceRunId, runId),
-                eq(deliveryAttempts.effectDomain, 'production'),
-              ),
-            )
-            .run().changes,
-        )
-        deletedItems += Number(
-          factsDb
-            .delete(pipelineItems)
-            .where(
-              and(
-                eq(pipelineItems.sourceRunId, runId),
-                eq(pipelineItems.effectDomain, 'production'),
-              ),
-            )
-            .run().changes,
-        )
-      }
-
-      const deletedRuns = factsDb
-        .delete(sourceRuns)
-        .where(
-          and(eq(sourceRuns.sourceId, request.sourceId), eq(sourceRuns.effectDomain, 'production')),
-        )
-        .run().changes
+      const deletedAttempts = Number(
+        deleteAttempts.run(effectDomain, request.sourceId, effectDomain).changes,
+      )
+      const deletedItems = Number(
+        deleteItems.run(effectDomain, request.sourceId, effectDomain).changes,
+      )
+      const deletedRuns = Number(deleteRuns.run(request.sourceId, effectDomain).changes)
 
       return {
-        deletedRuns: Number(deletedRuns),
-        deletedItems: Number(deletedItems),
-        deletedAttempts: Number(deletedAttempts),
+        deletedRuns,
+        deletedItems,
+        deletedAttempts,
       }
     })
 
     return {
       ...result,
       message: `source ${request.sourceId} 历史已清空`,
-      overview: await loadFreshOverview(),
+      overview: await buildCurrentOverview({ loaded, factsDb }),
     }
   } finally {
     factsDb.$client.close()

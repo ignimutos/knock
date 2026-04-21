@@ -2,6 +2,7 @@ import { assertEquals } from '@std/assert'
 import { parse } from '@std/yaml'
 import { clearSourceHistory, runSourceNow, updateSourceConfig } from './source_management.ts'
 import { createFactsDbClient } from '../../db/client.ts'
+import { insertDeliveryAttempt } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { insertPipelineItem } from '../../infrastructure/sqlite/item_repository.ts'
 import { insertSourceRun } from '../../infrastructure/sqlite/run_repository.ts'
 
@@ -70,6 +71,8 @@ Deno.test(
       assertEquals(rust?.name, 'Rust Releases')
       assertEquals(rust?.schedule, '0 * * * *')
       assertEquals(rust?.filter, '{{ title }}')
+      assertEquals(result.overview.sources[0]?.name, 'Rust Releases')
+      assertEquals(result.overview.sources[0]?.parser, 'xquery')
       assertEquals(rust?.http?.url, 'https://example.com/releases')
       assertEquals(rust?.xquery?.locate, '//article')
       assertEquals(rust?.xquery?.entry?.id, 'string(@data-id)')
@@ -135,6 +138,19 @@ Deno.test(
           },
           status: 'skipped',
         })
+        await insertDeliveryAttempt(factsDb, {
+          attemptId: 'attempt-rust',
+          itemId: 'item-rust',
+          sourceRunId: 'run-rust',
+          deliveryId: 'local',
+          channel: 'file',
+          effectDomain: 'production',
+          attemptNumber: 1,
+          status: 'delivered',
+          plannedAt: '2026-04-21T10:00:00.000Z',
+          startedAt: '2026-04-21T10:00:00.000Z',
+          finishedAt: '2026-04-21T10:00:01.000Z',
+        })
         await insertSourceRun(factsDb, {
           runId: 'run-other',
           sourceId: 'other',
@@ -159,8 +175,12 @@ Deno.test(
         const result = await clearSourceHistory({ sourceId: 'rust' })
         assertEquals(result.deletedRuns, 1)
         assertEquals(result.deletedItems, 1)
-        assertEquals(result.deletedAttempts, 0)
+        assertEquals(result.deletedAttempts, 1)
         assertEquals(result.overview.sources[0]?.entries.length, 0)
+        assertEquals(
+          factsDb.$client.prepare('SELECT COUNT(*) AS count FROM delivery_attempts').get(),
+          { count: 0 },
+        )
       } finally {
         factsDb.$client.close()
       }

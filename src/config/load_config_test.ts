@@ -2,7 +2,7 @@ import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
 import { dirname, fromFileUrl, join } from '@std/path'
 import { createLogger } from '../core/logger.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
-import { loadCompiledConfig } from './load_compiled_config.ts'
+import { compileConfigDocument, loadCompiledConfig } from './load_compiled_config.ts'
 import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
@@ -619,6 +619,69 @@ logging:
 
   const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
   assertEquals(config.logging.sinks.file?.path, join(TEST_RUNTIME, 'logs', 'fallback.jsonl'))
+})
+
+test('compileConfigDocument: 应保留 preserve_unknown 语义并返回统一编译结果', () => {
+  Deno.env.set('KNOCK_TEST_COMPILED_SOURCE_URL', 'https://example.com/feed.xml')
+  Deno.env.set('KNOCK_TEST_COMPILED_TOKEN', 'env-token')
+  Deno.env.delete('KNOCK_TEST_COMPILED_MISSING')
+
+  try {
+    const compiled = compileConfigDocument({
+      runtimeDir: TEST_RUNTIME,
+      configPath: join(TEST_RUNTIME, 'config.yml'),
+      envMode: 'preserve_unknown',
+      document: {
+        deliveries: {
+          archive: {
+            file: {
+              path: 'outputs/archive.md',
+              content: '{{ entry.title }}',
+            },
+          },
+          webhook: {
+            push: {
+              http: {
+                url: 'https://example.com/webhook',
+              },
+              request: {
+                type: 'body',
+                payload: {
+                  token: '${KNOCK_TEST_COMPILED_TOKEN}',
+                  missing: '${KNOCK_TEST_COMPILED_MISSING}',
+                },
+              },
+            },
+          },
+        },
+        sources: {
+          rust: {
+            http: {
+              url: '${KNOCK_TEST_COMPILED_SOURCE_URL}',
+            },
+            syndication: {},
+            deliveries: {
+              archive: {},
+              webhook: {},
+            },
+          },
+        },
+      },
+    })
+
+    assertEquals(compiled.runtimeDir, TEST_RUNTIME)
+    assertEquals(compiled.configPath, join(TEST_RUNTIME, 'config.yml'))
+    assertEquals(compiled.config.sources[0]?.http?.url, 'https://example.com/feed.xml')
+    assertEquals(compiled.config.deliveries[1]?.push?.request.payload, {
+      token: 'env-token',
+      missing: '${KNOCK_TEST_COMPILED_MISSING}',
+    })
+    assertEquals(compiled.definitions.sources[0]?.sourceId, 'rust')
+    assertEquals(compiled.definitions.bindings.length, 2)
+  } finally {
+    Deno.env.delete('KNOCK_TEST_COMPILED_SOURCE_URL')
+    Deno.env.delete('KNOCK_TEST_COMPILED_TOKEN')
+  }
 })
 
 test('loadCompiledConfig: 应返回统一编译结果契约', async () => {
