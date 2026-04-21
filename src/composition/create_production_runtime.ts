@@ -1,18 +1,15 @@
 import { Cron } from 'croner'
+import type { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
 import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
 import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
 import type nodemailer from 'nodemailer'
 import type { AppConfigResolved } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
-import { markInterruptedAttempts } from '../infrastructure/sqlite/recovery.ts'
-import { createRuntimeKernel } from './create_runtime_kernel.ts'
 import { createProductionRuntimeServices } from './production_runtime_support.ts'
 
 export interface ProductionRuntime {
-  runDueSourcesUseCase: {
-    execute: ReturnType<typeof createRuntimeKernel>['runDueSourcesUseCase']['execute']
-  }
+  runDueSourcesUseCase: Pick<RunDueSourcesUseCase, 'execute'>
   queryRunsUseCase: QueryRunsUseCase
   pruneFactsUseCase: PruneFactsUseCase
   recoverInterruptedAttempts: () => Promise<void>
@@ -48,13 +45,7 @@ export function createProductionRuntime(
     now,
     factsDb: options.factsDb,
   })
-  const kernel = createRuntimeKernel({
-    config: options.config,
-    definitions: services.definitionSet,
-    now,
-    runSourceUseCase: services.runSourceUseCase,
-  })
-  const runDueSourcesUseCase = options.runDueSourcesUseCase ?? kernel.runDueSourcesUseCase
+  const runDueSourcesUseCase = options.runDueSourcesUseCase ?? services.runDueSourcesUseCase
   const scheduledJobs: { stop: () => void }[] = []
   const scheduleDueSources =
     options.scheduleDueSources ??
@@ -65,7 +56,7 @@ export function createProductionRuntime(
     runDueSourcesUseCase,
     queryRunsUseCase: services.queryRunsUseCase,
     pruneFactsUseCase: services.pruneFactsUseCase,
-    recoverInterruptedAttempts: () => markInterruptedAttempts(services.factsDb, now()),
+    recoverInterruptedAttempts: services.recoverInterruptedAttempts,
     async runImmediate() {
       await services.scheduler.runSource('__run_due_sources__', async () => {
         await runDueSourcesUseCase.execute({

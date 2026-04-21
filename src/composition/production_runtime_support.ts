@@ -12,10 +12,12 @@ import { createEmailDeliveryExecutor } from '../infrastructure/deliveries/email_
 import { createFileDeliveryExecutor } from '../infrastructure/deliveries/file_delivery_executor.ts'
 import { createHttpDeliveryExecutor } from '../infrastructure/deliveries/http_delivery_executor.ts'
 import { createPruneFactsRepository } from '../infrastructure/sqlite/prune_facts_repository.ts'
+import { markInterruptedAttempts } from '../infrastructure/sqlite/recovery.ts'
 import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run_query_service.ts'
 import {
   createProductionRuntimePipeline,
   createRunSourceUseCaseForRuntime,
+  createRuntimeKernel,
   createSourceExecutionCore,
 } from './create_runtime_kernel.ts'
 
@@ -45,11 +47,11 @@ export interface CreateProductionRuntimeServicesInput {
 
 export interface ProductionRuntimeServices {
   factsDb: FactsDbClient
-  definitionSet: DefinitionSet
   scheduler: ReturnType<typeof createScheduler>
+  runDueSourcesUseCase: ReturnType<typeof createRuntimeKernel>['runDueSourcesUseCase']
   queryRunsUseCase: QueryRunsUseCase
   pruneFactsUseCase: PruneFactsUseCase
-  runSourceUseCase: ReturnType<typeof createProductionRunSourceUseCase>
+  recoverInterruptedAttempts: () => Promise<void>
 }
 
 function createProductionRuntimeLoggers(config: AppConfigResolved): ProductionRuntimeLoggers {
@@ -189,11 +191,26 @@ export function createProductionRuntimeServices(
       logger: loggers.db,
     })
   const definitionSet = input.definitions ?? compileDefinitionsFromResolvedConfig(input.config)
+  const runSourceUseCase = createProductionRunSourceUseCase({
+    config: input.config,
+    factsDb,
+    now: input.now,
+    loggers,
+    httpFetcher: input.httpFetcher,
+    httpProxyClientFactory: input.httpProxyClientFactory,
+    emailTransportFactory: input.emailTransportFactory,
+  })
+  const kernel = createRuntimeKernel({
+    config: input.config,
+    definitions: definitionSet,
+    now: input.now,
+    runSourceUseCase,
+  })
 
   return {
     factsDb,
-    definitionSet,
     scheduler: createScheduler(loggers.scheduler),
+    runDueSourcesUseCase: kernel.runDueSourcesUseCase,
     queryRunsUseCase: new QueryRunsUseCase({
       sourceRunQueryService: createSourceRunQueryService(factsDb),
     }),
@@ -201,14 +218,6 @@ export function createProductionRuntimeServices(
       now: input.now,
       pruneFactsRepository: createPruneFactsRepository(factsDb),
     }),
-    runSourceUseCase: createProductionRunSourceUseCase({
-      config: input.config,
-      factsDb,
-      now: input.now,
-      loggers,
-      httpFetcher: input.httpFetcher,
-      httpProxyClientFactory: input.httpProxyClientFactory,
-      emailTransportFactory: input.emailTransportFactory,
-    }),
+    recoverInterruptedAttempts: () => markInterruptedAttempts(factsDb, input.now()),
   }
 }
