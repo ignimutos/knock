@@ -139,6 +139,10 @@ Deno.test('[contract] reader overview: 应按 source 返回最近快照并清理
   assertEquals(rust.sourceUrl, 'https://example.com/feed.xml')
   assertEquals(rust.lastRun?.runId, 'run-1')
   assertEquals(rust.feed?.title, 'Rust Feed')
+  assertEquals(rust.filter, undefined)
+  assertEquals(rust.deliveryIds, [])
+  assertEquals(rust.xqueryLocate, undefined)
+  assertEquals(rust.xqueryEntryId, undefined)
   assertEquals(
     rust.entries.map((entry) => entry.id),
     ['entry-2', 'entry-1'],

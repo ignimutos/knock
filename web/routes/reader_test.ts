@@ -10,10 +10,14 @@ const overview: ReaderOverview = {
       name: 'Rust Blog',
       enabled: true,
       schedule: '*/30 * * * *',
+      filter: '{{ title }}',
       parser: 'syndication',
       transport: 'http',
       sourceUrl: 'https://example.com/feed.xml',
+      xqueryLocate: undefined,
+      xqueryEntryId: undefined,
       deliveryCount: 1,
+      deliveryIds: ['telegram'],
       deliveryKinds: ['push'],
       lastRun: {
         runId: 'run-1',
@@ -68,6 +72,10 @@ Deno.test(
     assertStringIncludes(html, 'id="reader-entry-list"')
     assertStringIncludes(html, 'class="reader-entry-expanded"')
     assertStringIncludes(html, 'source archive')
+    assertStringIncludes(html, 'source 管理')
+    assertStringIncludes(html, '保存配置')
+    assertStringIncludes(html, '强制获取')
+    assertStringIncludes(html, '清空历史')
     assertStringIncludes(html, 'entry 阅读面')
     assertStringIncludes(html, '打开原文')
   },

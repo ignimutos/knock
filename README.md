@@ -512,9 +512,15 @@ sources:
 ## 网页调试页
 
 - 首页：`/`
+- Reader：`/reader`，浏览最近快照，并提供 source 常用管理动作：保存少量高频配置、强制获取、清空该 source 历史。
 - XQuery Playground：`/xquery`
 - Syndication Playground：`/syndication`
-- API：`POST /api/xquery/evaluate`、`POST /api/syndication/evaluate`
+- API：
+  - `POST /api/xquery/evaluate`
+  - `POST /api/syndication/evaluate`
+  - `POST /api/sources/update`
+  - `POST /api/sources/run`
+  - `POST /api/sources/clear`
 
 启动方式：
 

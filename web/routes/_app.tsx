@@ -729,6 +729,68 @@ html[data-theme="dark"] .xq-side-rail {
   border: 1px dashed rgba(112, 138, 182, 0.22);
   background: rgba(249, 251, 255, 0.72);
 }
+.reader-manager-panel {
+  display: grid;
+  gap: 16px;
+}
+.reader-manager-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.reader-manager-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.1;
+}
+.reader-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.reader-manager-wide {
+  grid-column: 1 / -1;
+}
+.reader-manager-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.reader-manager-deliveries {
+  display: grid;
+  gap: 8px;
+}
+.reader-manager-delivery-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.reader-manager-delivery-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.reader-manager-actions {
+  margin-top: 4px;
+}
+.reader-manager-message {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+.reader-manager-message.is-success {
+  border: 1px solid rgba(42, 106, 72, 0.22);
+  background: rgba(231, 246, 234, 0.9);
+  color: #2a6a48;
+}
+.reader-manager-message.is-error {
+  border: 1px solid rgba(138, 66, 52, 0.22);
+  background: rgba(252, 236, 231, 0.92);
+  color: #8a4234;
+}
 .reader-entry-item {
   display: grid;
   gap: 10px;

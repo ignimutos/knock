@@ -6,7 +6,7 @@ import type {
 } from '../../src/web/reader_overview.ts'
 
 function toBootstrapJson(overview: ReaderOverview): string {
-  return JSON.stringify(overview).replace(/</g, '\\u003c')
+  return JSON.stringify(overview).replace(/</g, '<')
 }
 
 function formatStatus(status: string | undefined): string {
@@ -74,6 +74,16 @@ function stripMarkup(value: string | undefined): string {
 
 function getInitialSource(overview: ReaderOverview): ReaderSourceOverview | undefined {
   return overview.sources[0]
+}
+
+function getAllDeliveryIds(overview: ReaderOverview): string[] {
+  return Array.from(new Set(overview.sources.flatMap((source) => source.deliveryIds))).sort(
+    (left, right) => left.localeCompare(right, 'en'),
+  )
+}
+
+function isSummarySource(source: ReaderSourceOverview | undefined): boolean {
+  return source?.transport === 'summary' || source?.parser === 'summary'
 }
 
 function SourceList(props: { sources: ReaderOverview['sources'] }) {
@@ -230,6 +240,211 @@ function FeedBanner(props: { source?: ReaderSourceOverview }) {
   )
 }
 
+function SourceManager(props: { source?: ReaderSourceOverview; allDeliveryIds: string[] }) {
+  if (!props.source) {
+    return (
+      <section
+        id="reader-manager"
+        class="panel reader-manager-panel"
+      >
+        <p class="reader-empty">还没有可管理的 source。</p>
+      </section>
+    )
+  }
+
+  const source = props.source
+  const summary = isSummarySource(source)
+  const showXqueryFields = !summary && source.parser === 'xquery'
+
+  return (
+    <section
+      id="reader-manager"
+      class="panel reader-manager-panel"
+    >
+      <div class="reader-manager-head">
+        <div>
+          <p class="reader-kicker">source 管理</p>
+          <h2
+            id="reader-manager-title"
+            class="reader-manager-title"
+          >
+            {source.id}
+          </h2>
+        </div>
+        <span class={`reader-state-badge is-${source.enabled ? 'enabled' : 'disabled'}`}>
+          {source.enabled ? '启用' : '停用'}
+        </span>
+      </div>
+
+      <div class="reader-manager-grid">
+        <div class="field">
+          <label htmlFor="reader-manager-name">显示名称</label>
+          <input
+            id="reader-manager-name"
+            class="input"
+            value={source.name}
+          />
+        </div>
+        <div class="field">
+          <label htmlFor="reader-manager-schedule">schedule</label>
+          <input
+            id="reader-manager-schedule"
+            class="input"
+            value={source.schedule ?? ''}
+          />
+        </div>
+        <div class="field">
+          <label htmlFor="reader-manager-transport">transport</label>
+          <select
+            id="reader-manager-transport"
+            class="input"
+            disabled={summary}
+            value={source.transport}
+          >
+            <option value="http">http</option>
+            <option value="byparr">byparr</option>
+            <option
+              value="summary"
+              disabled={!summary}
+            >
+              summary
+            </option>
+          </select>
+        </div>
+        <div class="field">
+          <label htmlFor="reader-manager-parser">parser</label>
+          <select
+            id="reader-manager-parser"
+            class="input"
+            disabled={summary}
+            value={source.parser}
+          >
+            <option value="syndication">syndication</option>
+            <option value="xquery">xquery</option>
+            <option
+              value="summary"
+              disabled={!summary}
+            >
+              summary
+            </option>
+          </select>
+        </div>
+        <div class="field reader-manager-wide">
+          <label htmlFor="reader-manager-target-url">目标 URL</label>
+          <input
+            id="reader-manager-target-url"
+            class="input"
+            value={source.sourceUrl ?? ''}
+            disabled={summary}
+          />
+        </div>
+        <div class="field reader-manager-wide">
+          <label htmlFor="reader-manager-filter">filter</label>
+          <textarea
+            id="reader-manager-filter"
+            class="textarea"
+          >
+            {source.filter ?? ''}
+          </textarea>
+        </div>
+        <div
+          id="reader-manager-xquery-fields"
+          class="reader-manager-xquery-fields reader-manager-wide"
+          hidden={!showXqueryFields}
+        >
+          <div class="reader-manager-grid">
+            <div class="field reader-manager-wide">
+              <label htmlFor="reader-manager-xquery-locate">xquery.locate</label>
+              <input
+                id="reader-manager-xquery-locate"
+                class="input"
+                value={source.xqueryLocate ?? ''}
+                disabled={!showXqueryFields}
+              />
+            </div>
+            <div class="field reader-manager-wide">
+              <label htmlFor="reader-manager-xquery-entry-id">xquery.entry.id</label>
+              <input
+                id="reader-manager-xquery-entry-id"
+                class="input"
+                value={source.xqueryEntryId ?? ''}
+                disabled={!showXqueryFields}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <label class="reader-manager-checkbox">
+        <input
+          id="reader-manager-enabled"
+          type="checkbox"
+          checked={source.enabled}
+        />
+        <span>启用该 source</span>
+      </label>
+
+      <div class="reader-manager-deliveries">
+        <p class="reader-kicker">deliveries</p>
+        <div
+          id="reader-manager-delivery-list"
+          class="reader-manager-delivery-list"
+        >
+          {props.allDeliveryIds.length === 0 ? (
+            <p class="reader-empty">当前没有可绑定 delivery。</p>
+          ) : (
+            props.allDeliveryIds.map((deliveryId) => (
+              <label class="reader-manager-delivery-item">
+                <input
+                  type="checkbox"
+                  data-delivery-id={deliveryId}
+                  checked={source.deliveryIds.includes(deliveryId)}
+                />
+                <span>{deliveryId}</span>
+              </label>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div class="toolbar reader-manager-actions">
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="reader-manager-save"
+        >
+          保存配置
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          id="reader-manager-run"
+        >
+          强制获取
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          id="reader-manager-clear"
+        >
+          清空历史
+        </button>
+      </div>
+
+      <p
+        id="reader-manager-message"
+        class="reader-manager-message is-success"
+        hidden
+      />
+      <p
+        id="reader-manager-error"
+        class="reader-manager-message is-error"
+        hidden
+      />
+    </section>
+  )
+}
+
 function EntryExpandedPanel(props: { entry: ReaderEntrySnapshot; expanded: boolean }) {
   const entry = props.entry
 
@@ -354,13 +569,49 @@ const readerPageScript = `(() => {
   const feedBanner = document.getElementById('reader-feed-banner')
   const entryList = document.getElementById('reader-entry-list')
   const summary = document.getElementById('reader-summary')
+  const managerPanel = document.getElementById('reader-manager')
+  const managerTitle = document.getElementById('reader-manager-title')
+  const managerName = document.getElementById('reader-manager-name')
+  const managerSchedule = document.getElementById('reader-manager-schedule')
+  const managerTransport = document.getElementById('reader-manager-transport')
+  const managerParser = document.getElementById('reader-manager-parser')
+  const managerTargetUrl = document.getElementById('reader-manager-target-url')
+  const managerFilter = document.getElementById('reader-manager-filter')
+  const managerXqueryFields = document.getElementById('reader-manager-xquery-fields')
+  const managerXqueryLocate = document.getElementById('reader-manager-xquery-locate')
+  const managerXqueryEntryId = document.getElementById('reader-manager-xquery-entry-id')
+  const managerEnabled = document.getElementById('reader-manager-enabled')
+  const managerDeliveryList = document.getElementById('reader-manager-delivery-list')
+  const managerSave = document.getElementById('reader-manager-save')
+  const managerRun = document.getElementById('reader-manager-run')
+  const managerClear = document.getElementById('reader-manager-clear')
+  const managerMessage = document.getElementById('reader-manager-message')
+  const managerError = document.getElementById('reader-manager-error')
 
   if (!(bootstrap instanceof HTMLScriptElement) ||
     !(sourceList instanceof HTMLElement) ||
     !(sourceCard instanceof HTMLElement) ||
     !(feedBanner instanceof HTMLElement) ||
     !(entryList instanceof HTMLElement) ||
-    !(summary instanceof HTMLElement)
+    !(summary instanceof HTMLElement) ||
+    !(managerPanel instanceof HTMLElement) ||
+    !(managerTitle instanceof HTMLElement) ||
+    !(managerName instanceof HTMLInputElement) ||
+    !(managerSchedule instanceof HTMLInputElement) ||
+    !(managerTransport instanceof HTMLSelectElement) ||
+    !(managerParser instanceof HTMLSelectElement) ||
+    !(managerTargetUrl instanceof HTMLInputElement) ||
+    !(managerFilter instanceof HTMLTextAreaElement) ||
+    !(managerXqueryFields instanceof HTMLElement) ||
+    !(managerXqueryLocate instanceof HTMLInputElement) ||
+    !(managerXqueryEntryId instanceof HTMLInputElement) ||
+    !(managerEnabled instanceof HTMLInputElement) ||
+    !(managerDeliveryList instanceof HTMLElement) ||
+    !(managerSave instanceof HTMLButtonElement) ||
+    !(managerRun instanceof HTMLButtonElement) ||
+    !(managerClear instanceof HTMLButtonElement) ||
+    !(managerMessage instanceof HTMLElement) ||
+    !(managerError instanceof HTMLElement)
   ) return
 
   let overview
@@ -370,6 +621,7 @@ const readerPageScript = `(() => {
     return
   }
 
+  const storageKey = 'knock.reader.sourceId'
   const sources = Array.isArray(overview?.sources) ? overview.sources : []
   let sourceIndex = 0
   let entryIndex = 0
@@ -415,6 +667,50 @@ const readerPageScript = `(() => {
   const getSource = () => sources[sourceIndex]
   const getEntries = () => Array.isArray(getSource()?.entries) ? getSource().entries : []
   const isEntryExpanded = (index) => entryIndex === index
+  const isSummarySource = (source) => source?.transport === 'summary' || source?.parser === 'summary'
+  const readStoredSourceId = () => {
+    try {
+      return sessionStorage.getItem(storageKey) || ''
+    } catch {
+      return ''
+    }
+  }
+  const storeSourceId = (sourceId) => {
+    try {
+      if (typeof sourceId === 'string' && sourceId !== '') {
+        sessionStorage.setItem(storageKey, sourceId)
+      } else {
+        sessionStorage.removeItem(storageKey)
+      }
+    } catch {
+      // ignore
+    }
+  }
+  const getDeliveryCheckboxes = () => {
+    return Array.from(managerDeliveryList.querySelectorAll('[data-delivery-id]')).filter((node) => node instanceof HTMLInputElement)
+  }
+  const clearManagerStatus = () => {
+    managerMessage.hidden = true
+    managerMessage.textContent = ''
+    managerError.hidden = true
+    managerError.textContent = ''
+  }
+  const showManagerMessage = (text) => {
+    managerMessage.hidden = false
+    managerMessage.textContent = text
+    managerError.hidden = true
+    managerError.textContent = ''
+  }
+  const showManagerError = (text) => {
+    managerError.hidden = false
+    managerError.textContent = text
+    managerMessage.hidden = true
+    managerMessage.textContent = ''
+  }
+  const setButtonState = (button, running, idleText, runningText) => {
+    button.disabled = running
+    button.textContent = running ? runningText : idleText
+  }
 
   const createRunBadge = (status) => {
     const badge = make('span', 'reader-run-badge is-' + (status || 'idle'), formatStatus(status))
@@ -436,6 +732,25 @@ const readerPageScript = `(() => {
   const focusSelectedEntry = () => {
     const active = entryList.querySelector('[data-entry-index="' + String(entryIndex) + '"]')
     if (active instanceof HTMLButtonElement) active.focus()
+  }
+
+  const syncManagerXqueryFields = (source) => {
+    const summarySource = isSummarySource(source)
+    const showXquery = !summarySource && managerParser.value === 'xquery'
+    managerXqueryFields.hidden = !showXquery
+    managerXqueryLocate.disabled = !showXquery
+    managerXqueryEntryId.disabled = !showXquery
+    managerTransport.disabled = summarySource
+    managerParser.disabled = summarySource
+    managerTargetUrl.disabled = summarySource
+    const summaryTransport = managerTransport.querySelector('option[value="summary"]')
+    if (summaryTransport instanceof HTMLOptionElement) {
+      summaryTransport.disabled = !summarySource
+    }
+    const summaryParser = managerParser.querySelector('option[value="summary"]')
+    if (summaryParser instanceof HTMLOptionElement) {
+      summaryParser.disabled = !summarySource
+    }
   }
 
   const renderSourceList = () => {
@@ -461,6 +776,7 @@ const readerPageScript = `(() => {
       button.addEventListener('click', () => {
         sourceIndex = index
         entryIndex = 0
+        storeSourceId(source.id)
         render()
         focusSelectedSource()
       })
@@ -537,6 +853,33 @@ const readerPageScript = `(() => {
     feedBanner.appendChild(head)
     feedBanner.appendChild(copy)
     feedBanner.appendChild(meta)
+  }
+
+  const renderManager = () => {
+    const source = getSource()
+    if (!source) {
+      managerPanel.hidden = true
+      return
+    }
+
+    managerPanel.hidden = false
+    managerTitle.textContent = source.id
+    managerName.value = source.name || source.id
+    managerSchedule.value = typeof source.schedule === 'string' ? source.schedule : ''
+    managerTransport.value = source.transport === 'byparr' ? 'byparr' : source.transport === 'summary' ? 'summary' : 'http'
+    managerParser.value = source.parser === 'xquery' ? 'xquery' : source.parser === 'summary' ? 'summary' : 'syndication'
+    managerTargetUrl.value = typeof source.sourceUrl === 'string' ? source.sourceUrl : ''
+    managerFilter.value = typeof source.filter === 'string' ? source.filter : ''
+    managerXqueryLocate.value = typeof source.xqueryLocate === 'string' ? source.xqueryLocate : ''
+    managerXqueryEntryId.value = typeof source.xqueryEntryId === 'string' ? source.xqueryEntryId : ''
+    managerEnabled.checked = Boolean(source.enabled)
+    const selectedDeliveryIds = Array.isArray(source.deliveryIds) ? source.deliveryIds : []
+    getDeliveryCheckboxes().forEach((input) => {
+      const deliveryId = input.dataset.deliveryId || ''
+      input.checked = selectedDeliveryIds.includes(deliveryId)
+    })
+    syncManagerXqueryFields(source)
+    clearManagerStatus()
   }
 
   const renderEntryList = () => {
@@ -627,8 +970,104 @@ const readerPageScript = `(() => {
     renderSourceList()
     renderSourceCard()
     renderFeedBanner()
+    renderManager()
     renderEntryList()
   }
+
+  const requestAction = async (path, payload) => {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(typeof body?.message === 'string' ? body.message : '请求失败')
+    }
+    return body
+  }
+
+  const buildManagerPayload = () => {
+    const source = getSource()
+    if (!source) return undefined
+    return {
+      sourceId: source.id,
+      name: managerName.value,
+      enabled: managerEnabled.checked,
+      schedule: managerSchedule.value,
+      filter: managerFilter.value,
+      deliveryIds: getDeliveryCheckboxes()
+        .filter((input) => input.checked)
+        .map((input) => input.dataset.deliveryId)
+        .filter((value) => typeof value === 'string' && value !== ''),
+      transport: managerTransport.value === 'byparr' ? 'byparr' : managerTransport.value === 'summary' ? 'summary' : 'http',
+      parser: managerParser.value === 'xquery' ? 'xquery' : managerParser.value === 'summary' ? 'summary' : 'syndication',
+      targetUrl: managerTargetUrl.value,
+      xqueryLocate: managerXqueryLocate.value,
+      xqueryEntryId: managerXqueryEntryId.value,
+    }
+  }
+
+  managerParser.addEventListener('change', () => {
+    syncManagerXqueryFields(getSource())
+  })
+
+  managerSave.addEventListener('click', async () => {
+    const source = getSource()
+    const payload = buildManagerPayload()
+    if (!source || !payload) return
+    clearManagerStatus()
+    setButtonState(managerSave, true, '保存配置', '保存中…')
+    try {
+      const result = await requestAction('/api/sources/update', payload)
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 配置已保存')
+      storeSourceId(source.id)
+      window.location.reload()
+    } catch (error) {
+      showManagerError(error instanceof Error ? error.message : '保存失败')
+    } finally {
+      setButtonState(managerSave, false, '保存配置', '保存中…')
+    }
+  })
+
+  managerRun.addEventListener('click', async () => {
+    const source = getSource()
+    if (!source) return
+    clearManagerStatus()
+    setButtonState(managerRun, true, '强制获取', '抓取中…')
+    try {
+      const result = await requestAction('/api/sources/run', { sourceId: source.id })
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 强制获取完成')
+      storeSourceId(source.id)
+      window.location.reload()
+    } catch (error) {
+      showManagerError(error instanceof Error ? error.message : '强制获取失败')
+    } finally {
+      setButtonState(managerRun, false, '强制获取', '抓取中…')
+    }
+  })
+
+  managerClear.addEventListener('click', async () => {
+    const source = getSource()
+    if (!source) return
+    if (!window.confirm('确认清空 source ' + source.id + ' 的历史吗？这不会删除 dedupe 记录。')) {
+      return
+    }
+    clearManagerStatus()
+    setButtonState(managerClear, true, '清空历史', '清理中…')
+    try {
+      const result = await requestAction('/api/sources/clear', { sourceId: source.id })
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 历史已清空')
+      storeSourceId(source.id)
+      window.location.reload()
+    } catch (error) {
+      showManagerError(error instanceof Error ? error.message : '清空历史失败')
+    } finally {
+      setButtonState(managerClear, false, '清空历史', '清理中…')
+    }
+  })
 
   document.addEventListener('keydown', (event) => {
     if (sources.length === 0) return
@@ -671,15 +1110,25 @@ const readerPageScript = `(() => {
     event.preventDefault()
     sourceIndex = Math.min(sources.length - 1, Math.max(0, sourceIndex + delta))
     entryIndex = -1
+    storeSourceId(getSource()?.id || '')
     render()
     focusSelectedSource()
   })
+
+  const preferredSourceId = readStoredSourceId()
+  if (preferredSourceId) {
+    const nextIndex = sources.findIndex((source) => source?.id === preferredSourceId)
+    if (nextIndex >= 0) {
+      sourceIndex = nextIndex
+    }
+  }
 
   render()
 })()`
 
 export default function ReaderPage(props: { overview: ReaderOverview }) {
   const source = getInitialSource(props.overview)
+  const allDeliveryIds = getAllDeliveryIds(props.overview)
 
   return (
     <AppShell
@@ -709,6 +1158,10 @@ export default function ReaderPage(props: { overview: ReaderOverview }) {
 
         <section class="reader-main-column">
           <FeedBanner source={source} />
+          <SourceManager
+            source={source}
+            allDeliveryIds={allDeliveryIds}
+          />
           <EntryList source={source} />
         </section>
       </section>

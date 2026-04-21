@@ -16,8 +16,13 @@ Deno.test('[contract] R05 scheduler: 同一 source 不允许重入', async () =>
       running -= 1
     })
 
-  await Promise.all([run(), run(), run()])
+  const results = await Promise.all([run(), run(), run()])
   assertEquals(maxRunning, 1)
+  assertEquals(
+    results.some((result) => result.started),
+    true,
+  )
+  assertEquals(results.filter((result) => result.started).length, 1)
 })
 
 Deno.test('[contract] R05 scheduler: 首次执行结束后允许同一 source 再次执行', async () => {

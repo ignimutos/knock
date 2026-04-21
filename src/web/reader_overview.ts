@@ -51,10 +51,14 @@ export interface ReaderSourceOverview {
   name: string
   enabled: boolean
   schedule?: string
+  filter?: string
   parser: 'syndication' | 'xquery' | 'summary'
   transport: 'http' | 'byparr' | 'summary'
   sourceUrl?: string
+  xqueryLocate?: string
+  xqueryEntryId?: string
   deliveryCount: number
+  deliveryIds: string[]
   deliveryKinds: Array<'file' | 'push' | 'email'>
   lastRun?: ReaderRunSummary
   feed?: ReaderFeedSnapshot
@@ -271,6 +275,18 @@ function getSourceUrl(source: ResolvedSourceConfig): string | undefined {
   return sanitizeSourceUrl(source.http?.url ?? source.byparr?.url)
 }
 
+function getXqueryLocate(source: ResolvedSourceConfig): string | undefined {
+  return typeof source.xquery?.locate === 'string' && source.xquery.locate.trim() !== ''
+    ? source.xquery.locate
+    : undefined
+}
+
+function getXqueryEntryId(source: ResolvedSourceConfig): string | undefined {
+  const entry = source.xquery?.entry
+  if (typeof entry === 'string') return undefined
+  return typeof entry?.id === 'string' && entry.id.trim() !== '' ? entry.id : undefined
+}
+
 function getDeliveryKind(delivery: ResolvedDeliveryConfig): 'file' | 'push' | 'email' {
   if (delivery.file) return 'file'
   if (delivery.push) return 'push'
@@ -335,10 +351,14 @@ export function buildReaderOverview(input: {
       name: source.name?.trim() || source.id,
       enabled: source.enabled,
       schedule: source.schedule,
+      filter: source.filter,
       parser: getParser(source),
       transport: getTransport(source),
       sourceUrl: getSourceUrl(source),
+      xqueryLocate: getXqueryLocate(source),
+      xqueryEntryId: getXqueryEntryId(source),
       deliveryCount: source.deliveries.length,
+      deliveryIds: source.deliveries.map((delivery) => delivery.deliveryId),
       deliveryKinds: Array.from(new Set(source.deliveries.map(getDeliveryKind))),
       lastRun: lastRunRow ? toLastRun(lastRunRow) : undefined,
       feed: lastRunRow ? parseFeedSnapshot(lastRunRow.feedJson) : undefined,

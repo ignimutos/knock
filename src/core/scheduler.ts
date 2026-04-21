@@ -5,13 +5,17 @@ import type { Logger } from './logger.ts'
  */
 const runningSourceIds = new Set<string>()
 
+export interface SchedulerRunResult {
+  started: boolean
+}
+
 export interface Scheduler {
-  runSource(sourceId: string, task: () => Promise<void>): Promise<void>
+  runSource(sourceId: string, task: () => Promise<void>): Promise<SchedulerRunResult>
 }
 
 export function createScheduler(logger?: Logger): Scheduler {
   return {
-    async runSource(sourceId: string, task: () => Promise<void>): Promise<void> {
+    async runSource(sourceId: string, task: () => Promise<void>): Promise<SchedulerRunResult> {
       if (runningSourceIds.has(sourceId)) {
         logger?.warn('跳过重入执行', {
           'scheduler.operation': 'run_source',
@@ -19,12 +23,13 @@ export function createScheduler(logger?: Logger): Scheduler {
           'source.id': sourceId,
           'scheduler.reason': 'reentry_inflight',
         })
-        return
+        return { started: false }
       }
 
       runningSourceIds.add(sourceId)
       try {
         await task()
+        return { started: true }
       } finally {
         runningSourceIds.delete(sourceId)
       }

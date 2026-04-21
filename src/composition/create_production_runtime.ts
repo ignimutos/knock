@@ -8,12 +8,17 @@ import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
 import { createProductionRuntimeServices } from './production_runtime_support.ts'
 
+export interface ProductionRuntimeRunResult {
+  started: boolean
+}
+
 export interface ProductionRuntime {
   runDueSourcesUseCase: Pick<RunDueSourcesUseCase, 'execute'>
   queryRunsUseCase: QueryRunsUseCase
   pruneFactsUseCase: PruneFactsUseCase
   recoverInterruptedAttempts: () => Promise<void>
-  runImmediate: () => Promise<void>
+  runImmediate: () => Promise<ProductionRuntimeRunResult>
+  runSourceNow: (sourceId: string) => Promise<ProductionRuntimeRunResult>
   enterDaemon: () => Promise<void>
   stop: () => void
 }
@@ -58,9 +63,18 @@ export function createProductionRuntime(
     pruneFactsUseCase: services.pruneFactsUseCase,
     recoverInterruptedAttempts: services.recoverInterruptedAttempts,
     async runImmediate() {
-      await services.scheduler.runSource('__run_due_sources__', async () => {
+      return await services.scheduler.runSource('__run_due_sources__', async () => {
         await runDueSourcesUseCase.execute({
           trigger: 'immediate',
+          scheduledAt: now(),
+        })
+      })
+    },
+    async runSourceNow(sourceId: string) {
+      return await services.scheduler.runSource(sourceId, async () => {
+        await runDueSourcesUseCase.execute({
+          sourceId,
+          trigger: 'manual',
           scheduledAt: now(),
         })
       })
