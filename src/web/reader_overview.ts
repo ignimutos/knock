@@ -4,9 +4,14 @@ import type {
   AppConfigResolved,
   ResolvedDeliveryConfig,
   ResolvedSourceConfig,
+  SourceDeliveryOverride,
 } from '../config/types.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
-import { loadCompiledConfig } from '../config/load_compiled_config.ts'
+import {
+  findConfigFile,
+  loadCompiledConfig,
+  parseRawConfigDocument,
+} from '../config/load_compiled_config.ts'
 import { pipelineItems, sourceRuns } from '../infrastructure/sqlite/schema.ts'
 
 export interface ReaderRunSummary {
@@ -60,13 +65,20 @@ export interface ReaderSourceOverview {
   deliveryCount: number
   deliveryIds: string[]
   deliveryKinds: Array<'file' | 'push' | 'email'>
+  deliveryOverrides: Record<string, SourceDeliveryOverride>
   lastRun?: ReaderRunSummary
   feed?: ReaderFeedSnapshot
   entries: ReaderEntrySnapshot[]
 }
 
+export interface ReaderDeliveryCatalogItem {
+  id: string
+  kind: 'file' | 'push' | 'email'
+}
+
 export interface ReaderOverview {
   sources: ReaderSourceOverview[]
+  deliveries: ReaderDeliveryCatalogItem[]
   issue?: string
 }
 
@@ -97,14 +109,22 @@ function normalizeReaderIssue(error: unknown): string {
   return `读取 Reader 数据失败：${message}`
 }
 
-async function loadReaderConfig(): Promise<AppConfigResolved> {
+async function loadReaderConfig(): Promise<{
+  config: AppConfigResolved
+  rawDocument: Record<string, unknown>
+}> {
   const lookup = getReaderConfigLookup()
   const loaded = await loadCompiledConfig({
     runtimeDir: lookup.runtimeDir,
     configPath: lookup.configPath,
     envMode: 'preserve_unknown',
   })
-  return loaded.config
+  const configPath = lookup.configPath ?? (await findConfigFile(lookup.runtimeDir))
+  const rawDocument = parseRawConfigDocument(await Deno.readTextFile(configPath))
+  return {
+    config: loaded.config,
+    rawDocument,
+  }
 }
 
 function parseJsonRecord(
@@ -287,11 +307,53 @@ function getXqueryEntryId(source: ResolvedSourceConfig): string | undefined {
   return typeof entry?.id === 'string' && entry.id.trim() !== '' ? entry.id : undefined
 }
 
-function getDeliveryKind(delivery: ResolvedDeliveryConfig): 'file' | 'push' | 'email' {
+function getDeliveryKind(
+  delivery:
+    | Pick<ResolvedDeliveryConfig, 'file' | 'push' | 'email'>
+    | { file?: unknown; push?: unknown; email?: unknown },
+): 'file' | 'push' | 'email' {
   if (delivery.file) return 'file'
   if (delivery.push) return 'push'
   if (delivery.email) return 'email'
-  throw new Error(`delivery 缺少可识别类型: ${delivery.id}`)
+  throw new Error('delivery 缺少可识别类型')
+}
+
+function getRawSourceDeliveryOverrides(
+  rawDocument: Record<string, unknown>,
+  sourceId: string,
+): Record<string, SourceDeliveryOverride> {
+  const sources = rawDocument.sources
+  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) {
+    return {}
+  }
+
+  const source = (sources as Record<string, unknown>)[sourceId]
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return {}
+  }
+
+  const deliveries = (source as Record<string, unknown>).deliveries
+  if (!deliveries || typeof deliveries !== 'object' || Array.isArray(deliveries)) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(deliveries).map(([deliveryId, override]) => {
+      if (!override || typeof override !== 'object' || Array.isArray(override)) {
+        return [deliveryId, {}]
+      }
+      return [deliveryId, structuredClone(override) as SourceDeliveryOverride]
+    }),
+  )
+}
+
+function getDeliveryCatalog(config: AppConfigResolved): ReaderDeliveryCatalogItem[] {
+  return config.deliveries
+    .filter((delivery) => delivery.enabled !== false)
+    .map((delivery) => ({
+      id: delivery.id,
+      kind: getDeliveryKind(delivery),
+    }))
 }
 
 function toLastRun(row: {
@@ -312,6 +374,7 @@ function toLastRun(row: {
 
 export function buildReaderOverview(input: {
   config: AppConfigResolved
+  rawDocument: Record<string, unknown>
   factsDb: FactsDbClient
 }): ReaderOverview {
   const sources = input.config.sources.map((source) => {
@@ -360,25 +423,34 @@ export function buildReaderOverview(input: {
       deliveryCount: source.deliveries.length,
       deliveryIds: source.deliveries.map((delivery) => delivery.deliveryId),
       deliveryKinds: Array.from(new Set(source.deliveries.map(getDeliveryKind))),
+      deliveryOverrides: getRawSourceDeliveryOverrides(input.rawDocument, source.id),
       lastRun: lastRunRow ? toLastRun(lastRunRow) : undefined,
       feed: lastRunRow ? parseFeedSnapshot(lastRunRow.feedJson) : undefined,
       entries: sortEntries(entryRows.map(parseEntrySnapshot)).slice(0, 80),
     } satisfies ReaderSourceOverview
   })
 
-  return { sources }
+  return {
+    sources,
+    deliveries: getDeliveryCatalog(input.config),
+  }
 }
 
 export async function loadReaderOverview(): Promise<ReaderOverview> {
   let factsDb: FactsDbClient | undefined
 
   try {
-    const config = await loadReaderConfig()
-    factsDb = createFactsDbClient({ sqlite: config.sqlite })
-    return await buildReaderOverview({ config, factsDb })
+    const loaded = await loadReaderConfig()
+    factsDb = createFactsDbClient({ sqlite: loaded.config.sqlite })
+    return await buildReaderOverview({
+      config: loaded.config,
+      rawDocument: loaded.rawDocument,
+      factsDb,
+    })
   } catch (error) {
     return {
       sources: [],
+      deliveries: [],
       issue: normalizeReaderIssue(error),
     }
   } finally {

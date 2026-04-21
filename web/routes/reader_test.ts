@@ -19,6 +19,13 @@ const overview: ReaderOverview = {
       deliveryCount: 1,
       deliveryIds: ['telegram'],
       deliveryKinds: ['push'],
+      deliveryOverrides: {
+        telegram: {
+          payload: {
+            text: '{{ entry.title }}',
+          },
+        },
+      },
       lastRun: {
         runId: 'run-1',
         status: 'success',
@@ -57,6 +64,12 @@ const overview: ReaderOverview = {
       ],
     },
   ],
+  deliveries: [
+    {
+      id: 'telegram',
+      kind: 'push',
+    },
+  ],
 }
 
 Deno.test(
@@ -76,6 +89,8 @@ Deno.test(
     assertStringIncludes(html, '保存配置')
     assertStringIncludes(html, '强制获取')
     assertStringIncludes(html, '清空历史')
+    assertStringIncludes(html, 'payload override (JSON)')
+    assertStringIncludes(html, '确认清空历史')
     assertStringIncludes(html, 'entry 阅读面')
     assertStringIncludes(html, '打开原文')
   },

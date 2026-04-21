@@ -5,7 +5,7 @@ import { createFactsDbClient } from '../../db/client.ts'
 import { insertPipelineItem } from '../../infrastructure/sqlite/item_repository.ts'
 import { insertSourceRun } from '../../infrastructure/sqlite/run_repository.ts'
 
-const CONFIG_YML = `sqlite:\n  path: facts.db\nlogging:\n  level: info\ndeliveries:\n  telegram:\n    push:\n      http:\n        url: https://example.com/webhook\n      request:\n        type: body\n        payload:\n          text: '{{ entry.title }}'\nsources:\n  rust:\n    name: Rust Blog\n    enabled: true\n    schedule: '*/30 * * * *'\n    http:\n      url: https://example.com/feed.xml\n    syndication: {}\n    deliveries:\n      telegram: {}\n`
+const CONFIG_YML = `sqlite:\n  path: facts.db\nlogging:\n  level: info\ndeliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\n  telegram:\n    push:\n      http:\n        url: https://example.com/webhook\n      request:\n        type: body\n        payload:\n          text: '{{ entry.title }}'\nsources:\n  rust:\n    name: Rust Blog\n    enabled: true\n    schedule: '*/30 * * * *'\n    http:\n      url: https://example.com/feed.xml\n    syndication: {}\n    deliveries:\n      local:\n        content: '{{ entry.title }}'\n      telegram: {}\n`
 
 async function withRuntimeDir(fn: (runtimeDir: string) => Promise<void>) {
   const runtimeDir = await Deno.makeTempDir()
@@ -34,7 +34,17 @@ Deno.test(
         enabled: true,
         schedule: '0 * * * *',
         filter: '{{ title }}',
-        deliveryIds: ['telegram'],
+        deliveryIds: ['local', 'telegram'],
+        deliveryOverrides: {
+          local: {
+            content: '{{ entry.title }}\\n\\n{{ entry.link }}',
+          },
+          telegram: {
+            payload: {
+              text: '{{ entry.title }} => {{ entry.link }}',
+            },
+          },
+        },
         transport: 'http',
         parser: 'xquery',
         targetUrl: 'https://example.com/releases',
@@ -52,7 +62,7 @@ Deno.test(
             filter?: string
             http?: { url?: string }
             xquery?: { locate?: string; entry?: { id?: string } }
-            deliveries?: Record<string, unknown>
+            deliveries?: Record<string, { content?: string; payload?: { text?: string } }>
           }
         >
       }
@@ -63,7 +73,10 @@ Deno.test(
       assertEquals(rust?.http?.url, 'https://example.com/releases')
       assertEquals(rust?.xquery?.locate, '//article')
       assertEquals(rust?.xquery?.entry?.id, 'string(@data-id)')
-      assertEquals(typeof rust?.deliveries?.telegram, 'object')
+      assertEquals(
+        rust?.deliveries?.telegram?.payload?.text,
+        '{{ entry.title }} => {{ entry.link }}',
+      )
     })
   },
 )
@@ -166,6 +179,7 @@ Deno.test('[contract] source management: runSourceNow 对停用 source 应返回
         schedule: '*/30 * * * *',
         filter: '',
         deliveryIds: ['telegram'],
+        deliveryOverrides: {},
         transport: 'http',
         parser: 'syndication',
         targetUrl: 'https://example.com/feed.xml',

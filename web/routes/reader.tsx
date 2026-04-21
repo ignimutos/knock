@@ -1,12 +1,14 @@
 import { AppShell } from '../components/layout/app_shell.tsx'
 import type {
+  ReaderDeliveryCatalogItem,
   ReaderEntrySnapshot,
   ReaderOverview,
   ReaderSourceOverview,
 } from '../../src/web/reader_overview.ts'
+import type { SourceDeliveryOverride } from '../../src/config/types.ts'
 
 function toBootstrapJson(overview: ReaderOverview): string {
-  return JSON.stringify(overview).replace(/</g, '<')
+  return JSON.stringify(overview).replace(/</g, '\\u003c')
 }
 
 function formatStatus(status: string | undefined): string {
@@ -76,14 +78,37 @@ function getInitialSource(overview: ReaderOverview): ReaderSourceOverview | unde
   return overview.sources[0]
 }
 
-function getAllDeliveryIds(overview: ReaderOverview): string[] {
-  return Array.from(new Set(overview.sources.flatMap((source) => source.deliveryIds))).sort(
-    (left, right) => left.localeCompare(right, 'en'),
-  )
-}
-
 function isSummarySource(source: ReaderSourceOverview | undefined): boolean {
   return source?.transport === 'summary' || source?.parser === 'summary'
+}
+
+function getFileOverrideText(override: SourceDeliveryOverride | undefined): string {
+  return override && 'content' in override && typeof override.content === 'string'
+    ? override.content
+    : ''
+}
+
+function getPayloadOverrideText(override: SourceDeliveryOverride | undefined): string {
+  return override && 'payload' in override && override.payload !== undefined
+    ? JSON.stringify(override.payload, null, 2)
+    : ''
+}
+
+function getMessageOverrideText(override: SourceDeliveryOverride | undefined): string {
+  return override && 'message' in override && override.message !== undefined
+    ? JSON.stringify(override.message, null, 2)
+    : ''
+}
+
+function deliveryOverrideLabel(kind: ReaderDeliveryCatalogItem['kind']): string {
+  switch (kind) {
+    case 'file':
+      return 'content override'
+    case 'push':
+      return 'payload override (JSON)'
+    default:
+      return 'message override (JSON)'
+  }
 }
 
 function SourceList(props: { sources: ReaderOverview['sources'] }) {
@@ -240,7 +265,56 @@ function FeedBanner(props: { source?: ReaderSourceOverview }) {
   )
 }
 
-function SourceManager(props: { source?: ReaderSourceOverview; allDeliveryIds: string[] }) {
+function DeliveryOverrideEditor(props: {
+  delivery: ReaderDeliveryCatalogItem
+  source: ReaderSourceOverview
+}) {
+  const checked = props.source.deliveryIds.includes(props.delivery.id)
+  const override = props.source.deliveryOverrides[props.delivery.id]
+
+  return (
+    <div class="reader-delivery-block">
+      <label class={`reader-check reader-delivery-toggle${checked ? ' is-checked' : ''}`}>
+        <input
+          type="checkbox"
+          class="reader-check-input"
+          data-delivery-id={props.delivery.id}
+          checked={checked}
+        />
+        <span class="reader-check-ui" />
+        <span class="reader-check-copy">
+          <span class="reader-check-label">{props.delivery.id}</span>
+          <span class="reader-check-meta">{props.delivery.kind}</span>
+        </span>
+      </label>
+      <div
+        class="reader-delivery-editor"
+        data-delivery-editor={props.delivery.id}
+        data-delivery-kind={props.delivery.kind}
+        hidden={!checked}
+      >
+        <label class="field reader-manager-wide">
+          <span>{deliveryOverrideLabel(props.delivery.kind)}</span>
+          <textarea
+            class="textarea reader-delivery-textarea"
+            data-delivery-field={props.delivery.id}
+          >
+            {props.delivery.kind === 'file'
+              ? getFileOverrideText(override)
+              : props.delivery.kind === 'push'
+                ? getPayloadOverrideText(override)
+                : getMessageOverrideText(override)}
+          </textarea>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function SourceManager(props: {
+  source?: ReaderSourceOverview
+  allDeliveries: ReaderOverview['deliveries']
+}) {
   if (!props.source) {
     return (
       <section
@@ -375,13 +449,17 @@ function SourceManager(props: { source?: ReaderSourceOverview; allDeliveryIds: s
         </div>
       </div>
 
-      <label class="reader-manager-checkbox">
+      <label class={`reader-check reader-manager-enabled${source.enabled ? ' is-checked' : ''}`}>
         <input
           id="reader-manager-enabled"
           type="checkbox"
+          class="reader-check-input"
           checked={source.enabled}
         />
-        <span>启用该 source</span>
+        <span class="reader-check-ui" />
+        <span class="reader-check-copy">
+          <span class="reader-check-label">启用该 source</span>
+        </span>
       </label>
 
       <div class="reader-manager-deliveries">
@@ -390,18 +468,14 @@ function SourceManager(props: { source?: ReaderSourceOverview; allDeliveryIds: s
           id="reader-manager-delivery-list"
           class="reader-manager-delivery-list"
         >
-          {props.allDeliveryIds.length === 0 ? (
+          {props.allDeliveries.length === 0 ? (
             <p class="reader-empty">当前没有可绑定 delivery。</p>
           ) : (
-            props.allDeliveryIds.map((deliveryId) => (
-              <label class="reader-manager-delivery-item">
-                <input
-                  type="checkbox"
-                  data-delivery-id={deliveryId}
-                  checked={source.deliveryIds.includes(deliveryId)}
-                />
-                <span>{deliveryId}</span>
-              </label>
+            props.allDeliveries.map((delivery) => (
+              <DeliveryOverrideEditor
+                delivery={delivery}
+                source={source}
+              />
             ))
           )}
         </div>
@@ -441,6 +515,47 @@ function SourceManager(props: { source?: ReaderSourceOverview; allDeliveryIds: s
         class="reader-manager-message is-error"
         hidden
       />
+
+      <div
+        id="reader-confirm-modal"
+        class="reader-modal-shell"
+        hidden
+      >
+        <div
+          class="reader-modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reader-confirm-title"
+        >
+          <p class="reader-kicker">确认操作</p>
+          <h3
+            id="reader-confirm-title"
+            class="reader-modal-title"
+          >
+            确认清空历史
+          </h3>
+          <p
+            id="reader-confirm-body"
+            class="reader-modal-copy"
+          />
+          <div class="toolbar reader-modal-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="reader-confirm-cancel"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="reader-confirm-confirm"
+            >
+              确认
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   )
 }
@@ -581,12 +696,16 @@ const readerPageScript = `(() => {
   const managerXqueryLocate = document.getElementById('reader-manager-xquery-locate')
   const managerXqueryEntryId = document.getElementById('reader-manager-xquery-entry-id')
   const managerEnabled = document.getElementById('reader-manager-enabled')
-  const managerDeliveryList = document.getElementById('reader-manager-delivery-list')
   const managerSave = document.getElementById('reader-manager-save')
   const managerRun = document.getElementById('reader-manager-run')
   const managerClear = document.getElementById('reader-manager-clear')
   const managerMessage = document.getElementById('reader-manager-message')
   const managerError = document.getElementById('reader-manager-error')
+  const confirmModal = document.getElementById('reader-confirm-modal')
+  const confirmTitle = document.getElementById('reader-confirm-title')
+  const confirmBody = document.getElementById('reader-confirm-body')
+  const confirmCancel = document.getElementById('reader-confirm-cancel')
+  const confirmConfirm = document.getElementById('reader-confirm-confirm')
 
   if (!(bootstrap instanceof HTMLScriptElement) ||
     !(sourceList instanceof HTMLElement) ||
@@ -606,25 +725,31 @@ const readerPageScript = `(() => {
     !(managerXqueryLocate instanceof HTMLInputElement) ||
     !(managerXqueryEntryId instanceof HTMLInputElement) ||
     !(managerEnabled instanceof HTMLInputElement) ||
-    !(managerDeliveryList instanceof HTMLElement) ||
     !(managerSave instanceof HTMLButtonElement) ||
     !(managerRun instanceof HTMLButtonElement) ||
     !(managerClear instanceof HTMLButtonElement) ||
     !(managerMessage instanceof HTMLElement) ||
-    !(managerError instanceof HTMLElement)
+    !(managerError instanceof HTMLElement) ||
+    !(confirmModal instanceof HTMLElement) ||
+    !(confirmTitle instanceof HTMLElement) ||
+    !(confirmBody instanceof HTMLElement) ||
+    !(confirmCancel instanceof HTMLButtonElement) ||
+    !(confirmConfirm instanceof HTMLButtonElement)
   ) return
 
   let overview
   try {
-    overview = JSON.parse(bootstrap.textContent || '{"sources": []}')
+    overview = JSON.parse(bootstrap.textContent || '{"sources": [], "deliveries": []}')
   } catch {
     return
   }
 
   const storageKey = 'knock.reader.sourceId'
   const sources = Array.isArray(overview?.sources) ? overview.sources : []
+  const deliveries = Array.isArray(overview?.deliveries) ? overview.deliveries : []
   let sourceIndex = 0
   let entryIndex = 0
+  let confirmResolver = undefined
 
   const stripMarkup = (value) => {
     if (typeof value !== 'string' || value.trim() === '') return ''
@@ -663,6 +788,13 @@ const readerPageScript = `(() => {
     if (text !== undefined) node.textContent = text
     return node
   }
+  const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+  const escapeAttr = (value) => {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(value)
+    }
+    return value.replace(/"/g, '\\"')
+  }
 
   const getSource = () => sources[sourceIndex]
   const getEntries = () => Array.isArray(getSource()?.entries) ? getSource().entries : []
@@ -687,8 +819,11 @@ const readerPageScript = `(() => {
     }
   }
   const getDeliveryCheckboxes = () => {
-    return Array.from(managerDeliveryList.querySelectorAll('[data-delivery-id]')).filter((node) => node instanceof HTMLInputElement)
+    return Array.from(managerPanel.querySelectorAll('[data-delivery-id]')).filter((node) => node instanceof HTMLInputElement)
   }
+  const getDeliveryEditor = (deliveryId) => managerPanel.querySelector('[data-delivery-editor="' + escapeAttr(deliveryId) + '"]')
+  const getDeliveryField = (deliveryId) => managerPanel.querySelector('[data-delivery-field="' + escapeAttr(deliveryId) + '"]')
+  const getDeliveryToggle = (deliveryId) => managerPanel.querySelector('[data-delivery-toggle="' + escapeAttr(deliveryId) + '"]')
   const clearManagerStatus = () => {
     managerMessage.hidden = true
     managerMessage.textContent = ''
@@ -711,6 +846,35 @@ const readerPageScript = `(() => {
     button.disabled = running
     button.textContent = running ? runningText : idleText
   }
+  const closeConfirm = (accepted) => {
+    confirmModal.hidden = true
+    if (confirmResolver) {
+      const resolve = confirmResolver
+      confirmResolver = undefined
+      resolve(accepted)
+    }
+  }
+  const askConfirm = (title, body, confirmText) => {
+    if (confirmResolver) {
+      closeConfirm(false)
+    }
+    confirmTitle.textContent = title
+    confirmBody.textContent = body
+    confirmConfirm.textContent = confirmText
+    confirmModal.hidden = false
+    confirmCancel.focus()
+    return new Promise((resolve) => {
+      confirmResolver = resolve
+    })
+  }
+
+  confirmCancel.addEventListener('click', () => closeConfirm(false))
+  confirmConfirm.addEventListener('click', () => closeConfirm(true))
+  confirmModal.addEventListener('click', (event) => {
+    if (event.target === confirmModal) {
+      closeConfirm(false)
+    }
+  })
 
   const createRunBadge = (status) => {
     const badge = make('span', 'reader-run-badge is-' + (status || 'idle'), formatStatus(status))
@@ -732,6 +896,44 @@ const readerPageScript = `(() => {
   const focusSelectedEntry = () => {
     const active = entryList.querySelector('[data-entry-index="' + String(entryIndex) + '"]')
     if (active instanceof HTMLButtonElement) active.focus()
+  }
+
+  const renderDeliveryOverrides = (source) => {
+    const selectedDeliveryIds = Array.isArray(source?.deliveryIds) ? source.deliveryIds : []
+    const overrides = isRecord(source?.deliveryOverrides) ? source.deliveryOverrides : {}
+
+    getDeliveryCheckboxes().forEach((input) => {
+      const deliveryId = input.dataset.deliveryId || ''
+      const editor = getDeliveryEditor(deliveryId)
+      const field = getDeliveryField(deliveryId)
+      const checked = selectedDeliveryIds.includes(deliveryId)
+      input.checked = checked
+      if (editor instanceof HTMLElement) {
+        editor.hidden = !checked
+      }
+      const toggle = getDeliveryToggle(deliveryId)
+      if (toggle instanceof HTMLElement) {
+        toggle.classList.toggle('is-checked', checked)
+      }
+      if (!(field instanceof HTMLTextAreaElement) || !(editor instanceof HTMLElement)) {
+        return
+      }
+      const kind = editor.dataset.deliveryKind
+      const override = overrides[deliveryId]
+      if (kind === 'file') {
+        field.value = isRecord(override) && typeof override.content === 'string' ? override.content : ''
+        return
+      }
+      if (kind === 'push') {
+        field.value = isRecord(override) && 'payload' in override && override.payload !== undefined
+          ? JSON.stringify(override.payload, null, 2)
+          : ''
+        return
+      }
+      field.value = isRecord(override) && 'message' in override && override.message !== undefined
+        ? JSON.stringify(override.message, null, 2)
+        : ''
+    })
   }
 
   const syncManagerXqueryFields = (source) => {
@@ -873,11 +1075,11 @@ const readerPageScript = `(() => {
     managerXqueryLocate.value = typeof source.xqueryLocate === 'string' ? source.xqueryLocate : ''
     managerXqueryEntryId.value = typeof source.xqueryEntryId === 'string' ? source.xqueryEntryId : ''
     managerEnabled.checked = Boolean(source.enabled)
-    const selectedDeliveryIds = Array.isArray(source.deliveryIds) ? source.deliveryIds : []
-    getDeliveryCheckboxes().forEach((input) => {
-      const deliveryId = input.dataset.deliveryId || ''
-      input.checked = selectedDeliveryIds.includes(deliveryId)
-    })
+    const enabledToggle = managerEnabled.closest('.reader-check')
+    if (enabledToggle instanceof HTMLElement) {
+      enabledToggle.classList.toggle('is-checked', managerEnabled.checked)
+    }
+    renderDeliveryOverrides(source)
     syncManagerXqueryFields(source)
     clearManagerStatus()
   }
@@ -989,6 +1191,38 @@ const readerPageScript = `(() => {
     return body
   }
 
+  const buildDeliveryOverrides = () => {
+    const overrides = {}
+    getDeliveryCheckboxes()
+      .filter((input) => input.checked)
+      .forEach((input) => {
+        const deliveryId = input.dataset.deliveryId || ''
+        const editor = getDeliveryEditor(deliveryId)
+        const field = getDeliveryField(deliveryId)
+        if (!(editor instanceof HTMLElement) || !(field instanceof HTMLTextAreaElement)) {
+          overrides[deliveryId] = {}
+          return
+        }
+        const raw = field.value.trim()
+        const kind = editor.dataset.deliveryKind
+        if (kind === 'file') {
+          overrides[deliveryId] = raw === '' ? {} : { content: field.value }
+          return
+        }
+        if (raw === '') {
+          overrides[deliveryId] = {}
+          return
+        }
+        try {
+          const parsed = JSON.parse(raw)
+          overrides[deliveryId] = kind === 'push' ? { payload: parsed } : { message: parsed }
+        } catch {
+          throw new Error(deliveryId + ' override 必须是合法 JSON')
+        }
+      })
+    return overrides
+  }
+
   const buildManagerPayload = () => {
     const source = getSource()
     if (!source) return undefined
@@ -1002,16 +1236,48 @@ const readerPageScript = `(() => {
         .filter((input) => input.checked)
         .map((input) => input.dataset.deliveryId)
         .filter((value) => typeof value === 'string' && value !== ''),
-      transport: managerTransport.value === 'byparr' ? 'byparr' : managerTransport.value === 'summary' ? 'summary' : 'http',
-      parser: managerParser.value === 'xquery' ? 'xquery' : managerParser.value === 'summary' ? 'summary' : 'syndication',
+      deliveryOverrides: buildDeliveryOverrides(),
+      transport: managerTransport.value === 'byparr'
+        ? 'byparr'
+        : managerTransport.value === 'summary'
+          ? 'summary'
+          : 'http',
+      parser: managerParser.value === 'xquery'
+        ? 'xquery'
+        : managerParser.value === 'summary'
+          ? 'summary'
+          : 'syndication',
       targetUrl: managerTargetUrl.value,
       xqueryLocate: managerXqueryLocate.value,
       xqueryEntryId: managerXqueryEntryId.value,
     }
   }
 
+  managerEnabled.addEventListener('change', () => {
+    const toggle = managerEnabled.closest('.reader-check')
+    if (toggle instanceof HTMLElement) {
+      toggle.classList.toggle('is-checked', managerEnabled.checked)
+    }
+  })
+
   managerParser.addEventListener('change', () => {
     syncManagerXqueryFields(getSource())
+  })
+
+  managerPanel.addEventListener('change', (event) => {
+    const target = event.target
+    if (!(target instanceof HTMLInputElement) || target.dataset.deliveryId === undefined) {
+      return
+    }
+    const deliveryId = target.dataset.deliveryId
+    const editor = getDeliveryEditor(deliveryId)
+    if (editor instanceof HTMLElement) {
+      editor.hidden = !target.checked
+    }
+    const toggle = getDeliveryToggle(deliveryId)
+    if (toggle instanceof HTMLElement) {
+      toggle.classList.toggle('is-checked', target.checked)
+    }
   })
 
   managerSave.addEventListener('click', async () => {
@@ -1052,7 +1318,12 @@ const readerPageScript = `(() => {
   managerClear.addEventListener('click', async () => {
     const source = getSource()
     if (!source) return
-    if (!window.confirm('确认清空 source ' + source.id + ' 的历史吗？这不会删除 dedupe 记录。')) {
+    const confirmed = await askConfirm(
+      '确认清空历史',
+      '确认清空 source ' + source.id + ' 的历史吗？这不会删除 dedupe 记录。',
+      '确认清空',
+    )
+    if (!confirmed) {
       return
     }
     clearManagerStatus()
@@ -1070,9 +1341,20 @@ const readerPageScript = `(() => {
   })
 
   document.addEventListener('keydown', (event) => {
+    if (!confirmModal.hidden && event.key === 'Escape') {
+      event.preventDefault()
+      closeConfirm(false)
+      return
+    }
+
     if (sources.length === 0) return
     const target = event.target
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) {
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    ) {
       return
     }
 
@@ -1128,7 +1410,6 @@ const readerPageScript = `(() => {
 
 export default function ReaderPage(props: { overview: ReaderOverview }) {
   const source = getInitialSource(props.overview)
-  const allDeliveryIds = getAllDeliveryIds(props.overview)
 
   return (
     <AppShell
@@ -1160,7 +1441,7 @@ export default function ReaderPage(props: { overview: ReaderOverview }) {
           <FeedBanner source={source} />
           <SourceManager
             source={source}
-            allDeliveryIds={allDeliveryIds}
+            allDeliveries={props.overview.deliveries}
           />
           <EntryList source={source} />
         </section>

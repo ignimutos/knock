@@ -752,26 +752,72 @@ html[data-theme="dark"] .xq-side-rail {
 .reader-manager-wide {
   grid-column: 1 / -1;
 }
-.reader-manager-checkbox {
+.reader-check {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+.reader-check-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.reader-check-ui {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.reader-check.is-checked .reader-check-ui {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+.reader-check.is-checked .reader-check-ui::after {
+  content: '✓';
+  color: var(--btn-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.reader-check-copy {
+  display: grid;
+  gap: 2px;
+}
+.reader-check-label {
+  color: var(--text);
+}
+.reader-check-meta {
   color: var(--muted);
+  font-size: 12px;
+}
+.reader-manager-enabled {
+  justify-self: start;
 }
 .reader-manager-deliveries {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 .reader-manager-delivery-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
+  display: grid;
+  gap: 12px;
 }
-.reader-manager-delivery-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
+.reader-delivery-block {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-strong);
+}
+.reader-delivery-editor[hidden] {
+  display: none !important;
 }
 .reader-manager-actions {
   margin-top: 4px;
@@ -790,6 +836,42 @@ html[data-theme="dark"] .xq-side-rail {
   border: 1px solid rgba(138, 66, 52, 0.22);
   background: rgba(252, 236, 231, 0.92);
   color: #8a4234;
+}
+.reader-modal-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, 0.42);
+  backdrop-filter: blur(6px);
+  z-index: 40;
+}
+.reader-modal-shell[hidden] {
+  display: none !important;
+}
+.reader-modal-card {
+  width: min(100%, 440px);
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shell-shadow);
+}
+.reader-modal-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.1;
+}
+.reader-modal-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.reader-modal-actions {
+  justify-content: flex-end;
 }
 .reader-entry-item {
   display: grid;

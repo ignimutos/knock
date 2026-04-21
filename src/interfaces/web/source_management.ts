@@ -3,6 +3,7 @@ import { stringify } from '@std/yaml'
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
+import type { HttpPayload, SourceDeliveryOverride } from '../../config/types.ts'
 import {
   findConfigFile,
   loadCompiledConfig,
@@ -32,6 +33,25 @@ export class SourceManagementError extends Error {
 
 const requiredStringSchema = z.string().trim().min(1)
 
+const httpPayloadSchema: z.ZodType<HttpPayload> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(httpPayloadSchema),
+    z.record(z.string(), httpPayloadSchema),
+  ]),
+)
+
+const sourceDeliveryOverrideSchema: z.ZodType<SourceDeliveryOverride> = z.lazy(() =>
+  z.union([
+    z.object({ content: z.string().optional() }).strict(),
+    z.object({ payload: httpPayloadSchema.optional() }).strict(),
+    z.object({ message: z.record(z.string(), z.unknown()).optional() }).strict(),
+  ]),
+)
+
 const sourceConfigUpdateSchema = z
   .object({
     sourceId: requiredStringSchema,
@@ -40,6 +60,7 @@ const sourceConfigUpdateSchema = z
     schedule: z.string().default(''),
     filter: z.string().default(''),
     deliveryIds: z.array(z.string()).default([]),
+    deliveryOverrides: z.record(z.string(), sourceDeliveryOverrideSchema).default({}),
     transport: z.enum(['http', 'byparr', 'summary']),
     parser: z.enum(['syndication', 'xquery', 'summary']),
     targetUrl: z.string().default(''),
@@ -157,14 +178,20 @@ function setOptionalTrimmedString(
   target[key] = trimmed
 }
 
-function updateDeliveryOverrides(source: Record<string, unknown>, nextDeliveryIds: string[]): void {
+function updateDeliveryOverrides(
+  source: Record<string, unknown>,
+  nextDeliveryIds: string[],
+  nextOverrides: Record<string, SourceDeliveryOverride>,
+): void {
   const existing = isPlainObject(source.deliveries) ? source.deliveries : {}
   const next: Record<string, unknown> = {}
 
   for (const deliveryId of nextDeliveryIds) {
-    next[deliveryId] = isPlainObject(existing[deliveryId])
+    const fallback = isPlainObject(existing[deliveryId])
       ? structuredClone(existing[deliveryId])
       : {}
+    const override = nextOverrides[deliveryId]
+    next[deliveryId] = override ? structuredClone(override) : fallback
   }
 
   if (Object.keys(next).length === 0) {
@@ -276,7 +303,7 @@ function applySourceConfigUpdate(
   source.enabled = input.enabled
   setOptionalTrimmedString(source, 'schedule', input.schedule)
   setOptionalTrimmedString(source, 'filter', input.filter)
-  updateDeliveryOverrides(source, input.deliveryIds)
+  updateDeliveryOverrides(source, input.deliveryIds, input.deliveryOverrides)
 
   if ('summary' in source && source.summary !== undefined) {
     if (input.transport !== 'summary' || input.parser !== 'summary') {

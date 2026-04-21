@@ -125,10 +125,17 @@ Deno.test('[contract] reader overview: 应按 source 返回最近快照并清理
 
   const overview = await buildReaderOverview({
     config: createConfig(),
+    rawDocument: {
+      sources: {
+        rust: {},
+        daily: {},
+      },
+    },
     factsDb: db,
   })
 
   assertEquals(overview.issue, undefined)
+  assertEquals(overview.deliveries, [])
   assertEquals(overview.sources.length, 2)
 
   const rust = overview.sources[0]
@@ -141,6 +148,7 @@ Deno.test('[contract] reader overview: 应按 source 返回最近快照并清理
   assertEquals(rust.feed?.title, 'Rust Feed')
   assertEquals(rust.filter, undefined)
   assertEquals(rust.deliveryIds, [])
+  assertEquals(rust.deliveryOverrides, {})
   assertEquals(rust.xqueryLocate, undefined)
   assertEquals(rust.xqueryEntryId, undefined)
   assertEquals(
