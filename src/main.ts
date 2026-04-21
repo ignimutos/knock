@@ -1,6 +1,6 @@
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
-import { loadConfig } from './config/load_config.ts'
+import { loadCompiledConfig } from './config/load_compiled_config.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
 import {
   buildChildArgs,
@@ -91,10 +91,11 @@ function normalizeStartAppInput(options: StartAppOptions = {}): StartAppInput {
 
 export async function startApp(options: StartAppOptions = {}): Promise<StartAppResult> {
   const input = normalizeStartAppInput(options)
-  const config = await loadConfig({
+  const loaded = await loadCompiledConfig({
     runtimeDir: input.runtimeDir,
     configPath: input.configPath,
   })
+  const { config, definitions } = loaded
 
   await configureLoggingRuntime({
     logging: config.logging,
@@ -105,6 +106,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 
   const daemon = createProductionRuntime({
     config,
+    definitions,
     httpFetcher: input.httpFetcher,
     httpProxyClientFactory: input.httpProxyClientFactory,
     emailTransportFactory: input.emailTransportFactory,

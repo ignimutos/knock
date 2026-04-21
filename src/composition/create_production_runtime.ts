@@ -6,6 +6,7 @@ import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts
 import { createLogger, type Logger } from '../core/logger.ts'
 import { createScheduler } from '../core/scheduler.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
+import type { DefinitionSet } from '../definitions/definition_set.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import { createEmailDelivery } from '../deliveries/email.ts'
 import { createEmailDeliveryExecutor } from '../infrastructure/deliveries/email_delivery_executor.ts'
@@ -15,12 +16,11 @@ import { createPruneFactsRepository } from '../infrastructure/sqlite/prune_facts
 import { markInterruptedAttempts } from '../infrastructure/sqlite/recovery.ts'
 import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run_query_service.ts'
 import {
+  createProductionRuntimePipeline,
   createRunSourceUseCaseForRuntime,
-  createRuntimePipeline,
   createRuntimeKernel,
   createSourceExecutionCore,
 } from './create_runtime_kernel.ts'
-import { productionEffectPolicy } from './effect_policy.ts'
 
 export interface ProductionRuntime {
   runDueSourcesUseCase: {
@@ -36,6 +36,7 @@ export interface ProductionRuntime {
 
 export interface CreateProductionRuntimeOptions {
   config: AppConfigResolved
+  definitions?: DefinitionSet
   httpFetcher?: typeof fetch
   httpProxyClientFactory?: typeof Deno.createHttpClient
   emailTransportFactory?: typeof nodemailer.createTransport
@@ -153,9 +154,8 @@ function createProductionRunSourceUseCase(input: {
     createRunId: () => crypto.randomUUID(),
     sourceInputGateway: core.sourceInputGateway,
     sourceParser: core.sourceParser,
-    pipeline: createRuntimePipeline({
+    pipeline: createProductionRuntimePipeline({
       factsDb: input.factsDb,
-      policy: productionEffectPolicy,
       deliveryExecutors: createProductionDeliveryExecutors({
         config: input.config,
         core,
@@ -191,7 +191,7 @@ export function createProductionRuntime(
       sqlite: options.config.sqlite,
       logger: loggers.db,
     })
-  const definitionSet = compileDefinitionsFromResolvedConfig(options.config)
+  const definitionSet = options.definitions ?? compileDefinitionsFromResolvedConfig(options.config)
   const runSourceUseCase = createProductionRunSourceUseCase({
     config: options.config,
     factsDb,

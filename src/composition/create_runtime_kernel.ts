@@ -16,7 +16,7 @@ import type { Logger } from '../core/logger.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
-import type { EffectPolicy } from './effect_policy.ts'
+import { previewEffectPolicy, productionEffectPolicy, type EffectPolicy } from './effect_policy.ts'
 import { resolveSourceConfig, selectSourceInputGateway } from './runtime_source_helpers.ts'
 import { createDeliveryAttemptRepository } from '../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { createApplicationDeduplicationRepository } from '../infrastructure/sqlite/deduplication_repository.ts'
@@ -324,6 +324,28 @@ export function createRuntimePipeline(input: {
     }),
     deliveryExecutors: input.deliveryExecutors,
   }
+}
+
+export function createProductionRuntimePipeline(input: {
+  factsDb: FactsDbClient
+  deliveryExecutors: Partial<DeliveryExecutorRegistry>
+}) {
+  return createRuntimePipeline({
+    factsDb: input.factsDb,
+    deliveryExecutors: input.deliveryExecutors,
+    policy: productionEffectPolicy,
+  })
+}
+
+export function createPreviewRuntimePipeline(input: {
+  factsDb: FactsDbClient
+  deliveryExecutors: Partial<DeliveryExecutorRegistry>
+}) {
+  return createRuntimePipeline({
+    factsDb: input.factsDb,
+    deliveryExecutors: input.deliveryExecutors,
+    policy: previewEffectPolicy,
+  })
 }
 
 export function createRuntimeKernel(input: {

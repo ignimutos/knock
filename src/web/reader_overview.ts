@@ -2,15 +2,11 @@ import { dirname, join, resolve } from '@std/path'
 import { and, desc, eq } from 'drizzle-orm'
 import type {
   AppConfigResolved,
-  ConfigDocument,
   ResolvedDeliveryConfig,
   ResolvedSourceConfig,
 } from '../config/types.ts'
-import { parse } from '@std/yaml'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
-import { parseRawConfigDocument } from '../config/load_config.ts'
-import { resolveConfig } from '../config/resolve_config.ts'
-import { validateConfig } from '../config/validate_config.ts'
+import { loadCompiledConfig } from '../config/load_compiled_config.ts'
 import { pipelineItems, sourceRuns } from '../infrastructure/sqlite/schema.ts'
 
 export interface ReaderRunSummary {
@@ -97,47 +93,14 @@ function normalizeReaderIssue(error: unknown): string {
   return `读取 Reader 数据失败：${message}`
 }
 
-function expandKnownEnvString(value: string): string {
-  return value.replace(/\$\{([A-Z0-9_]+)\}/g, (matched, name: string) => {
-    const envValue = Deno.env.get(name)
-    return envValue === undefined ? matched : envValue
-  })
-}
-
-function expandKnownEnvValue(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return expandKnownEnvString(value)
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => expandKnownEnvValue(item))
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [key, expandKnownEnvValue(child)]),
-    )
-  }
-
-  return value
-}
-
-function parseReaderRawConfig(raw: string): ConfigDocument {
-  parseRawConfigDocument(raw)
-  const parsed = (parse(raw) ?? {}) as Record<string, unknown>
-  return expandKnownEnvValue(parsed) as ConfigDocument
-}
-
 async function loadReaderConfig(): Promise<AppConfigResolved> {
   const lookup = getReaderConfigLookup()
-  const configPath = lookup.configPath ?? join(lookup.runtimeDir, 'config.yml')
-  const raw = await Deno.readTextFile(configPath)
-  const parsed = parseReaderRawConfig(raw)
-  const validated = validateConfig({
-    ...parsed,
+  const loaded = await loadCompiledConfig({
     runtimeDir: lookup.runtimeDir,
+    configPath: lookup.configPath,
+    envMode: 'preserve_unknown',
   })
-  return resolveConfig(validated)
+  return loaded.config
 }
 
 function parseJsonRecord(

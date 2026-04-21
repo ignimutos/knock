@@ -1,6 +1,6 @@
 import type { UnifiedFeedFields } from '../config/types.ts'
 import type { Logger } from '../core/logger.ts'
-import { createDeliveryAttempt, type DeliveryAttempt } from '../domain/delivery_attempt.ts'
+import { createDeliveryAttempt } from '../domain/delivery_attempt.ts'
 import type { PipelineItem, PipelineItemSkippedReason } from '../domain/pipeline_item.ts'
 import type { DeliveryBinding, RunPlan } from '../domain/run_plan.ts'
 import type { DeliveryAttemptRepository } from './ports/delivery_attempt_repository.ts'

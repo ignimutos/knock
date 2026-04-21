@@ -78,7 +78,7 @@ Deno.test('[contract] preview composition: 应使用 capture executors 并仅记
       onCaptured: (plan) => captured.push(plan.deliveryId),
     })
 
-    const result = await runtime.previewSourceUseCase.execute({
+    const result = await runtime.previewRunUseCase.execute({
       source: {
         kind: 'fetch',
         sourceId: 'playground',
@@ -198,7 +198,7 @@ Deno.test('[contract] preview composition: push payload 不是 object 时应在�
 
     await assertRejects(
       () =>
-        runtime.previewSourceUseCase.execute({
+        runtime.previewRunUseCase.execute({
           source: {
             kind: 'fetch',
             sourceId: 'playground',
@@ -307,7 +307,7 @@ Deno.test(
         onCaptured: (plan) => captured.push(plan.deliveryId),
       })
 
-      const result = await runtime.previewSourceUseCase.execute({
+      const result = await runtime.previewRunUseCase.execute({
         source: {
           kind: 'fetch',
           sourceId: 'playground',

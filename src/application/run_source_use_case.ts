@@ -65,31 +65,15 @@ type LifecycleCounts = {
   failedCount: number
 }
 
-export class RunSourceUseCase {
+class SourceRunExecutor {
   constructor(private readonly deps: RunSourceUseCaseDeps) {}
 
-  plan(input: RunSourceRequest): Promise<RunPlan> {
-    return Promise.resolve(
-      createRunPlan({
-        runId: this.deps.createRunId(),
-        source: input.source,
-        profile: input.profile,
-        effectDomain: input.effectDomain,
-        trigger: input.trigger,
-        scheduledAt: input.scheduledAt ?? this.deps.now(),
-        bindings: input.bindings ?? [],
-      }),
-    )
-  }
-
-  async collect(input: RunSourceRequest): Promise<RunSourceResult> {
-    const plan = await this.plan(input)
+  async collect(plan: RunPlan): Promise<RunSourceResult> {
     return await this.collectPlanned(plan)
   }
 
-  async execute(input: RunSourceRequest): Promise<RunSourceResult> {
-    const plan = await this.plan(input)
-    const lifecycleCounts = {
+  async execute(plan: RunPlan): Promise<RunSourceResult> {
+    const lifecycleCounts: LifecycleCounts = {
       sourceItemCount: 0,
       filteredCount: 0,
       dedupedCount: 0,
@@ -127,13 +111,7 @@ export class RunSourceUseCase {
   private async applyCollected(
     collected: RunSourceResult,
     pipelineDeps: PipelineDeps,
-    lifecycleCounts: {
-      sourceItemCount: number
-      filteredCount: number
-      dedupedCount: number
-      pushedCount: number
-      failedCount: number
-    },
+    lifecycleCounts: LifecycleCounts,
   ): Promise<void> {
     const result = await new RunSourceExecutionPipeline({
       now: this.deps.now,
@@ -196,13 +174,7 @@ export class RunSourceUseCase {
   private logRunFinalize(
     plan: RunPlan,
     outcome: 'success' | 'failure',
-    counts: {
-      sourceItemCount: number
-      filteredCount: number
-      dedupedCount: number
-      pushedCount: number
-      failedCount: number
-    },
+    counts: LifecycleCounts,
   ): void {
     const fields = {
       module: 'scheduler.source',
@@ -223,5 +195,37 @@ export class RunSourceUseCase {
     }
 
     this.deps.logger?.info('source run finalized', fields)
+  }
+}
+
+export class RunSourceUseCase {
+  private readonly executor: SourceRunExecutor
+
+  constructor(private readonly deps: RunSourceUseCaseDeps) {
+    this.executor = new SourceRunExecutor(deps)
+  }
+
+  plan(input: RunSourceRequest): Promise<RunPlan> {
+    return Promise.resolve(
+      createRunPlan({
+        runId: this.deps.createRunId(),
+        source: input.source,
+        profile: input.profile,
+        effectDomain: input.effectDomain,
+        trigger: input.trigger,
+        scheduledAt: input.scheduledAt ?? this.deps.now(),
+        bindings: input.bindings ?? [],
+      }),
+    )
+  }
+
+  async collect(input: RunSourceRequest): Promise<RunSourceResult> {
+    const plan = await this.plan(input)
+    return await this.executor.collect(plan)
+  }
+
+  async execute(input: RunSourceRequest): Promise<RunSourceResult> {
+    const plan = await this.plan(input)
+    return await this.executor.execute(plan)
   }
 }

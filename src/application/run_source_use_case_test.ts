@@ -607,3 +607,259 @@ Deno.test('[contract] runSourceUseCase: execute 应先 collect 再 applyCollecte
     'item.insertMany',
   ])
 })
+
+Deno.test(
+  '[flow] R07 runSourceUseCase: 应在边界处收口 run/item/attempt 聚合与失败终态',
+  async () => {
+    const createdRuns: Array<Record<string, unknown>> = []
+    const updatedRuns: Array<Record<string, unknown>> = []
+    const insertedItems: string[] = []
+    const itemStatuses: Array<{ itemId: string; status: string; skippedReason?: string }> = []
+    const plannedAttempts: string[] = []
+    const finishedAttempts: Array<{
+      attemptId: string
+      result: {
+        status: 'delivered' | 'failed'
+        reason?: string
+        startedAt: string
+        finishedAt: string
+      }
+    }> = []
+
+    const nowValues = [
+      '2026-04-13T11:00:00.000Z',
+      '2026-04-13T11:00:01.000Z',
+      '2026-04-13T11:00:02.000Z',
+      '2026-04-13T11:00:03.000Z',
+      '2026-04-13T11:00:04.000Z',
+      '2026-04-13T11:00:05.000Z',
+    ]
+
+    const useCase = new RunSourceUseCase({
+      now: () => nowValues.shift() ?? '2026-04-13T11:00:05.000Z',
+      createRunId: () => 'run-1',
+      createItemId: (entry) => `item:${entry.id}`,
+      sourceInputGateway: {
+        fetch: () =>
+          Promise.resolve({
+            kind: 'fetch',
+            collectedAt: '2026-04-13T11:00:00.000Z',
+            payloadSummary: { hash: 'hash-1', bytes: 10 },
+          }),
+      },
+      sourceParser: {
+        parse: () =>
+          Promise.resolve({
+            sourceKind: 'fetch',
+            parser: 'rss',
+            diagnostics: [],
+            feed: {
+              title: 'Feed',
+              link: '',
+              description: '',
+              generator: '',
+              language: '',
+              published: '',
+            },
+            items: [
+              {
+                id: 'entry-1',
+                title: 'Hello',
+                link: '',
+                description: '',
+                content: '',
+                published: '',
+                updated: '',
+              },
+            ],
+          }),
+      },
+      runRepository: {
+        insert: (run) => {
+          createdRuns.push(run as unknown as Record<string, unknown>)
+          return Promise.resolve()
+        },
+        update: (run) => {
+          updatedRuns.push(run as unknown as Record<string, unknown>)
+          return Promise.resolve()
+        },
+      },
+      itemRepository: {
+        insertMany: (items) => {
+          insertedItems.push(...items.map((item) => item.itemId))
+          return Promise.resolve()
+        },
+        updateStatus: (itemId, status, skippedReason) => {
+          itemStatuses.push({ itemId, status, skippedReason })
+          return Promise.resolve()
+        },
+      },
+      deliveryAttemptRepository: {
+        insertPlanned: (attempt) => {
+          plannedAttempts.push(attempt.deliveryId)
+          return Promise.resolve()
+        },
+        finish: (attemptId, result) => {
+          finishedAttempts.push({ attemptId, result })
+          return Promise.resolve()
+        },
+      },
+      deduplicationRepository: {
+        isItemDuplicate: () => Promise.resolve(false),
+        registerItemFingerprint: () => Promise.resolve(),
+        isDeliveryDuplicate: ({ deliveryId }) => Promise.resolve(deliveryId === 'archive'),
+        registerDeliveryFingerprint: () => Promise.resolve(),
+      },
+      deliveryExecutors: {
+        push: {
+          execute: () => Promise.reject(new Error('telegram 500')),
+        },
+        file: {
+          execute: () => Promise.resolve(),
+        },
+        email: {
+          execute: () => Promise.resolve(),
+        },
+      },
+    })
+
+    const result = await useCase.execute({
+      source: {
+        kind: 'fetch',
+        sourceId: 'rust',
+        fetcher: 'http',
+        parser: 'syndication',
+      },
+      profile: 'production',
+      effectDomain: 'production',
+      trigger: 'scheduled',
+      bindings: [
+        {
+          sourceId: 'rust',
+          deliveryId: 'archive',
+          definition: {
+            kind: 'file',
+            deliveryId: 'archive',
+            path: '/tmp/archive.txt',
+            contentTemplate: '{{ entry.title }}',
+          },
+        },
+        {
+          sourceId: 'rust',
+          deliveryId: 'telegram',
+          definition: {
+            kind: 'push',
+            deliveryId: 'telegram',
+            http: {
+              method: 'POST',
+              url: 'https://example.com/telegram',
+            },
+            requestType: 'body',
+            payloadTemplate: { text: '{{ entry.title }}' },
+          },
+        },
+      ],
+    })
+
+    assertEquals(result.plan.runId, 'run-1')
+    assertEquals(createdRuns.length, 1)
+    assertEquals(createdRuns[0]?.runId, 'run-1')
+    assertEquals(insertedItems, ['item:entry-1'])
+    assertEquals(plannedAttempts, ['telegram'])
+    assertEquals(finishedAttempts, [
+      {
+        attemptId: 'run-1:item:entry-1:telegram',
+        result: {
+          status: 'failed',
+          reason: 'telegram 500',
+          startedAt: '2026-04-13T11:00:04.000Z',
+          finishedAt: '2026-04-13T11:00:05.000Z',
+        },
+      },
+    ])
+    assertEquals(itemStatuses, [
+      { itemId: 'item:entry-1', status: 'failed', skippedReason: undefined },
+    ])
+    assertEquals(updatedRuns.length, 1)
+    assertEquals(updatedRuns[0]?.status, 'failed')
+  },
+)
+
+Deno.test('[contract] runSourceUseCase: item 落库失败时应回写 failed run', async () => {
+  const runStatuses: string[] = []
+
+  const useCase = new RunSourceUseCase({
+    now: () => '2026-04-13T11:50:00.000Z',
+    createRunId: () => 'run-failed-finalize',
+    sourceInputGateway: {
+      fetch: () =>
+        Promise.resolve({
+          kind: 'fetch',
+          collectedAt: '2026-04-13T11:50:00.000Z',
+          payloadSummary: { hash: 'hash-failed-finalize', bytes: 10 },
+        }),
+    },
+    sourceParser: {
+      parse: () =>
+        Promise.resolve({
+          sourceKind: 'fetch',
+          parser: 'rss',
+          diagnostics: [],
+          feed: {
+            title: 'Feed',
+            link: '',
+            description: '',
+            generator: '',
+            language: '',
+            published: '',
+          },
+          items: [],
+        }),
+    },
+    runRepository: {
+      insert: () => Promise.resolve(),
+      update: (run) => {
+        runStatuses.push(run.status)
+        return Promise.resolve()
+      },
+    },
+    itemRepository: {
+      insertMany: () => Promise.reject(new Error('persist boom')),
+      updateStatus: () => Promise.resolve(),
+    },
+    deliveryAttemptRepository: {
+      insertPlanned: () => Promise.resolve(),
+      finish: () => Promise.resolve(),
+    },
+    deduplicationRepository: {
+      isItemDuplicate: () => Promise.resolve(false),
+      registerItemFingerprint: () => Promise.resolve(),
+      isDeliveryDuplicate: () => Promise.resolve(false),
+      registerDeliveryFingerprint: () => Promise.resolve(),
+    },
+    deliveryExecutors: {
+      push: { execute: () => Promise.resolve() },
+      file: { execute: () => Promise.resolve() },
+      email: { execute: () => Promise.resolve() },
+    },
+  })
+
+  await assertRejects(
+    () =>
+      useCase.execute({
+        source: {
+          kind: 'fetch',
+          sourceId: 'rust',
+          fetcher: 'http',
+          parser: 'syndication',
+        },
+        profile: 'production',
+        effectDomain: 'production',
+        trigger: 'scheduled',
+      }),
+    Error,
+    'persist boom',
+  )
+
+  assertEquals(runStatuses, ['failed'])
+})

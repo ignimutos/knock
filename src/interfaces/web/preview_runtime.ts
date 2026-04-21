@@ -1,23 +1,23 @@
 import {
-  PreviewSourceUseCase,
-  type PreviewSourceRequest,
-} from '../../application/preview_source_use_case.ts'
+  PreviewRunUseCase,
+  type PreviewRunRequest,
+} from '../../application/preview_run_use_case.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types.ts'
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
 import { createPreviewComposition } from '../../composition/create_preview_runtime.ts'
 
 export interface PreviewRuntimeDeps<TRequest, TParsedRequest, TResponse> {
-  previewSourceUseCase: Pick<PreviewSourceUseCase, 'execute'>
+  previewRunUseCase: Pick<PreviewRunUseCase, 'execute'>
   parseRequest(request: TRequest): TParsedRequest
   toResponse(input: {
     request: TRequest
     parsedRequest: TParsedRequest
     warnings: string[]
-    result: Awaited<ReturnType<PreviewSourceUseCase['execute']>>
+    result: Awaited<ReturnType<PreviewRunUseCase['execute']>>
   }): TResponse
 }
 
-export interface ParsedPreviewRequest extends PreviewSourceRequest {
+export interface ParsedPreviewRequest extends PreviewRunRequest {
   warnings?: string[]
 }
 
@@ -43,7 +43,7 @@ export function createPreviewRuntime<
   return {
     async evaluate(request: TRequest): Promise<TResponse> {
       const parsedRequest = deps.parseRequest(request)
-      const result = await deps.previewSourceUseCase.execute({
+      const result = await deps.previewRunUseCase.execute({
         source: parsedRequest.source,
         bindings: parsedRequest.bindings,
         scheduledAt: parsedRequest.scheduledAt,
@@ -59,12 +59,12 @@ export function createPreviewRuntime<
   }
 }
 
-export function createPreviewSourceUseCaseRuntime(input: {
+export function createPreviewRunUseCaseRuntime(input: {
   config: AppConfigResolved
   fetcher?: typeof fetch
   now?: () => string
 }) {
-  return createPreviewComposition(input).previewSourceUseCase
+  return createPreviewComposition(input).previewRunUseCase
 }
 
 export async function executePreviewSource(input: {
@@ -72,8 +72,8 @@ export async function executePreviewSource(input: {
   source: ResolvedSourceConfig
   fetcher?: typeof fetch
   now?: () => string
-}): Promise<Awaited<ReturnType<PreviewSourceUseCase['execute']>>> {
-  const previewSourceUseCase = createPreviewSourceUseCaseRuntime({
+}): Promise<Awaited<ReturnType<PreviewRunUseCase['execute']>>> {
+  const previewRunUseCase = createPreviewRunUseCaseRuntime({
     config: input.config,
     fetcher: input.fetcher,
     now: input.now,
@@ -85,7 +85,7 @@ export async function executePreviewSource(input: {
     throw new Error(`source 未定义: ${input.source.id}`)
   }
 
-  return await previewSourceUseCase.execute({
+  return await previewRunUseCase.execute({
     source: sourceDefinition,
     bindings: definitions.bindings.filter((binding) => binding.sourceId === input.source.id),
   })
@@ -93,7 +93,7 @@ export async function executePreviewSource(input: {
 
 export function toPreviewExecutionResult(input: {
   warnings: string[]
-  result: Awaited<ReturnType<PreviewSourceUseCase['execute']>>
+  result: Awaited<ReturnType<PreviewRunUseCase['execute']>>
 }): PreviewExecutionResult {
   return {
     warnings: input.warnings,
@@ -108,6 +108,8 @@ export function toPreviewExecutionResult(input: {
       input.result.fetchedInput.rawText ??
       JSON.stringify(input.result.fetchedInput.collectedJson ?? {}),
     feed: input.result.parsed.feed,
-    entries: input.result.parsed.items.map((item) => ({ mapped: item })),
+    entries: input.result.parsed.items.map((item: (typeof input.result.parsed.items)[number]) => ({
+      mapped: item,
+    })),
   }
 }

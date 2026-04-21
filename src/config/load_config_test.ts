@@ -2,6 +2,7 @@ import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
 import { dirname, fromFileUrl, join } from '@std/path'
 import { createLogger } from '../core/logger.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
+import { loadCompiledConfig } from './load_compiled_config.ts'
 import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
@@ -536,6 +537,117 @@ sources: {}
     Deno.env.delete('KNOCK_TEST_OPENAI_PROJECT')
     Deno.env.delete('KNOCK_TEST_ANTHROPIC_AUTH')
   }
+})
+
+test('loadConfig: configPath 应派生 runtimeDir 并解析相对路径', async () => {
+  const nestedRuntime = join(TEST_RUNTIME, 'nested-runtime')
+  await Deno.mkdir(nestedRuntime, { recursive: true })
+  const configPath = join(nestedRuntime, 'custom.yml')
+
+  await Deno.writeTextFile(
+    configPath,
+    `
+logging:
+  level: info
+  sinks:
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+`,
+  )
+
+  const config = await loadConfig({ configPath })
+  assertEquals(config.runtimeDir, nestedRuntime)
+  assertEquals(config.logging.sinks.file?.path, join(nestedRuntime, 'logs', 'app.jsonl'))
+})
+
+test('loadConfig: 显式 runtimeDir 应优先于 KNOCK_RUNTIME_DIR 与 configPath 派生目录', async () => {
+  const explicitRuntime = join(TEST_RUNTIME, 'explicit-runtime')
+  const envRuntime = join(TEST_RUNTIME, 'env-runtime')
+  const otherDir = join(TEST_RUNTIME, 'other-dir')
+  await Deno.mkdir(explicitRuntime, { recursive: true })
+  await Deno.mkdir(envRuntime, { recursive: true })
+  await Deno.mkdir(otherDir, { recursive: true })
+
+  const configPath = join(otherDir, 'custom.yml')
+  const previousRuntimeDir = Deno.env.get('KNOCK_RUNTIME_DIR')
+  Deno.env.set('KNOCK_RUNTIME_DIR', envRuntime)
+
+  try {
+    await Deno.writeTextFile(
+      configPath,
+      `
+logging:
+  level: info
+  sinks:
+    file:
+      type: file
+      format: jsonl
+      path: logs/app.jsonl
+`,
+    )
+
+    const config = await loadConfig({
+      runtimeDir: explicitRuntime,
+      configPath,
+    })
+    assertEquals(config.runtimeDir, explicitRuntime)
+    assertEquals(config.logging.sinks.file?.path, join(explicitRuntime, 'logs', 'app.jsonl'))
+  } finally {
+    if (previousRuntimeDir === undefined) {
+      Deno.env.delete('KNOCK_RUNTIME_DIR')
+    } else {
+      Deno.env.set('KNOCK_RUNTIME_DIR', previousRuntimeDir)
+    }
+  }
+})
+
+test('loadConfig: 应支持 config.yaml fallback', async () => {
+  await Deno.writeTextFile(
+    join(TEST_RUNTIME, 'config.yaml'),
+    `
+logging:
+  level: info
+  sinks:
+    file:
+      type: file
+      format: jsonl
+      path: logs/fallback.jsonl
+`,
+  )
+
+  const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+  assertEquals(config.logging.sinks.file?.path, join(TEST_RUNTIME, 'logs', 'fallback.jsonl'))
+})
+
+test('loadCompiledConfig: 应返回统一编译结果契约', async () => {
+  await Deno.writeTextFile(
+    join(TEST_RUNTIME, 'config.yml'),
+    `
+deliveries:
+  archive:
+    file:
+      path: outputs/archive.md
+      content: '{{ entry.title }}'
+
+sources:
+  rust:
+    http:
+      url: https://example.com/feed.xml
+    syndication: {}
+    deliveries:
+      archive: {}
+`,
+  )
+
+  const loaded = await loadCompiledConfig({ runtimeDir: TEST_RUNTIME })
+  assertEquals(loaded.runtimeDir, TEST_RUNTIME)
+  assertEquals(loaded.configPath, join(TEST_RUNTIME, 'config.yml'))
+  assertEquals(loaded.diagnostics, [])
+  assertEquals(loaded.config.sources[0]?.id, 'rust')
+  assertEquals(loaded.definitions.sources[0]?.sourceId, 'rust')
+  assertEquals(loaded.definitions.bindings[0]?.deliveryId, 'archive')
 })
 
 test('loadConfig: README HTTP 文档应保持 canonical 形态并拒绝 legacy 回流', async () => {

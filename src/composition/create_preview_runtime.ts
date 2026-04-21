@@ -1,14 +1,13 @@
-import { PreviewSourceUseCase } from '../application/preview_source_use_case.ts'
+import { PreviewRunUseCase } from '../application/preview_run_use_case.ts'
 import type { DeliveryAttemptPlan } from '../application/ports/delivery_executor.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import { createInMemoryDb, type FactsDbClient } from '../db/client.ts'
 import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capture_delivery_executor.ts'
 import {
+  createPreviewRuntimePipeline,
   createRunSourceUseCaseForRuntime,
-  createRuntimePipeline,
   createSourceExecutionCore,
 } from './create_runtime_kernel.ts'
-import { previewEffectPolicy } from './effect_policy.ts'
 
 function asPreviewPushPayload(payload: unknown): Record<string, unknown> | undefined {
   if (payload === undefined) return undefined
@@ -25,7 +24,7 @@ export function createPreviewComposition(input: {
   now?: () => string
   onCaptured?: (plan: DeliveryAttemptPlan) => void
 }): {
-  previewSourceUseCase: PreviewSourceUseCase
+  previewRunUseCase: PreviewRunUseCase
 } {
   const factsDb = input.factsDb ?? createInMemoryDb()
   const core = createSourceExecutionCore({
@@ -43,9 +42,8 @@ export function createPreviewComposition(input: {
     createRunId: () => `run-preview-${crypto.randomUUID()}`,
     sourceInputGateway: core.sourceInputGateway,
     sourceParser: core.sourceParser,
-    pipeline: createRuntimePipeline({
+    pipeline: createPreviewRuntimePipeline({
       factsDb,
-      policy: previewEffectPolicy,
       deliveryExecutors: {
         file: captureExecutor,
         push: captureExecutor,
@@ -58,6 +56,6 @@ export function createPreviewComposition(input: {
   })
 
   return {
-    previewSourceUseCase: new PreviewSourceUseCase({ runSourceUseCase }),
+    previewRunUseCase: new PreviewRunUseCase({ runSourceUseCase }),
   }
 }

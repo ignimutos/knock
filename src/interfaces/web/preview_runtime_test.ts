@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert'
-import type { PreviewSourceRequest } from '../../application/preview_source_use_case.ts'
+import type { PreviewRunRequest } from '../../application/preview_run_use_case.ts'
 import type { RunSourceResult } from '../../application/run_source_use_case.ts'
 import type { SourceDefinition } from '../../domain/source_definition.ts'
 import { createPreviewRuntime } from './preview_runtime.ts'
@@ -7,10 +7,10 @@ import { createPreviewRuntime } from './preview_runtime.ts'
 Deno.test(
   '[contract] R18 previewRuntime: 应走 preview profile 并落 preview domain facts',
   async () => {
-    const calls: PreviewSourceRequest[] = []
+    const calls: PreviewRunRequest[] = []
     const runtime = createPreviewRuntime({
-      previewSourceUseCase: {
-        execute: (input: PreviewSourceRequest): Promise<RunSourceResult> => {
+      previewRunUseCase: {
+        execute: (input: PreviewRunRequest): Promise<RunSourceResult> => {
           calls.push(input)
           return Promise.resolve({
             plan: {

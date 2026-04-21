@@ -1,14 +1,14 @@
 import { assertEquals } from '@std/assert'
-import type { PreviewSourceUseCaseDeps } from './preview_source_use_case.ts'
-import { PreviewSourceUseCase } from './preview_source_use_case.ts'
+import type { PreviewRunUseCaseDeps } from './preview_run_use_case.ts'
+import { PreviewRunUseCase } from './preview_run_use_case.ts'
 
 // risk-id: R18
 // layer: contract
 
 Deno.test(
-  '[contract] previewSourceUseCase: preview profile 应生成 effectDomain=preview 的 RunPlan',
+  '[contract] previewRunUseCase: preview profile 应生成 effectDomain=preview 的 RunPlan',
   async () => {
-    const deps: PreviewSourceUseCaseDeps = {
+    const deps: PreviewRunUseCaseDeps = {
       runSourceUseCase: {
         plan: (input) =>
           Promise.resolve({
@@ -85,7 +85,7 @@ Deno.test(
       },
     }
 
-    const useCase = new PreviewSourceUseCase(deps)
+    const useCase = new PreviewRunUseCase(deps)
 
     const result = await useCase.execute({
       source: {
@@ -104,8 +104,8 @@ Deno.test(
   },
 )
 
-Deno.test('[contract] previewSourceUseCase: collect 应预留 preview collect 包装层', async () => {
-  const deps: PreviewSourceUseCaseDeps = {
+Deno.test('[contract] previewRunUseCase: collect 应预留 preview collect 包装层', async () => {
+  const deps: PreviewRunUseCaseDeps = {
     runSourceUseCase: {
       plan: (input) =>
         Promise.resolve({
@@ -182,7 +182,7 @@ Deno.test('[contract] previewSourceUseCase: collect 应预留 preview collect �
     },
   }
 
-  const useCase = new PreviewSourceUseCase(deps)
+  const useCase = new PreviewRunUseCase(deps)
 
   const result = await useCase.collect({
     source: {

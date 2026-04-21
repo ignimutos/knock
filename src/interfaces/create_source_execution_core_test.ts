@@ -1,7 +1,6 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { createInMemoryDb } from '../db/client.ts'
 import { createLogger } from '../core/logger.ts'
-import { CollectSourceUseCase } from '../application/collect_source_use_case.ts'
 import {
   createRunSourceUseCaseForRuntime,
   createSourceExecutionCore,
@@ -88,11 +87,7 @@ Deno.test(
           }),
       },
     })
-    const collectUseCase = new CollectSourceUseCase({
-      runSourceUseCase,
-    })
-
-    const collected = await collectUseCase.execute({
+    const collected = await runSourceUseCase.collect({
       source: {
         kind: 'fetch',
         sourceId: 'rust',
