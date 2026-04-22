@@ -188,6 +188,34 @@ Deno.test(
   },
 )
 
+Deno.test(
+  '[contract] source management: updateSourceConfig 对编译期 delivery 引用错误应返回 validation 错误',
+  async () => {
+    await withRuntimeDir(async () => {
+      let message = ''
+      try {
+        await updateSourceConfig({
+          sourceId: 'rust',
+          name: 'Rust Blog',
+          enabled: true,
+          schedule: '*/30 * * * *',
+          filter: '',
+          deliveryIds: ['missing_delivery'],
+          deliveryOverrides: {},
+          transport: 'http',
+          parser: 'syndication',
+          targetUrl: 'https://example.com/feed.xml',
+          xqueryLocate: '',
+          xqueryEntryId: '',
+        })
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error)
+      }
+      assertEquals(message, 'source.rust.deliveries 引用了未定义 delivery: missing_delivery')
+    })
+  },
+)
+
 Deno.test('[contract] source management: runSourceNow 对停用 source 应返回冲突错误', async () => {
   await withRuntimeDir(async () => {
     let message = ''

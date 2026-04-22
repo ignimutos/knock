@@ -19,7 +19,7 @@ Deno.test('[flow] sources run api: 应返回 started 状态并记录日志元数
         Promise.resolve({
           started: true,
           message: 'source rust 强制获取完成',
-          overview: { sources: [] },
+          overview: { sources: [], deliveries: [] },
         }),
       onLogMeta: (meta) => logs.push(meta),
     },

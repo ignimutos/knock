@@ -1,4 +1,3 @@
-import { dirname, join, resolve } from '@std/path'
 import { and, desc, eq } from 'drizzle-orm'
 import type {
   AppConfigResolved,
@@ -6,8 +5,17 @@ import type {
   ResolvedSourceConfig,
   SourceDeliveryOverride,
 } from '../config/types.ts'
+import { getRawSourceDeliveryOverrides } from '../config/source_delivery_overrides.ts'
+import {
+  getConfigDocumentLookupFromEnv,
+  loadRawConfigDocument,
+} from '../config/raw_config_document.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
-import { loadCompiledConfig, parseRawConfigDocument } from '../config/load_compiled_config.ts'
+import {
+  loadCompiledConfig,
+  parseRawConfigDocument,
+  type LoadedCompiledConfig,
+} from '../config/load_compiled_config.ts'
 import { pipelineItems, sourceRuns } from '../infrastructure/sqlite/schema.ts'
 
 export interface ReaderRunSummary {
@@ -78,24 +86,6 @@ export interface ReaderOverview {
   issue?: string
 }
 
-function getReaderConfigLookup(): {
-  runtimeDir: string
-  configPath?: string
-} {
-  const configPath = Deno.env.get('KNOCK_CONFIG_PATH')
-  if (configPath) {
-    const resolvedConfigPath = resolve(configPath)
-    return {
-      runtimeDir: dirname(resolvedConfigPath),
-      configPath: resolvedConfigPath,
-    }
-  }
-
-  return {
-    runtimeDir: resolve(Deno.env.get('KNOCK_RUNTIME_DIR') ?? join(Deno.cwd(), 'runtime')),
-  }
-}
-
 function normalizeReaderIssue(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   if (message.includes('配置文件不存在:')) {
@@ -106,19 +96,21 @@ function normalizeReaderIssue(error: unknown): string {
 }
 
 async function loadReaderConfig(): Promise<{
-  config: AppConfigResolved
+  loaded: Pick<LoadedCompiledConfig, 'config' | 'configPath'>
   rawDocument: Record<string, unknown>
 }> {
-  const lookup = getReaderConfigLookup()
+  const rawConfig = await loadRawConfigDocument(getConfigDocumentLookupFromEnv())
   const loaded = await loadCompiledConfig({
-    runtimeDir: lookup.runtimeDir,
-    configPath: lookup.configPath,
+    runtimeDir: rawConfig.runtimeDir,
+    configPath: rawConfig.configPath,
     envMode: 'preserve_unknown',
   })
-  const rawDocument = parseRawConfigDocument(await Deno.readTextFile(loaded.configPath))
   return {
-    config: loaded.config,
-    rawDocument,
+    loaded: {
+      config: loaded.config,
+      configPath: loaded.configPath,
+    },
+    rawDocument: rawConfig.document,
   }
 }
 
@@ -313,35 +305,6 @@ function getDeliveryKind(
   throw new Error('delivery 缺少可识别类型')
 }
 
-function getRawSourceDeliveryOverrides(
-  rawDocument: Record<string, unknown>,
-  sourceId: string,
-): Record<string, SourceDeliveryOverride> {
-  const sources = rawDocument.sources
-  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) {
-    return {}
-  }
-
-  const source = (sources as Record<string, unknown>)[sourceId]
-  if (!source || typeof source !== 'object' || Array.isArray(source)) {
-    return {}
-  }
-
-  const deliveries = (source as Record<string, unknown>).deliveries
-  if (!deliveries || typeof deliveries !== 'object' || Array.isArray(deliveries)) {
-    return {}
-  }
-
-  return Object.fromEntries(
-    Object.entries(deliveries).map(([deliveryId, override]) => {
-      if (!override || typeof override !== 'object' || Array.isArray(override)) {
-        return [deliveryId, {}]
-      }
-      return [deliveryId, structuredClone(override) as SourceDeliveryOverride]
-    }),
-  )
-}
-
 function getDeliveryCatalog(config: AppConfigResolved): ReaderDeliveryCatalogItem[] {
   return config.deliveries
     .filter((delivery) => delivery.enabled !== false)
@@ -431,16 +394,39 @@ export function buildReaderOverview(input: {
   }
 }
 
-export async function loadReaderOverview(): Promise<ReaderOverview> {
-  let factsDb: FactsDbClient | undefined
+export async function buildCurrentReaderOverview(input: {
+  loaded: Pick<LoadedCompiledConfig, 'config' | 'configPath'>
+  factsDb?: FactsDbClient
+  rawDocument?: Record<string, unknown>
+}): Promise<ReaderOverview> {
+  const rawDocument =
+    input.rawDocument ?? parseRawConfigDocument(await Deno.readTextFile(input.loaded.configPath))
+  if (input.factsDb) {
+    return buildReaderOverview({
+      config: input.loaded.config,
+      rawDocument,
+      factsDb: input.factsDb,
+    })
+  }
 
+  const factsDb = createFactsDbClient({ sqlite: input.loaded.config.sqlite })
   try {
-    const loaded = await loadReaderConfig()
-    factsDb = createFactsDbClient({ sqlite: loaded.config.sqlite })
-    return await buildReaderOverview({
-      config: loaded.config,
-      rawDocument: loaded.rawDocument,
+    return buildReaderOverview({
+      config: input.loaded.config,
+      rawDocument,
       factsDb,
+    })
+  } finally {
+    factsDb.$client.close()
+  }
+}
+
+export async function loadReaderOverview(): Promise<ReaderOverview> {
+  try {
+    const { loaded, rawDocument } = await loadReaderConfig()
+    return await buildCurrentReaderOverview({
+      loaded,
+      rawDocument,
     })
   } catch (error) {
     return {
@@ -448,7 +434,5 @@ export async function loadReaderOverview(): Promise<ReaderOverview> {
       deliveries: [],
       issue: normalizeReaderIssue(error),
     }
-  } finally {
-    factsDb?.$client.close()
   }
 }
