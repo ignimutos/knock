@@ -169,6 +169,17 @@ class SourceRunExecutor {
       'source.run_id': plan.runId,
       'scheduler.trigger': plan.trigger,
     })
+    this.deps.logger?.trace('source run trace context', {
+      module: 'scheduler.source',
+      'scheduler.operation': 'run_source',
+      'scheduler.outcome': 'start',
+      'source.id': plan.source.sourceId,
+      'source.run_id': plan.runId,
+      'scheduler.trigger': plan.trigger,
+      'scheduler.profile': plan.profile,
+      'scheduler.effect_domain': plan.effectDomain,
+      'scheduler.binding_count': plan.bindings.length,
+    })
   }
 
   private logRunFinalize(

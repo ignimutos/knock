@@ -3,9 +3,27 @@ import { z } from 'zod'
 import { findConfigFile, parseRawConfigDocument } from '../../config/load_config.ts'
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
 import { loggingSchema, timezoneSchema } from '../../config/schema.ts'
+import type { LoggingConfigResolved } from '../../config/types.ts'
 import { createLogger } from '../../core/logger.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from '../../core/logging_runtime.ts'
 import { parseWithFirstIssue } from '../../zod_utils.ts'
+
+export interface StartWebLoggingRuntime {
+  runtimeDir: string
+  timezone: string
+  timestampFormat: string
+  logging: LoggingConfigResolved
+}
+
+let currentWebLoggingRuntime: StartWebLoggingRuntime | undefined
+
+export function getCurrentWebLoggingRuntime(): StartWebLoggingRuntime | undefined {
+  return currentWebLoggingRuntime
+}
+
+export function setCurrentWebLoggingRuntime(runtime: StartWebLoggingRuntime | undefined): void {
+  currentWebLoggingRuntime = runtime
+}
 
 export interface StartWebOptions {
   host: string
@@ -76,7 +94,7 @@ function assertNoEnvExpansion(value: unknown, path: string): void {
   }
 }
 
-async function loadStartWebLoggingRuntime() {
+async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | undefined> {
   const lookup = getStartWebConfigLookup()
   const configPath = await findStartWebConfigPath(lookup.runtimeDir, lookup.configPath)
   if (!configPath) return undefined
@@ -108,6 +126,7 @@ async function loadStartWebLoggingRuntime() {
 
 export async function startWeb(options: StartWebOptions) {
   const loggingRuntime = await loadStartWebLoggingRuntime()
+  setCurrentWebLoggingRuntime(loggingRuntime)
   if (loggingRuntime) {
     await configureLoggingRuntime(loggingRuntime)
   }
@@ -138,6 +157,7 @@ export async function startWeb(options: StartWebOptions) {
       },
     })
   } finally {
+    setCurrentWebLoggingRuntime(undefined)
     await shutdownLoggingRuntime()
   }
 }

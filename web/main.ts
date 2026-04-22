@@ -10,6 +10,7 @@ import SyndicationPage from './routes/syndication.tsx'
 import { loadReaderOverview } from '../src/web/reader_overview.ts'
 import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
 import type { SourceActionLogMeta } from '../src/interfaces/web/create_source_action_handler.ts'
+import { getCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
 import { handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
 import { handler as evaluateSyndicationHandler } from './routes/api/syndication/evaluate.ts'
 import { handler as updateSourceHandler } from './routes/api/sources/update.ts'
@@ -29,12 +30,17 @@ function renderPage(Component: () => JSX.Element): Response {
   })
 }
 
-const webLogger = createLogger({
-  enabled: true,
-  level: 'info',
-  module: 'web.api',
-  component: 'web',
-})
+function createDefaultWebLogger(): Logger {
+  const loggingRuntime = getCurrentWebLoggingRuntime()
+  return createLogger({
+    enabled: true,
+    level: loggingRuntime?.logging.level ?? 'info',
+    module: 'web.api',
+    component: 'web',
+    timezone: loggingRuntime?.timezone ?? 'UTC',
+    timestampFormat: loggingRuntime?.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss',
+  })
+}
 
 function isEvaluateLogMeta(meta: EvaluateLogMeta | SourceActionLogMeta): meta is EvaluateLogMeta {
   return (
@@ -67,10 +73,10 @@ export function withApiRequestLogging(
     request: Request,
     onLogMeta: (meta: EvaluateLogMeta | SourceActionLogMeta) => void,
   ) => Promise<Response>,
-  logger: Logger = webLogger,
+  logger?: Logger,
 ) {
-  const routeLogger = logger.child({ module, route })
   return async (ctx: { req: Request }) => {
+    const routeLogger = (logger ?? createDefaultWebLogger()).child({ module, route })
     const startedAt = Date.now()
     const requestId = createWebRequestId(startedAt)
     let logMeta: EvaluateLogMeta | SourceActionLogMeta = {}

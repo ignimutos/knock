@@ -49,6 +49,13 @@ export class HttpSourceInputGateway {
     const config = this.deps.resolveSourceConfig(plan.source.sourceId)
     const startedAt = Date.now()
 
+    this.deps.logger?.trace('source payload 抓取开始', {
+      module: 'source.fetch.http',
+      'source.operation': 'fetch_payload',
+      'source.outcome': 'start',
+      'source.id': config.id,
+    })
+
     try {
       const rawText = await fetchHttpText(config, this.deps.httpClient)
       const payloadBytes = new TextEncoder().encode(rawText).byteLength

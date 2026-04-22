@@ -93,6 +93,13 @@ export class ByparrSourceInputGateway {
     const config = this.deps.resolveSourceConfig(plan.source.sourceId)
     const startedAt = Date.now()
 
+    this.deps.logger?.trace('source payload 抓取开始', {
+      module: 'source.fetch.byparr',
+      'source.operation': 'fetch_payload',
+      'source.outcome': 'start',
+      'source.id': config.id,
+    })
+
     try {
       const rawText = await fetchByparrText(config, this.deps.httpClient)
       const payloadBytes = new TextEncoder().encode(rawText).byteLength

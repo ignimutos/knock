@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from '@std/assert'
 import app, { withApiRequestLogging } from './main.ts'
 import { createLogger } from '../src/core/logger.ts'
+import { setCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
 
 Deno.test('[contract] web main: 应暴露 fresh app 默认导出', () => {
   assertEquals(typeof app.listen, 'function')
@@ -237,4 +238,58 @@ Deno.test('[contract] web main: withApiRequestLogging 应记录失败请求关�
     failureAttributes['exception.message'],
     '[source] 抓取失败 source=playground status=404',
   )
+})
+
+Deno.test('[contract] web main: 默认 route logger 应继承当前 web logging level', async () => {
+  const stdout: string[] = []
+  const previousLog = console.log
+  const previousInfo = console.info
+  const previousDebug = console.debug
+  const previousWarn = console.warn
+  const previousError = console.error
+
+  setCurrentWebLoggingRuntime({
+    runtimeDir: '/tmp/runtime',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    logging: {
+      level: 'debug',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'jsonl',
+        },
+      },
+    },
+  })
+
+  console.log = ((line: string) => stdout.push(line)) as typeof console.log
+  console.info = ((line: string) => stdout.push(line)) as typeof console.info
+  console.debug = ((line: string) => stdout.push(line)) as typeof console.debug
+  console.warn = ((line: string) => stdout.push(line)) as typeof console.warn
+  console.error = ((line: string) => stdout.push(line)) as typeof console.error
+
+  try {
+    const routeHandler = withApiRequestLogging(
+      '/api/xquery/evaluate',
+      'web.api.xquery.evaluate',
+      () => Promise.resolve(Response.json({ ok: true })),
+    )
+
+    const response = await routeHandler({
+      req: new Request('http://localhost/api/xquery/evaluate', { method: 'POST' }),
+    })
+
+    assertEquals(response.status, 200)
+    assertEquals(stdout.length, 2)
+    const startRecord = JSON.parse(stdout[0] ?? '{}') as Record<string, unknown>
+    assertEquals(startRecord.severityText, 'DEBUG')
+  } finally {
+    setCurrentWebLoggingRuntime(undefined)
+    console.log = previousLog
+    console.info = previousInfo
+    console.debug = previousDebug
+    console.warn = previousWarn
+    console.error = previousError
+  }
 })

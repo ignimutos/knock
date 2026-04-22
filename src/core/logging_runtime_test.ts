@@ -143,6 +143,40 @@ Deno.test('[contract] R11 logging_runtime: shutdown 应 flush file sink 尾日�
   })
 })
 
+Deno.test(
+  '[contract] R11 logging_runtime: trace 级别应输出 trace 记录到 console sink',
+  async () => {
+    const stdout: string[] = []
+
+    await configureLoggingRuntime({
+      logging: {
+        level: 'trace',
+        sinks: {
+          console: {
+            type: 'console',
+            format: 'jsonl',
+          },
+        },
+      },
+      runtimeDir: '/tmp/runtime',
+      timezone: 'UTC',
+      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+      consoleWriters: {
+        stdout: (line: string) => stdout.push(line),
+        stderr: (line: string) => stdout.push(line),
+        warn: (line: string) => stdout.push(line),
+      },
+    })
+
+    createLogger({ enabled: true, level: 'trace', module: 'app.startup' }).trace('trace visible')
+    await shutdownLoggingRuntime()
+
+    assertEquals(stdout.length, 1)
+    assertStringIncludes(stdout[0] ?? '', '"severityText":"TRACE"')
+    assertStringIncludes(stdout[0] ?? '', 'trace visible')
+  },
+)
+
 Deno.test('[contract] R11 logging_runtime: 不应输出 logtape meta startup 提示', async () => {
   const stdout: string[] = []
 

@@ -1,5 +1,9 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert'
 import {
+  getCurrentWebLoggingRuntime,
+  setCurrentWebLoggingRuntime,
+} from '../interfaces/web/start_web.ts'
+import {
   classifyPlaygroundError,
   evaluatePlayground,
   parsePlaygroundRequest,
@@ -104,6 +108,48 @@ Deno.test(
     assertEquals(result.fetchMeta.ok, true)
   },
 )
+
+Deno.test('[contract] xquery_playground: 应继承当前 web logging level', async () => {
+  setCurrentWebLoggingRuntime({
+    runtimeDir: '/tmp/runtime',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    logging: {
+      level: 'trace',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'jsonl',
+        },
+      },
+    },
+  })
+
+  try {
+    await evaluatePlayground({
+      request: {
+        url: 'https://example.com/page.html',
+        entry: { mode: 'mapping', fields: { id: 'string(@data-id)' } },
+      },
+      previewExecutor: ({ config }) => {
+        assertEquals(config.logging.level, 'trace')
+        assertEquals(config.timezone, 'UTC')
+        assertEquals(config.timestampFormat, 'yyyy-MM-dd HH:mm:ss')
+        return Promise.resolve({
+          warnings: [],
+          fetchMeta: { ok: true },
+          parser: 'xquery',
+          rawContent: '<html></html>',
+          feed: {},
+          entries: [],
+        })
+      },
+    })
+  } finally {
+    setCurrentWebLoggingRuntime(undefined)
+    assertEquals(getCurrentWebLoggingRuntime(), undefined)
+  }
+})
 
 Deno.test('[contract] xquery_playground: 应合并 parsed warnings 与 executor warnings', async () => {
   const result = await evaluatePlayground({

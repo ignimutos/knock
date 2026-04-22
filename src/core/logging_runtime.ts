@@ -33,6 +33,8 @@ function createConsoleLike(
   return {
     log: (msg?: unknown, ...args: unknown[]) => input.stdout([msg, ...args].map(String).join(' ')),
     info: (msg?: unknown, ...args: unknown[]) => input.stdout([msg, ...args].map(String).join(' ')),
+    trace: (msg?: unknown, ...args: unknown[]) =>
+      input.stdout([msg, ...args].map(String).join(' ')),
     debug: (msg?: unknown, ...args: unknown[]) =>
       input.stdout([msg, ...args].map(String).join(' ')),
     warn: (msg?: unknown, ...args: unknown[]) => input.warn([msg, ...args].map(String).join(' ')),

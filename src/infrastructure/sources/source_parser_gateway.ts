@@ -163,6 +163,14 @@ export class SourceParserGateway implements SourceParser {
   async parse(plan: RunPlan, input: FetchedSourceInput): Promise<ParsedSourceSnapshot> {
     const config = this.deps.resolveSourceConfig(plan.source.sourceId)
 
+    this.deps.logger?.trace('source 解析开始', {
+      module: 'source.parse',
+      'source.operation': 'parse_payload',
+      'source.outcome': 'start',
+      'source.id': config.id,
+      'source.input_kind': input.kind,
+    })
+
     try {
       if (plan.source.kind === 'summary') {
         const parsed = await parseSummary(this.deps, plan, plan.source)
