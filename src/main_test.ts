@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from '@std/assert'
 import { join } from '@std/path'
 import { withOwnedRuntime } from './test_runtime.ts'
+import { createStableChildEnv } from './testing/runtime_harness.ts'
 import type { StartAppOptions } from './main.ts'
 import { dispatchCliCommand, main, startWeb } from './main.ts'
 import {
@@ -466,10 +467,9 @@ Deno.test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty
         String(port),
       ],
       cwd: Deno.cwd(),
-      env: {
-        ...Deno.env.toObject(),
+      env: createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
-      },
+      }),
       stdout: 'piped',
       stderr: 'piped',
     }).spawn()
@@ -586,10 +586,9 @@ Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host�
         String(port),
       ],
       cwd: Deno.cwd(),
-      env: {
-        ...Deno.env.toObject(),
+      env: createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
-      },
+      }),
       stdout: 'piped',
       stderr: 'piped',
     }).spawn()
@@ -652,10 +651,9 @@ Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', asyn
         String(port),
       ],
       cwd: Deno.cwd(),
-      env: {
-        ...Deno.env.toObject(),
+      env: createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
-      },
+      }),
       stdout: 'piped',
       stderr: 'piped',
     }).spawn()
@@ -766,10 +764,9 @@ Deno.test('[contract] startWeb: 就绪后短窗口内不应因 config watcher �
         String(port),
       ],
       cwd: Deno.cwd(),
-      env: {
-        ...Deno.env.toObject(),
+      env: createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
-      },
+      }),
       stdout: 'piped',
       stderr: 'piped',
     }).spawn()

@@ -5,7 +5,7 @@ import {
   insertSourceRun,
   setSourceRunFeedSnapshot,
 } from '../infrastructure/sqlite/run_repository.ts'
-import { withRuntimeHarness } from './runtime_harness.ts'
+import { createStableChildEnv, withRuntimeHarness } from './runtime_harness.ts'
 
 export interface BrowserSmokeAppContext {
   runtimeDir: string
@@ -139,7 +139,7 @@ async function seedReaderFacts(runtimeDir: string): Promise<void> {
   }
 }
 
-async function reservePort(): Promise<number> {
+function reservePort(): number {
   const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
   const { port } = listener.addr as Deno.NetAddr
   listener.close()
@@ -217,10 +217,9 @@ export async function withBrowserSmokeApp(
         String(port),
       ],
       cwd: Deno.cwd(),
-      env: {
-        ...Deno.env.toObject(),
+      env: createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
-      },
+      }),
       stdout: 'piped',
       stderr: 'piped',
     }).spawn()
