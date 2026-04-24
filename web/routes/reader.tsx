@@ -983,7 +983,7 @@ const readerPageScript = `(() => {
   }
 
   const requestOverview = async () => {
-    const response = await fetch('/api/reader/overview')
+    const response = await fetch('/api/reader/overview', { cache: 'no-store' })
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new Error(typeof body?.message === 'string' ? body.message : '刷新失败')

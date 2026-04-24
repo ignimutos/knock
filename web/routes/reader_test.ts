@@ -124,7 +124,7 @@ Deno.test(
 
     assertStringIncludes(html, 'const applyOverview = (nextOverview, preferredSourceId) => {')
     assertStringIncludes(html, 'const requestOverview = async () => {')
-    assertStringIncludes(html, "await fetch('/api/reader/overview')")
+    assertStringIncludes(html, "await fetch('/api/reader/overview', { cache: 'no-store' })")
     assertStringIncludes(html, "managerRefresh.addEventListener('click'")
     assertFalse(
       /requestAction\('\/api\/sources\/run'[\s\S]*applyOverview\(result\?\.overview, source\.id\)/.test(

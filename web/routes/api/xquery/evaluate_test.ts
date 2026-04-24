@@ -5,7 +5,7 @@ async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
-Deno.test('[flow] xquery api: 应将请求 payload 原样转发给 evaluatePlayground', async () => {
+Deno.test('[flow] R19 xquery api: 应将请求 payload 原样转发给 evaluatePlayground', async () => {
   const calls: Array<{ request: unknown }> = []
 
   const requestPayload = {
@@ -38,7 +38,7 @@ Deno.test('[flow] xquery api: 应将请求 payload 原样转发给 evaluatePlayg
   assertEquals(calls, [{ request: requestPayload }])
 })
 
-Deno.test('[flow] xquery api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
+Deno.test('[flow] R19 xquery api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
   const logs: EvaluateLogMeta[] = []
 
   const response = await handler(
@@ -112,7 +112,7 @@ Deno.test('[flow] R20 xquery api: 非法 JSON 应返回 400 与 validation 错�
   ])
 })
 
-Deno.test('[contract] xquery api: xquery 契约错误应返回 400 与结构化错误体', async () => {
+Deno.test('[contract] R19 xquery api: xquery 契约错误应返回 400 与结构化错误体', async () => {
   const response = await handler(
     new Request('http://localhost/api/xquery/evaluate', {
       method: 'POST',
@@ -134,39 +134,42 @@ Deno.test('[contract] xquery api: xquery 契约错误应返回 400 与结构化�
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[flow] xquery api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据', async () => {
-  const logs: EvaluateLogMeta[] = []
+Deno.test(
+  '[flow] R19 xquery api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据',
+  async () => {
+    const logs: EvaluateLogMeta[] = []
 
-  const response = await handler(
-    new Request('http://localhost/api/xquery/evaluate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        url: 'https://example.com/page.html',
-        entry: { mode: 'mapping', fields: { id: 'string(@data-id)' } },
+    const response = await handler(
+      new Request('http://localhost/api/xquery/evaluate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://example.com/page.html',
+          entry: { mode: 'mapping', fields: { id: 'string(@data-id)' } },
+        }),
       }),
-    }),
-    {
-      evaluatePlayground: () =>
-        Promise.reject(new Error('[source] 抓取失败 source=playground status=404')),
-      onLogMeta: (meta) => logs.push(meta),
-    },
-  )
+      {
+        evaluatePlayground: () =>
+          Promise.reject(new Error('[source] 抓取失败 source=playground status=404')),
+        onLogMeta: (meta) => logs.push(meta),
+      },
+    )
 
-  assertEquals(response.status, 502)
-  const payload = await readJson(response)
-  assertEquals(payload.message, '抓取失败: HTTP 404')
-  assertEquals(payload.code, 'playground_fetch_failed')
-  assertEquals(payload.category, 'fetch')
-  assertEquals(logs, [
-    {
-      targetHost: 'example.com',
-      errorCode: 'playground_fetch_failed',
-      errorCategory: 'fetch',
-      errorMessage: '[source] 抓取失败 source=playground status=404',
-    },
-  ])
-})
+    assertEquals(response.status, 502)
+    const payload = await readJson(response)
+    assertEquals(payload.message, '抓取失败: HTTP 404')
+    assertEquals(payload.code, 'playground_fetch_failed')
+    assertEquals(payload.category, 'fetch')
+    assertEquals(logs, [
+      {
+        targetHost: 'example.com',
+        errorCode: 'playground_fetch_failed',
+        errorCategory: 'fetch',
+        errorMessage: '[source] 抓取失败 source=playground status=404',
+      },
+    ])
+  },
+)
 
 Deno.test('[contract] xquery api: evaluation 失败应返回 422 与结构化错误体', async () => {
   const response = await handler(

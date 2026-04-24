@@ -2,8 +2,10 @@
   domain: source
   trigger: source fetch timeout
   expected_guardrail: run marked failed with actionable reason
-  required_layer: flow+contract
+  required_layer: contract
   owner_tests:
+    - src/infrastructure/sources/http_source_input_gateway_test.ts
+    - src/infrastructure/sources/byparr_source_input_gateway_test.ts
     - src/sources/syndication_test.ts
 
 - id: R02
@@ -23,6 +25,9 @@
     - src/config/load_config_test.ts
     - src/interfaces/config/load_definitions_test.ts
     - src/main_test.ts
+    - src/core/app_test.ts
+    - web/routes/api/config/global_test.ts
+    - web/routes/api/config/deliveries_test.ts
 
 - id: R04
   domain: config
@@ -44,9 +49,9 @@
   domain: pipeline
   trigger: filter rule hit on incoming entry
   expected_guardrail: entry marked skipped with deterministic reason
-  required_layer: flow
+  required_layer: flow+contract
   owner_tests:
-    - src/core/app_test.ts
+    - src/application/run_source_item_pipeline_test.ts
 
 - id: R07
   domain: delivery
@@ -55,6 +60,7 @@
   required_layer: flow+contract
   owner_tests:
     - src/deliveries/http_test.ts
+    - src/deliveries/email_test.ts
     - src/application/run_source_use_case_test.ts
     - src/application/run_source_item_pipeline_test.ts
 
@@ -65,6 +71,7 @@
   required_layer: contract
   owner_tests:
     - src/core/liquid_runtime_test.ts
+    - src/core/content_runtime_test.ts
 
 - id: R09
   domain: delivery
@@ -78,9 +85,11 @@
   domain: db
   trigger: sqlite connection open failure
   expected_guardrail: bootstrap exits with stable diagnostics
-  required_layer: flow+contract
+  required_layer: contract
   owner_tests:
     - src/db/client_test.ts
+    - src/infrastructure/sqlite/recovery_test.ts
+    - src/infrastructure/sqlite/source_run_query_service_test.ts
 
 - id: R11
   domain: logging
@@ -95,7 +104,7 @@
   domain: dedupe
   trigger: repeated entry id in same effect domain
   expected_guardrail: dedupe hit prevents duplicate delivery attempts
-  required_layer: flow
+  required_layer: contract
   owner_tests:
     - src/infrastructure/sqlite/schema_test.ts
 
@@ -121,12 +130,16 @@
   expected_guardrail: run due sources use case invoked once per tick
   required_layer: flow
   owner_tests:
+    - src/application/run_due_sources_use_case_test.ts
     - src/interfaces/daemon/start_daemon_test.ts
+    - web/routes/api/sources/run_test.ts
+    - web/routes/api/sources/update_test.ts
+    - web/routes/api/sources/clear_test.ts
 
 - id: R16
   domain: template
-  trigger: liquid render references missing field
-  expected_guardrail: rendering failure classified with source and item context
+  trigger: invalid liquid filter usage or runtime precondition failure
+  expected_guardrail: template runtime rejects invalid usage with stable error classification
   required_layer: contract
   owner_tests:
     - src/core/liquid_runtime_test.ts
@@ -138,6 +151,7 @@
   required_layer: flow+contract
   owner_tests:
     - src/config/config_example_test.ts
+    - src/sources/summary_test.ts
 
 - id: R18
   domain: web
@@ -145,6 +159,7 @@
   expected_guardrail: preview profile and warnings follow stable contract
   required_layer: contract
   owner_tests:
+    - src/application/preview_source_use_case_test.ts
     - src/interfaces/web/preview_runtime_test.ts
     - src/web/xquery_playground_test.ts
     - src/web/syndication_playground_test.ts
@@ -157,7 +172,7 @@
   domain: api
   trigger: evaluate endpoint receives invalid request body
   expected_guardrail: endpoint returns stable validation error payload
-  required_layer: contract
+  required_layer: flow+contract
   owner_tests:
     - web/routes/api/syndication/evaluate_test.ts
     - web/routes/api/xquery/evaluate_test.ts

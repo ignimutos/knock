@@ -642,6 +642,20 @@ logging:
 
 这四类状态共同保证“增量抓取 + 稳定去重 + 可追溯运行链路”。
 
+## 开发验证
+
+常用本地验证入口：
+
+- `deno task check`
+- `deno task fmt:check`
+- `deno task lint:check`
+- `deno task test`
+- `deno task test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
+- `deno task playwright:install`：安装 browser smoke 所需的 Chromium。
+- `deno task test:web-smoke`：启动本地临时 runtime 与真实 Web 进程，使用 Playwright Chromium 验证 Reader / Config / XQuery / Syndication 的基础 hydration 与关键交互。
+
+当前 CI 会依次执行 `check`、`test:arch`、`playwright:install`、`test:web-smoke`、`test`，然后再做 Docker build。
+
 ## 生产使用建议
 
 1. 先用 `--immediate` 验证配置与模板，再进入常驻调度。

@@ -31,7 +31,7 @@ Deno.test('[contract] syndication_playground: byparr 模式请求应转换为 by
 })
 
 Deno.test(
-  '[flow] syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
+  '[flow] R18 syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
   async () => {
     const result = await evaluateSyndicationPlayground({
       request: {

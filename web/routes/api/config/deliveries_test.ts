@@ -14,7 +14,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] config deliveries api: 应返回 workbench', async () => {
+Deno.test('[flow] R03 config deliveries api: 应返回 workbench', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/deliveries', {
       method: 'POST',
@@ -103,7 +103,7 @@ Deno.test('[contract] config deliveries api: 业务错误应返回结构化错�
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[flow] config deliveries delete api: 应返回 workbench', async () => {
+Deno.test('[flow] R03 config deliveries delete api: 应返回 workbench', async () => {
   const response = await deleteHandler(
     new Request('http://localhost/api/config/deliveries/delete', {
       method: 'POST',

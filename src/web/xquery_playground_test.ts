@@ -61,7 +61,7 @@ Deno.test('[contract] xquery_playground: 缺少 entry.id 时应沿用既有错�
 })
 
 Deno.test(
-  '[flow] xquery_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
+  '[flow] R18 xquery_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
   async () => {
     const calls: Array<{ sourceId: string; sourceUrl: string }> = []
 

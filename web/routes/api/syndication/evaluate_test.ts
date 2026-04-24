@@ -5,40 +5,43 @@ async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
-Deno.test('[flow] syndication api: 应将请求 payload 原样转发给 evaluatePlayground', async () => {
-  const calls: Array<{ request: unknown }> = []
+Deno.test(
+  '[flow] R19 syndication api: 应将请求 payload 原样转发给 evaluatePlayground',
+  async () => {
+    const calls: Array<{ request: unknown }> = []
 
-  const requestPayload = {
-    url: 'https://example.com/feed.xml',
-    entry: { id: '{{ id }}' },
-  }
+    const requestPayload = {
+      url: 'https://example.com/feed.xml',
+      entry: { id: '{{ id }}' },
+    }
 
-  const response = await handler(
-    new Request('http://localhost/api/syndication/evaluate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(requestPayload),
-    }),
-    {
-      evaluatePlayground: (input) => {
-        calls.push(input)
-        return Promise.resolve({
-          warnings: [],
-          fetchMeta: { ok: true },
-          parser: 'rss',
-          rawContent: '<rss></rss>',
-          feed: {},
-          entries: [],
-        })
+    const response = await handler(
+      new Request('http://localhost/api/syndication/evaluate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(requestPayload),
+      }),
+      {
+        evaluatePlayground: (input) => {
+          calls.push(input)
+          return Promise.resolve({
+            warnings: [],
+            fetchMeta: { ok: true },
+            parser: 'rss',
+            rawContent: '<rss></rss>',
+            feed: {},
+            entries: [],
+          })
+        },
       },
-    },
-  )
+    )
 
-  assertEquals(response.status, 200)
-  assertEquals(calls, [{ request: requestPayload }])
-})
+    assertEquals(response.status, 200)
+    assertEquals(calls, [{ request: requestPayload }])
+  },
+)
 
-Deno.test('[flow] syndication api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
+Deno.test('[flow] R19 syndication api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
   const logs: EvaluateLogMeta[] = []
 
   const response = await handler(
@@ -112,7 +115,7 @@ Deno.test('[flow] R20 syndication api: 非法 JSON 应返回 400 与 validation 
 })
 
 Deno.test(
-  '[flow] syndication api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据',
+  '[flow] R19 syndication api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据',
   async () => {
     const logs: EvaluateLogMeta[] = []
 

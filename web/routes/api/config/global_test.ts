@@ -13,7 +13,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] config global api: 应返回 workbench', async () => {
+Deno.test('[flow] R03 config global api: 应返回 workbench', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/global', {
       method: 'POST',

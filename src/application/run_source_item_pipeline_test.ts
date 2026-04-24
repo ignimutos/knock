@@ -502,7 +502,7 @@ Deno.test(
 )
 
 Deno.test(
-  '[contract] R07 runSourceItemPipeline: filter 命中时应短路 dedupe 与 delivery',
+  '[contract] R06 runSourceItemPipeline: filter 命中时应把 item 标记为 filtered 且不给 skippedReason',
   async () => {
     const harness = createPipelineHarness({
       plan: createPlan(createBindings(createFileBinding()), '{{ entry.title == "Hello" }}'),
@@ -513,22 +513,39 @@ Deno.test(
       },
     })
 
-    const result = await harness.pipeline.run(createItem())
+    await harness.pipeline.run(createItem())
 
     assertEquals(harness.itemStatuses, [
       { itemId: 'item:entry-1', status: 'filtered', skippedReason: undefined },
     ])
-    assertEquals(harness.getItemDuplicateChecks(), 0)
-    assertEquals(harness.plannedAttempts.length, 0)
-    assertEquals(result.counts, {
-      filteredCount: 1,
-      duplicateItemCount: 0,
-      deliveredCount: 0,
-      failedAttemptCount: 0,
-      skippedCount: 0,
-    })
   },
 )
+
+Deno.test('[flow] R06 runSourceItemPipeline: filter 命中时应短路 dedupe 与 delivery', async () => {
+  const harness = createPipelineHarness({
+    plan: createPlan(createBindings(createFileBinding()), '{{ entry.title == "Hello" }}'),
+    shouldPassFilter: ({ item, filterTemplate }) => {
+      assertEquals(item.normalized.title, 'Hello')
+      assertEquals(filterTemplate, '{{ entry.title == "Hello" }}')
+      return Promise.resolve(false)
+    },
+  })
+
+  const result = await harness.pipeline.run(createItem())
+
+  assertEquals(harness.itemStatuses, [
+    { itemId: 'item:entry-1', status: 'filtered', skippedReason: undefined },
+  ])
+  assertEquals(harness.getItemDuplicateChecks(), 0)
+  assertEquals(harness.plannedAttempts.length, 0)
+  assertEquals(result.counts, {
+    filteredCount: 1,
+    duplicateItemCount: 0,
+    deliveredCount: 0,
+    failedAttemptCount: 0,
+    skippedCount: 0,
+  })
+})
 
 Deno.test(
   '[contract] R07 runSourceItemPipeline: owner-scoped item 日志应覆盖 filter/dedupe/dispatch',

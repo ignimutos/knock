@@ -13,7 +13,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] sources update api: 应转发 payload 并返回 overview', async () => {
+Deno.test('[flow] R15 sources update api: 应转发 payload 并返回 overview', async () => {
   const logs: SourceActionLogMeta[] = []
 
   const response = await handler(

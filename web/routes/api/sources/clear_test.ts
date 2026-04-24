@@ -12,7 +12,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] sources clear api: 应返回删除计数并记录日志元数据', async () => {
+Deno.test('[flow] R15 sources clear api: 应返回删除计数并记录日志元数据', async () => {
   const logs: SourceActionLogMeta[] = []
 
   const response = await handler(

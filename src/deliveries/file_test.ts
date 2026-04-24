@@ -80,7 +80,7 @@ test('[contract] fileDelivery: 轮转文件名按字典序可反映时间先后'
   assert(sortedRotated[0] < sortedRotated[1])
 })
 
-test('[flow] fileDelivery: size 达到阈值时应触发 rotation', async () => {
+test('[flow] R09 fileDelivery: size 达到阈值时应触发 rotation', async () => {
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 
@@ -108,7 +108,7 @@ test('[flow] fileDelivery: size 达到阈值时应触发 rotation', async () => 
   assertStringIncludes(current, 'second-content')
 })
 
-test('[flow] fileDelivery: age 达到阈值时应触发 rotation', async () => {
+test('[flow] R09 fileDelivery: age 达到阈值时应触发 rotation', async () => {
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 
@@ -139,7 +139,7 @@ test('[flow] fileDelivery: age 达到阈值时应触发 rotation', async () => {
   assert(names.some((name) => /^rotate-age\.\d{8}T\d{9}Z\.md$/.test(name)))
 })
 
-test('[flow] fileDelivery: backups 超限时应清理最老轮转文件', async () => {
+test('[flow] R09 fileDelivery: backups 超限时应清理最老轮转文件', async () => {
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 
