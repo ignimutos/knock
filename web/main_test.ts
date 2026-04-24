@@ -3,6 +3,33 @@ import app, { withApiRequestLogging } from './main.ts'
 import { createLogger } from '../src/core/logger.ts'
 import { setCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
 
+async function withRuntimeDir(configYml: string, fn: () => Promise<void>) {
+  const runtimeDir = await Deno.makeTempDir()
+  const previousRuntimeDir = Deno.env.get('KNOCK_RUNTIME_DIR')
+  const previousConfigPath = Deno.env.get('KNOCK_CONFIG_PATH')
+
+  try {
+    await Deno.writeTextFile(`${runtimeDir}/config.yml`, configYml)
+    Deno.env.delete('KNOCK_CONFIG_PATH')
+    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
+    await fn()
+  } finally {
+    if (previousConfigPath === undefined) {
+      Deno.env.delete('KNOCK_CONFIG_PATH')
+    } else {
+      Deno.env.set('KNOCK_CONFIG_PATH', previousConfigPath)
+    }
+
+    if (previousRuntimeDir === undefined) {
+      Deno.env.delete('KNOCK_RUNTIME_DIR')
+    } else {
+      Deno.env.set('KNOCK_RUNTIME_DIR', previousRuntimeDir)
+    }
+
+    await Deno.remove(runtimeDir, { recursive: true })
+  }
+}
+
 Deno.test('[contract] web main: 应暴露 fresh app 默认导出', () => {
   assertEquals(typeof app.listen, 'function')
 })
@@ -25,14 +52,32 @@ Deno.test('[contract] web main: 应注册 reader overview api 路由', async () 
 })
 
 Deno.test('[contract] web main: 应注册 config 页面路由', async () => {
-  const response = await app.handler()(new Request('http://localhost/config'))
+  await withRuntimeDir(
+    `deliveries:
+  local:
+    file:
+      path: outputs/releases.md
+      content: "{{ entry.title }}"
+sources:
+  rust:
+    enabled: true
+    http:
+      url: https://example.com/feed.xml
+    syndication: {}
+    deliveries:
+      local: {}
+`,
+    async () => {
+      const response = await app.handler()(new Request('http://localhost/config'))
 
-  assertEquals(response.status, 200)
-  assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
-  const html = await response.text()
-  assertStringIncludes(html, 'Knock Config')
-  assertStringIncludes(html, 'id="config-global-save"')
-  assertStringIncludes(html, 'id="config-manager-save"')
+      assertEquals(response.status, 200)
+      assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
+      const html = await response.text()
+      assertStringIncludes(html, 'Knock Config')
+      assertStringIncludes(html, 'id="config-global-save"')
+      assertStringIncludes(html, 'id="config-manager-save"')
+    },
+  )
 })
 
 Deno.test('[contract] web main: 应注册 syndication 页面路由', async () => {
