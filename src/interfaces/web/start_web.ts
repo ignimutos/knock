@@ -19,6 +19,8 @@ const WEB_RUNTIME_DIR_ENV = 'KNOCK_WEB_RUNTIME_DIR'
 const WEB_TIMEZONE_ENV = 'KNOCK_WEB_TIMEZONE'
 const WEB_TIMESTAMP_FORMAT_ENV = 'KNOCK_WEB_TIMESTAMP_FORMAT'
 const WEB_LOG_LEVEL_ENV = 'KNOCK_WEB_LOG_LEVEL'
+const WEB_READY_PATH = '/config'
+const WEB_READY_MARKER = 'Knock Config'
 
 let currentWebLoggingRuntime: StartWebLoggingRuntime | undefined
 
@@ -232,24 +234,90 @@ async function waitForChildExit(child: Deno.ChildProcess): Promise<void> {
   }
 }
 
-async function waitForWebReady(host: string, port: number): Promise<void> {
+function createDelay(ms: number): { promise: Promise<void>; cancel: () => void } {
+  let timeoutId: number | undefined
+  return {
+    promise: new Promise<void>((resolve) => {
+      timeoutId = setTimeout(resolve, ms)
+    }),
+    cancel: () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+        timeoutId = undefined
+      }
+    },
+  }
+}
+
+function startWebReadyProbe(
+  host: string,
+  port: number,
+): { promise: Promise<void>; cancel: () => Promise<void> } {
+  const controller = new AbortController()
+  let timeoutId: number | undefined = setTimeout(() => controller.abort(), 1_000)
+  const promise = (async () => {
+    const response = await fetch(`http://${host}:${port}${WEB_READY_PATH}`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      throw new Error(`unexpected status: ${response.status}`)
+    }
+    const html = await response.text()
+    if (!html.includes(WEB_READY_MARKER)) {
+      throw new Error('unexpected ready payload')
+    }
+  })().finally(() => {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+      timeoutId = undefined
+    }
+  })
+
+  return {
+    promise,
+    cancel: async () => {
+      controller.abort()
+      await promise.catch(() => {})
+    },
+  }
+}
+
+async function waitForStartupChildExit(child: Deno.ChildProcess): Promise<never> {
+  const status = await child.status
+  if (!status.success && status.code !== 143) {
+    throw new Error(`web 子进程异常退出: ${status.code}`)
+  }
+  throw new Error('web 子进程在就绪前退出')
+}
+
+async function waitForWebReady(
+  child: Deno.ChildProcess,
+  host: string,
+  port: number,
+): Promise<void> {
   const deadline = Date.now() + 15_000
   let lastError: unknown
+  const childExit = waitForStartupChildExit(child)
 
   while (Date.now() < deadline) {
+    const probe = startWebReadyProbe(host, port)
     try {
-      const response = await fetch(`http://${host}:${port}/`, {
-        signal: AbortSignal.timeout(1_000),
-      })
-      if (response.ok) {
-        return
-      }
-      lastError = new Error(`unexpected status: ${response.status}`)
+      await Promise.race([probe.promise, childExit])
+      return
     } catch (error) {
+      await probe.cancel()
+      if (error instanceof Error && error.message.startsWith('web 子进程')) {
+        throw error
+      }
       lastError = error
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    const delay = createDelay(100)
+    try {
+      await Promise.race([delay.promise, childExit])
+    } finally {
+      delay.cancel()
+    }
   }
 
   throw lastError instanceof Error ? lastError : new Error('等待 Web 服务就绪超时')
@@ -273,7 +341,16 @@ export async function startWeb(options: StartWebOptions) {
   })
 
   const child = new Deno.Command(Deno.execPath(), {
-    args: ['run', '-A', 'npm:vite', '--host', options.host, '--port', String(options.port)],
+    args: [
+      'run',
+      '-A',
+      'npm:vite',
+      '--host',
+      options.host,
+      '--port',
+      String(options.port),
+      '--strictPort',
+    ],
     cwd: Deno.cwd(),
     env: buildViteChildEnv(),
     stdin: 'inherit',
@@ -283,7 +360,7 @@ export async function startWeb(options: StartWebOptions) {
 
   try {
     const url = `http://${options.host}:${options.port}/`
-    await waitForWebReady(options.host, options.port)
+    await waitForWebReady(child, options.host, options.port)
     logger.info(`Web 服务开始监听 ${url}`, {
       'web.operation': 'startup',
       'web.outcome': 'listening',
