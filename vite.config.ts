@@ -10,4 +10,9 @@ export default defineConfig({
       islandsDir: './web/islands',
     }),
   ],
+  server: {
+    watch: {
+      ignored: ['**/*.tmp.*', '**/*.timestamp-*.mjs', '**/*.db-wal', '**/*.db-shm'],
+    },
+  },
 })

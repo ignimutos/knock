@@ -350,6 +350,8 @@ export async function startWeb(options: StartWebOptions) {
       '--port',
       String(options.port),
       '--strictPort',
+      '--configLoader',
+      'native',
     ],
     cwd: Deno.cwd(),
     env: buildViteChildEnv(),

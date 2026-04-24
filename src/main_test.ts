@@ -738,3 +738,94 @@ Deno.test('[contract] startWeb: 端口被占用时应直接报子进程退出而
     }
   })
 })
+
+Deno.test('[contract] startWeb: 就绪后短窗口内不应因 config watcher 立即退出', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    await Deno.writeTextFile(join(runtimeDir, 'config.yml'), 'sources: {}\n')
+
+    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+    const { port } = listener.addr as Deno.NetAddr
+    listener.close()
+
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        'run',
+        '--allow-read',
+        '--allow-write',
+        '--allow-env',
+        '--allow-net',
+        '--allow-ffi',
+        '--allow-run',
+        '--allow-sys',
+        'src/main.ts',
+        '--mode',
+        'web',
+        '--web_host',
+        '127.0.0.1',
+        '--web_port',
+        String(port),
+      ],
+      cwd: Deno.cwd(),
+      env: {
+        ...Deno.env.toObject(),
+        KNOCK_RUNTIME_DIR: runtimeDir,
+      },
+      stdout: 'piped',
+      stderr: 'piped',
+    }).spawn()
+
+    try {
+      const deadline = Date.now() + 15000
+      let configResponse: Response | undefined
+      let lastError: unknown
+
+      while (Date.now() < deadline) {
+        try {
+          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
+          if (candidate.status === 200) {
+            configResponse = candidate
+            break
+          }
+          lastError = new Error(`unexpected status: ${candidate.status}`)
+        } catch (error) {
+          lastError = error
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      if (!configResponse) {
+        throw lastError instanceof Error ? lastError : new Error('等待 config 页面可达超时')
+      }
+      const html = await configResponse.text()
+      assertStringIncludes(html, 'Knock Config')
+
+      const earlyExit = await Promise.race([
+        child.status.then((status) => ({ kind: 'exit' as const, status })),
+        new Promise<{ kind: 'timeout' }>((resolve) =>
+          setTimeout(() => resolve({ kind: 'timeout' }), 1200),
+        ),
+      ])
+      if (earlyExit.kind === 'exit') {
+        throw new Error(`web 子进程在启动后过早退出: ${earlyExit.status.code}`)
+      }
+    } finally {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // noop
+      }
+      try {
+        await child.stdout?.cancel()
+      } catch {
+        // noop
+      }
+      try {
+        await child.stderr?.cancel()
+      } catch {
+        // noop
+      }
+      await child.status
+    }
+  })
+})
