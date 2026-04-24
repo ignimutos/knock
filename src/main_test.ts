@@ -430,77 +430,110 @@ Deno.test('[contract] main: 通过 main(args) 应走同一 dispatch 路径', asy
 })
 
 Deno.test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await Deno.writeTextFile(
-      join(runtimeDir, 'config.yml'),
-      [
-        'sources: {}',
-        'logging:',
-        '  level: info',
-        '  sinks:',
-        '    console:',
-        '      type: console',
-        '      format: jsonl',
-      ].join('\n'),
-    )
+  const originalCi = Deno.env.get('CI')
+  const originalForceColor = Deno.env.get('FORCE_COLOR')
+  const originalTerm = Deno.env.get('TERM')
+  const originalNoColor = Deno.env.get('NO_COLOR')
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+  Deno.env.set('CI', 'true')
+  Deno.env.set('FORCE_COLOR', '1')
+  Deno.env.set('TERM', 'xterm-256color')
+  Deno.env.delete('NO_COLOR')
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--mode',
-        'web',
-        '--web_host',
-        '127.0.0.1',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+  try {
+    await withOwnedRuntime(async ({ runtimeDir }) => {
+      await Deno.writeTextFile(
+        join(runtimeDir, 'config.yml'),
+        [
+          'sources: {}',
+          'logging:',
+          '  level: info',
+          '  sinks:',
+          '    console:',
+          '      type: console',
+          '      format: jsonl',
+        ].join('\n'),
+      )
 
-    try {
-      const output = await readStartupOutput(child, port, 15000)
+      const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+      const { port } = listener.addr as Deno.NetAddr
+      listener.close()
 
-      assertEquals(output.includes('\u001b['), false)
-      assertStringIncludes(output, '"severityText":"INFO"')
-      assertStringIncludes(output, '"scope":{"name":"web.startup"}')
-      assertStringIncludes(output, '"web.host":"127.0.0.1"')
-      assertStringIncludes(output, `"web.url":"http://127.0.0.1:${port}/"`)
-    } finally {
+      const child = new Deno.Command(Deno.execPath(), {
+        args: [
+          'run',
+          '--allow-read',
+          '--allow-write',
+          '--allow-env',
+          '--allow-net',
+          '--allow-ffi',
+          '--allow-run',
+          '--allow-sys',
+          'src/main.ts',
+          '--mode',
+          'web',
+          '--web_host',
+          '127.0.0.1',
+          '--web_port',
+          String(port),
+        ],
+        cwd: Deno.cwd(),
+        env: createStableChildEnv({
+          KNOCK_RUNTIME_DIR: runtimeDir,
+        }),
+        stdout: 'piped',
+        stderr: 'piped',
+      }).spawn()
+
       try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
+        const output = await readStartupOutput(child, port, 15000)
+
+        assertEquals(output.includes('\u001b['), false)
+        assertStringIncludes(output, '"severityText":"INFO"')
+        assertStringIncludes(output, '"scope":{"name":"web.startup"}')
+        assertStringIncludes(output, '"web.host":"127.0.0.1"')
+        assertStringIncludes(output, `"web.url":"http://127.0.0.1:${port}/"`)
+      } finally {
+        try {
+          child.kill('SIGTERM')
+        } catch {
+          // noop
+        }
+        try {
+          await child.stdout?.cancel()
+        } catch {
+          // noop
+        }
+        try {
+          await child.stderr?.cancel()
+        } catch {
+          // noop
+        }
+        await child.status
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
-      await child.status
+    })
+  } finally {
+    if (originalCi === undefined) {
+      Deno.env.delete('CI')
+    } else {
+      Deno.env.set('CI', originalCi)
     }
-  })
+    if (originalForceColor === undefined) {
+      Deno.env.delete('FORCE_COLOR')
+    } else {
+      Deno.env.set('FORCE_COLOR', originalForceColor)
+    }
+    if (originalTerm === undefined) {
+      Deno.env.delete('TERM')
+    } else {
+      Deno.env.set('TERM', originalTerm)
+    }
+    if (originalNoColor === undefined) {
+      Deno.env.delete('NO_COLOR')
+    } else {
+      Deno.env.set('NO_COLOR', originalNoColor)
+    }
+  }
 })
 
 Deno.test('[contract] startWeb: 应拒绝 logging 路径中的环境变量展开', async () => {

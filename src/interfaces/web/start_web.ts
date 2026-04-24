@@ -75,7 +75,10 @@ function applyWebLoggingRuntimeEnv(runtime: StartWebLoggingRuntime | undefined):
 }
 
 function buildViteChildEnv(): Record<string, string> {
-  const next: Record<string, string> = {}
+  const next: Record<string, string> = {
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+  }
   const allowedKeys = [
     'HOME',
     'PATH',
@@ -86,9 +89,6 @@ function buildViteChildEnv(): Record<string, string> {
     'COMSPEC',
     'PATHEXT',
     'TERM',
-    'NO_COLOR',
-    'FORCE_COLOR',
-    'CI',
     'npm_config_user_agent',
     'npm_config_cache',
     'DENO_DIR',
