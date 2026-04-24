@@ -81,6 +81,8 @@ Deno.test(
     assertStringIncludes(html, 'id="reader-bootstrap"')
     assertStringIncludes(html, 'id="reader-source-list"')
     assertStringIncludes(html, 'id="reader-source-card"')
+    assertStringIncludes(html, 'reader-source-expand-shell is-expanded')
+    assertStringIncludes(html, 'reader-source-chevron is-expanded')
     assertStringIncludes(html, 'id="reader-feed-banner"')
     assertStringIncludes(html, 'id="reader-entry-list"')
     assertStringIncludes(html, 'class="reader-entry-expanded"')
@@ -88,6 +90,7 @@ Deno.test(
     assertStringIncludes(html, 'source 运维')
     assertStringIncludes(html, '打开 Config')
     assertStringIncludes(html, 'href="/config?source=rust"')
+    assertStringIncludes(html, '手动刷新')
     assertStringIncludes(html, '强制获取')
     assertStringIncludes(html, '清空历史')
     assertStringIncludes(html, '确认清空历史')
@@ -107,6 +110,8 @@ Deno.test('[contract] web pages: Reader 页应保留键盘漫游与 bootstrap �
   assertStringIncludes(html, 'reader-source-button')
   assertStringIncludes(html, 'reader-entry-button')
   assertStringIncludes(html, 'reader-entry-expand-shell')
+  assertStringIncludes(html, 'sourceExpanded = sameSource ? !sourceExpanded : true')
+  assertStringIncludes(html, 'sourceExpanded = true')
   assertStringIncludes(html, 'entryIndex = expanded ? -1 : index')
   assertStringIncludes(html, 'aria-expanded="true"')
   assertStringIncludes(html, 'JSON.parse(bootstrap.textContent')
@@ -118,7 +123,19 @@ Deno.test(
     const html = renderToString(ReaderPage({ overview }))
 
     assertStringIncludes(html, 'const applyOverview = (nextOverview, preferredSourceId) => {')
-    assertStringIncludes(html, 'applyOverview(result?.overview, source.id)')
+    assertStringIncludes(html, 'const requestOverview = async () => {')
+    assertStringIncludes(html, "await fetch('/api/reader/overview')")
+    assertStringIncludes(html, "managerRefresh.addEventListener('click'")
+    assertFalse(
+      /requestAction\('\/api\/sources\/run'[\s\S]*applyOverview\(result\?\.overview, source\.id\)/.test(
+        html,
+      ),
+    )
+    assertFalse(
+      /requestAction\('\/api\/sources\/clear'[\s\S]*applyOverview\(result\?\.overview, source\.id\)/.test(
+        html,
+      ),
+    )
     assertFalse(html.includes('window.location.reload()'))
   },
 )

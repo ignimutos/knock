@@ -610,8 +610,6 @@ html[data-theme="dark"] .xq-side-rail {
 .reader-sidebar {
   display: grid;
   gap: var(--space-4);
-  position: sticky;
-  top: 24px;
 }
 .reader-sidebar-head,
 .reader-entry-stack-head,
@@ -652,10 +650,12 @@ html[data-theme="dark"] .xq-side-rail {
 .reader-source-list,
 .reader-entry-list,
 .reader-main-column,
+.reader-main-rail,
 .reader-manager-panel,
 .reader-manager-deliveries,
 .reader-manager-delivery-list,
-.reader-entry-item {
+.reader-entry-item,
+.reader-source-item {
   display: grid;
   gap: var(--space-3);
 }
@@ -669,6 +669,21 @@ html[data-theme="dark"] .xq-side-rail {
 }
 .reader-main-column {
   min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.reader-main-rail {
+  position: sticky;
+  top: 24px;
+  z-index: 1;
+}
+.reader-source-item {
+  gap: var(--space-2);
+}
+.reader-source-expand-shell {
+  display: none;
+}
+.reader-source-expand-shell.is-expanded {
+  display: block;
 }
 .reader-source-button,
 .reader-entry-button,
@@ -732,12 +747,36 @@ html[data-theme="dark"] .xq-side-rail {
   background: var(--panel-strong);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-strong) 28%, transparent);
 }
+.reader-source-item.is-expanded > .reader-source-button {
+  box-shadow:
+    inset 3px 0 0 var(--accent-strong),
+    0 0 0 1px color-mix(in srgb, var(--accent-strong) 28%, transparent);
+}
+.reader-source-item.is-expanded > .reader-source-button .reader-source-name {
+  color: var(--accent-strong);
+}
 .reader-source-headline,
 .reader-entry-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+.reader-source-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.reader-source-chevron {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  transition: transform .16s cubic-bezier(0.16, 1, 0.3, 1), color .16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reader-source-chevron.is-expanded {
+  transform: rotate(180deg);
+  color: var(--accent-strong);
 }
 .reader-source-name,
 .reader-entry-name,
@@ -826,6 +865,9 @@ html[data-theme="dark"] .xq-side-rail {
 .reader-entry-stack {
   padding: var(--space-5);
   border-radius: var(--radius-xl);
+}
+.reader-source-card {
+  background: var(--panel-strong);
 }
 .reader-feed-banner,
 .reader-source-card,

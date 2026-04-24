@@ -196,27 +196,49 @@ function SourceList(props: { sources: ReaderOverview['sources'] }) {
     >
       {props.sources.map((source, index) => {
         const view = buildSourceListItemView(source)
+        const active = index === 0
+        const expanded = active
         return (
-          <button
+          <section
             key={source.id}
-            type="button"
-            class={`reader-source-button${index === 0 ? ' is-active' : ''}`}
-            data-reader-source={source.id}
-            data-source-index={String(index)}
-            aria-selected={index === 0 ? 'true' : 'false'}
+            class={`reader-source-item${expanded ? ' is-expanded' : ''}`}
+            data-source-item={String(index)}
           >
-            <span class="reader-source-headline">
-              <span class="reader-source-name">{view.name}</span>
-              <span class={`reader-state-badge is-${view.enabled ? 'enabled' : 'disabled'}`}>
-                {view.enabled ? '启用' : '停用'}
+            <button
+              type="button"
+              class={`reader-source-button${active ? ' is-active' : ''}`}
+              data-reader-source={source.id}
+              data-source-index={String(index)}
+              aria-selected={active ? 'true' : 'false'}
+              aria-expanded={expanded ? 'true' : 'false'}
+            >
+              <span class="reader-source-headline">
+                <span class="reader-source-heading">
+                  <span class="reader-source-name">{view.name}</span>
+                  <span
+                    class={`reader-source-chevron${expanded ? ' is-expanded' : ''}`}
+                    aria-hidden="true"
+                  >
+                    ▾
+                  </span>
+                </span>
+                <span class={`reader-state-badge is-${view.enabled ? 'enabled' : 'disabled'}`}>
+                  {view.enabled ? '启用' : '停用'}
+                </span>
               </span>
-            </span>
-            <span class="reader-source-meta">
-              <span>{view.parserLabel}</span>
-              <span>{view.transportLabel}</span>
-              <span>{view.deliveryKindsLabel}</span>
-            </span>
-          </button>
+              <span class="reader-source-meta">
+                <span>{view.parserLabel}</span>
+                <span>{view.transportLabel}</span>
+                <span>{view.deliveryKindsLabel}</span>
+              </span>
+            </button>
+            <div
+              class={`reader-source-expand-shell${expanded ? ' is-expanded' : ''}`}
+              aria-hidden={expanded ? 'false' : 'true'}
+            >
+              <SourceCard source={source} />
+            </div>
+          </section>
         )
       })}
     </div>
@@ -340,17 +362,24 @@ function SourceManager(props: { source?: ReaderSourceOverview }) {
       <p class="reader-empty">
         配置编辑已迁到{' '}
         <a href={`/config?source=${encodeURIComponent(source.id)}`}>Config Workbench</a>
-        ；这里仅保留运行与清理。
+        ；这里仅保留刷新、运行与清理。
       </p>
 
       <div class="toolbar reader-manager-actions">
         <a
           href={`/config?source=${encodeURIComponent(source.id)}`}
-          class="btn btn-primary"
+          class="btn btn-secondary"
           id="reader-manager-config-link"
         >
           打开 Config
         </a>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          id="reader-manager-refresh"
+        >
+          手动刷新
+        </button>
         <button
           type="button"
           class="btn btn-secondary"
@@ -554,7 +583,6 @@ const readerPageScript = `(() => {
   ${inlineBrowserFunction('buildEntryView', buildEntryView)}
   const bootstrap = document.getElementById('reader-bootstrap')
   const sourceList = document.getElementById('reader-source-list')
-  const sourceCard = document.getElementById('reader-source-card')
   const feedBanner = document.getElementById('reader-feed-banner')
   const entryList = document.getElementById('reader-entry-list')
   const summary = document.getElementById('reader-summary')
@@ -562,6 +590,7 @@ const readerPageScript = `(() => {
   const managerTitle = document.getElementById('reader-manager-title')
   const managerStateBadge = document.getElementById('reader-manager-state-badge')
   const managerConfigLink = document.getElementById('reader-manager-config-link')
+  const managerRefresh = document.getElementById('reader-manager-refresh')
   const managerRun = document.getElementById('reader-manager-run')
   const managerClear = document.getElementById('reader-manager-clear')
   const managerMessage = document.getElementById('reader-manager-message')
@@ -574,7 +603,6 @@ const readerPageScript = `(() => {
 
   if (!(bootstrap instanceof HTMLScriptElement) ||
     !(sourceList instanceof HTMLElement) ||
-    !(sourceCard instanceof HTMLElement) ||
     !(feedBanner instanceof HTMLElement) ||
     !(entryList instanceof HTMLElement) ||
     !(summary instanceof HTMLElement) ||
@@ -582,6 +610,7 @@ const readerPageScript = `(() => {
     !(managerTitle instanceof HTMLElement) ||
     !(managerStateBadge instanceof HTMLElement) ||
     !(managerConfigLink instanceof HTMLAnchorElement) ||
+    !(managerRefresh instanceof HTMLButtonElement) ||
     !(managerRun instanceof HTMLButtonElement) ||
     !(managerClear instanceof HTMLButtonElement) ||
     !(managerMessage instanceof HTMLElement) ||
@@ -603,6 +632,7 @@ const readerPageScript = `(() => {
   const storageKey = 'knock.reader.sourceId'
   let sources = Array.isArray(overview?.sources) ? overview.sources : []
   let sourceIndex = 0
+  let sourceExpanded = sources.length > 0
   let entryIndex = 0
   let confirmResolver = undefined
 
@@ -714,44 +744,12 @@ const readerPageScript = `(() => {
     if (active instanceof HTMLButtonElement) active.focus()
   }
 
-  const renderSourceList = () => {
-    sourceList.replaceChildren()
-    sources.forEach((source, index) => {
-      const view = buildSourceListItemView(source)
-      const button = make('button', 'reader-source-button' + (index === sourceIndex ? ' is-active' : ''))
-      button.type = 'button'
-      button.dataset.sourceIndex = String(index)
-      button.setAttribute('aria-selected', index === sourceIndex ? 'true' : 'false')
-      button.setAttribute('tabindex', index === sourceIndex ? '0' : '-1')
-
-      const headline = make('span', 'reader-source-headline')
-      headline.appendChild(make('span', 'reader-source-name', view.name))
-      headline.appendChild(make('span', 'reader-state-badge is-' + (view.enabled ? 'enabled' : 'disabled'), view.enabled ? '启用' : '停用'))
-
-      const meta = make('span', 'reader-source-meta')
-      meta.appendChild(make('span', '', view.parserLabel))
-      meta.appendChild(make('span', '', view.transportLabel))
-      meta.appendChild(make('span', '', view.deliveryKindsLabel))
-
-      button.appendChild(headline)
-      button.appendChild(meta)
-      button.addEventListener('click', () => {
-        sourceIndex = index
-        entryIndex = 0
-        storeSourceId(source.id)
-        render()
-        focusSelectedSource()
-      })
-      sourceList.appendChild(button)
-    })
-  }
-
-  const renderSourceCard = () => {
-    const view = buildSourceCardView(getSource())
-    sourceCard.replaceChildren()
+  const renderSourceCardContent = (container, source) => {
+    const view = buildSourceCardView(source)
+    container.replaceChildren()
 
     if (view.emptyMessage) {
-      sourceCard.appendChild(make('p', 'reader-empty', view.emptyMessage))
+      container.appendChild(make('p', 'reader-empty', view.emptyMessage))
       return
     }
 
@@ -767,25 +765,78 @@ const readerPageScript = `(() => {
       meta.appendChild(createMetaPair(item.label, item.value))
     })
 
-    sourceCard.appendChild(head)
-    sourceCard.appendChild(meta)
+    container.appendChild(head)
+    container.appendChild(meta)
 
     if (typeof view.sourceUrl === 'string' && view.sourceUrl !== '') {
       const link = make('a', 'reader-link', '打开源地址')
       link.href = view.sourceUrl
       link.target = '_blank'
       link.rel = 'noreferrer'
-      sourceCard.appendChild(link)
+      container.appendChild(link)
     }
 
     if (view.feedDescription) {
       const note = make('div', 'reader-feed-note')
       note.appendChild(make('p', 'reader-feed-title', view.feedTitle || '未命名 feed'))
       note.appendChild(make('p', 'reader-feed-description', view.feedDescription))
-      sourceCard.appendChild(note)
+      container.appendChild(note)
     } else {
-      sourceCard.appendChild(make('p', 'reader-empty', view.feedEmptyMessage))
+      container.appendChild(make('p', 'reader-empty', view.feedEmptyMessage))
     }
+  }
+
+  const renderSourceList = () => {
+    sourceList.replaceChildren()
+    sources.forEach((source, index) => {
+      const view = buildSourceListItemView(source)
+      const active = index === sourceIndex
+      const expanded = sourceExpanded && active
+      const item = make('section', 'reader-source-item' + (expanded ? ' is-expanded' : ''))
+      item.dataset.sourceItem = String(index)
+
+      const button = make('button', 'reader-source-button' + (active ? ' is-active' : ''))
+      button.type = 'button'
+      button.dataset.sourceIndex = String(index)
+      button.setAttribute('aria-selected', active ? 'true' : 'false')
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+      button.setAttribute('tabindex', active ? '0' : '-1')
+
+      const headline = make('span', 'reader-source-headline')
+      const heading = make('span', 'reader-source-heading')
+      heading.appendChild(make('span', 'reader-source-name', view.name))
+      heading.appendChild(make('span', 'reader-source-chevron' + (expanded ? ' is-expanded' : ''), '▾'))
+      headline.appendChild(heading)
+      headline.appendChild(make('span', 'reader-state-badge is-' + (view.enabled ? 'enabled' : 'disabled'), view.enabled ? '启用' : '停用'))
+
+      const meta = make('span', 'reader-source-meta')
+      meta.appendChild(make('span', '', view.parserLabel))
+      meta.appendChild(make('span', '', view.transportLabel))
+      meta.appendChild(make('span', '', view.deliveryKindsLabel))
+
+      button.appendChild(headline)
+      button.appendChild(meta)
+      button.addEventListener('click', () => {
+        const sameSource = index === sourceIndex
+        sourceIndex = index
+        sourceExpanded = sameSource ? !sourceExpanded : true
+        if (!sameSource) {
+          entryIndex = 0
+        }
+        storeSourceId(source.id)
+        render()
+        focusSelectedSource()
+      })
+      item.appendChild(button)
+
+      const shell = make('div', 'reader-source-expand-shell' + (expanded ? ' is-expanded' : ''))
+      shell.setAttribute('aria-hidden', expanded ? 'false' : 'true')
+      const card = make('section', 'reader-source-card')
+      renderSourceCardContent(card, source)
+      shell.appendChild(card)
+      item.appendChild(shell)
+      sourceList.appendChild(item)
+    })
   }
 
   const renderFeedBanner = () => {
@@ -912,11 +963,11 @@ const readerPageScript = `(() => {
 
   const render = () => {
     if (sourceIndex >= sources.length) sourceIndex = 0
+    if (sources.length === 0) sourceExpanded = false
     const entries = getEntries()
     if (entryIndex >= entries.length) entryIndex = entries.length === 0 ? -1 : 0
     clearManagerStatus()
     renderSourceList()
-    renderSourceCard()
     renderFeedBanner()
     renderManager()
     renderEntryList()
@@ -929,6 +980,15 @@ const readerPageScript = `(() => {
       : 0
     sourceIndex = nextIndex >= 0 ? nextIndex : 0
     render()
+  }
+
+  const requestOverview = async () => {
+    const response = await fetch('/api/reader/overview')
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(typeof body?.message === 'string' ? body.message : '刷新失败')
+    }
+    return body
   }
 
   const requestAction = async (path, payload) => {
@@ -946,6 +1006,23 @@ const readerPageScript = `(() => {
     return body
   }
 
+  managerRefresh.addEventListener('click', async () => {
+    const source = getSource()
+    if (!source) return
+    clearManagerStatus()
+    setButtonState(managerRefresh, true, '手动刷新', '刷新中…')
+    try {
+      const result = await requestOverview()
+      storeSourceId(source.id)
+      applyOverview(result?.overview, source.id)
+      showManagerMessage(typeof result?.message === 'string' ? result.message : 'Reader 已刷新')
+    } catch (error) {
+      showManagerError(error instanceof Error ? error.message : '手动刷新失败')
+    } finally {
+      setButtonState(managerRefresh, false, '手动刷新', '刷新中…')
+    }
+  })
+
   managerRun.addEventListener('click', async () => {
     const source = getSource()
     if (!source) return
@@ -954,7 +1031,6 @@ const readerPageScript = `(() => {
     try {
       const result = await requestAction('/api/sources/run', { sourceId: source.id })
       storeSourceId(source.id)
-      applyOverview(result?.overview, source.id)
       showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 强制获取完成')
     } catch (error) {
       showManagerError(error instanceof Error ? error.message : '强制获取失败')
@@ -979,7 +1055,6 @@ const readerPageScript = `(() => {
     try {
       const result = await requestAction('/api/sources/clear', { sourceId: source.id })
       storeSourceId(source.id)
-      applyOverview(result?.overview, source.id)
       showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 历史已清空')
     } catch (error) {
       showManagerError(error instanceof Error ? error.message : '清空历史失败')
@@ -1039,6 +1114,7 @@ const readerPageScript = `(() => {
 
     event.preventDefault()
     sourceIndex = Math.min(sources.length - 1, Math.max(0, sourceIndex + delta))
+    sourceExpanded = true
     entryIndex = -1
     storeSourceId(getSource()?.id || '')
     render()
@@ -1082,12 +1158,13 @@ export default function ReaderPage(props: { overview: ReaderOverview }) {
             </p>
           ) : null}
           <SourceList sources={props.overview.sources} />
-          <SourceCard source={source} />
         </aside>
 
         <section class="reader-main-column">
-          <FeedBanner source={source} />
-          <SourceManager source={source} />
+          <div class="reader-main-rail">
+            <FeedBanner source={source} />
+            <SourceManager source={source} />
+          </div>
           <EntryList source={source} />
         </section>
       </section>

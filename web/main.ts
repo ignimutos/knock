@@ -131,6 +131,13 @@ export const app = new App()
     const overview = await loadReaderOverview()
     return ctx.render(ReaderPage({ overview }))
   })
+  .get(
+    '/api/reader/overview',
+    withApiRequestLogging('/api/reader/overview', 'web.api.reader.overview', async (request) => {
+      const { handler } = await import('./routes/api/reader/overview.ts')
+      return await handler(request)
+    }),
+  )
   .get('/config', async (ctx) => {
     const workbench = await loadConfigWorkbenchOverview()
     return ctx.render(ConfigPage({ workbench }))

@@ -17,6 +17,13 @@ Deno.test('[contract] web main: 应注册 reader 页面路由', async () => {
   assertStringIncludes(html, 'id="reader-source-list"')
 })
 
+Deno.test('[contract] web main: 应注册 reader overview api 路由', async () => {
+  const response = await app.handler()(new Request('http://localhost/api/reader/overview'))
+
+  assertEquals(response.status, 200)
+  assertStringIncludes(response.headers.get('content-type') ?? '', 'application/json')
+})
+
 Deno.test('[contract] web main: 应注册 config 页面路由', async () => {
   const response = await app.handler()(new Request('http://localhost/config'))
 
