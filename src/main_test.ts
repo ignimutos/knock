@@ -10,8 +10,9 @@ import {
   toDaemonStartOptions,
 } from './interfaces/cli/parse_cli_command.ts'
 
-async function readCommandOutput(
+async function readCommandOutputUntil(
   stream: ReadableStream<Uint8Array> | null,
+  expected: string,
   timeoutMs: number,
 ): Promise<string> {
   if (!stream) return ''
@@ -19,33 +20,46 @@ async function readCommandOutput(
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let output = ''
-  let timeoutId: number | undefined
+  const deadline = Date.now() + timeoutMs
 
   try {
-    const result = await Promise.race([
-      (async () => {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) return output
-          output += decoder.decode(value, { stream: true })
-        }
-      })(),
-      new Promise<string>((resolve) => {
-        timeoutId = setTimeout(() => resolve(output), timeoutMs)
-      }),
-    ])
-
-    return result
-  } finally {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId)
+    while (Date.now() < deadline) {
+      const remaining = Math.max(0, deadline - Date.now())
+      let timeoutId: number | undefined
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
+          timeoutId = setTimeout(() => resolve({ done: true, value: undefined }), remaining)
+        }),
+      ])
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+      }
+      if (chunk.done) break
+      output += decoder.decode(chunk.value, { stream: true })
+      if (output.includes(expected)) {
+        return output
+      }
     }
+    return output
+  } finally {
     try {
       await reader.cancel()
     } catch {
       // noop
     }
   }
+}
+
+async function readStartupOutput(
+  child: Deno.ChildProcess,
+  port: number,
+  timeoutMs: number,
+): Promise<string> {
+  const expected = `Web 服务开始监听 http://127.0.0.1:${port}/`
+  const output = await readCommandOutputUntil(child.stdout, expected, timeoutMs)
+  assertStringIncludes(output, expected)
+  return output
 }
 
 Deno.test('[contract] parseCliCommand: 应解析 --config、--runtime_dir 与 --immediate', () => {
@@ -461,7 +475,7 @@ Deno.test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty
     }).spawn()
 
     try {
-      const output = await readCommandOutput(child.stdout, 3000)
+      const output = await readStartupOutput(child, port, 15000)
 
       assertEquals(output.includes('\u001b['), false)
       assertStringIncludes(output, '"severityText":"INFO"')
@@ -581,7 +595,7 @@ Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host�
     }).spawn()
 
     try {
-      const output = await readCommandOutput(child.stdout, 3000)
+      const output = await readStartupOutput(child, port, 15000)
 
       assertStringIncludes(output, '\u001b[')
       assertStringIncludes(output, 'info')
@@ -648,14 +662,14 @@ Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', asyn
 
     try {
       const deadline = Date.now() + 15000
-      let response: Response | undefined
+      let homeResponse: Response | undefined
       let lastError: unknown
 
       while (Date.now() < deadline) {
         try {
-          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
+          const candidate = await fetch(`http://127.0.0.1:${port}/`)
           if (candidate.status === 200) {
-            response = candidate
+            homeResponse = candidate
             break
           }
           lastError = new Error(`unexpected status: ${candidate.status}`)
@@ -666,10 +680,13 @@ Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', asyn
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
 
-      if (!response) {
-        throw lastError instanceof Error ? lastError : new Error('等待 /config 可达超时')
+      if (!homeResponse) {
+        throw lastError instanceof Error ? lastError : new Error('等待首页可达超时')
       }
+      await homeResponse.text()
 
+      const response = await fetch(`http://127.0.0.1:${port}/config`)
+      assertEquals(response.status, 200)
       const html = await response.text()
       assertStringIncludes(html, 'Knock Config')
       assertStringIncludes(html, 'config workbench')

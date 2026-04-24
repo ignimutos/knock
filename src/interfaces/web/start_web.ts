@@ -232,6 +232,29 @@ async function waitForChildExit(child: Deno.ChildProcess): Promise<void> {
   }
 }
 
+async function waitForWebReady(host: string, port: number): Promise<void> {
+  const deadline = Date.now() + 15_000
+  let lastError: unknown
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://${host}:${port}/`, {
+        signal: AbortSignal.timeout(1_000),
+      })
+      if (response.ok) {
+        return
+      }
+      lastError = new Error(`unexpected status: ${response.status}`)
+    } catch (error) {
+      lastError = error
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('等待 Web 服务就绪超时')
+}
+
 export async function startWeb(options: StartWebOptions) {
   const loggingRuntime = await loadStartWebLoggingRuntime()
   setCurrentWebLoggingRuntime(loggingRuntime)
@@ -260,6 +283,7 @@ export async function startWeb(options: StartWebOptions) {
 
   try {
     const url = `http://${options.host}:${options.port}/`
+    await waitForWebReady(options.host, options.port)
     logger.info(`Web 服务开始监听 ${url}`, {
       'web.operation': 'startup',
       'web.outcome': 'listening',
