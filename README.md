@@ -7,6 +7,7 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 ## 功能概览
 
 - 输入能力：RSS / Atom / JSON Feed、XQuery 页面提取、summary 窗口汇总。
+- Web `/config`：结构化 / JSON 双模式编辑；secret 字段不回显，未修改时保留原值；写操作要求同源请求。
 - 处理链路：字段统一、Liquid 过滤、模板渲染。
 - 投递通道：file、push、email。
 - 运行模式：`all`、`web`、`daemon`，支持 `--immediate` 一次性执行。
@@ -99,6 +100,8 @@ deno task start --config <your-config.yml>
 7. `summary` source 采用互斥模型：启用 `summary` 后，source 进入汇总模式，并使用独立窗口语义。
 8. 配置加载阶段先展开 `${ENV_VAR}`，运行阶段再渲染 Liquid 模板；同一字符串中两者并存时，执行顺序保持为“先 ENV，后 Liquid”。
 9. `sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `runtime_dir` 解析。
+10. Web `/config` 入口不会回显已保存的 secret；未修改 secret 时会保留原值。
+11. Web `/config` 的写操作只接受同源请求，且通过 Web 编辑的文件路径必须保持为 runtime 内相对路径。
 
 ## 完整配置模型长这样：
 

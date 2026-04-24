@@ -85,11 +85,11 @@ Deno.test(
     assertStringIncludes(html, 'id="reader-entry-list"')
     assertStringIncludes(html, 'class="reader-entry-expanded"')
     assertStringIncludes(html, 'source archive')
-    assertStringIncludes(html, 'source 管理')
-    assertStringIncludes(html, '保存配置')
+    assertStringIncludes(html, 'source 运维')
+    assertStringIncludes(html, '打开 Config')
+    assertStringIncludes(html, 'href="/config?source=rust"')
     assertStringIncludes(html, '强制获取')
     assertStringIncludes(html, '清空历史')
-    assertStringIncludes(html, 'payload override (JSON)')
     assertStringIncludes(html, '确认清空历史')
     assertStringIncludes(html, 'entry 阅读面')
     assertStringIncludes(html, '打开原文')
@@ -132,17 +132,16 @@ Deno.test('[contract] web pages: Reader 状态与类型文案映射应在 SSR �
 })
 
 Deno.test(
-  '[contract] web pages: Reader 文本清洗与 override 文本转换应在 SSR 与脚本侧共用同一规则源',
+  '[contract] web pages: Reader 文本清洗与阅读视图转换应在 SSR 与脚本侧共用同一规则源',
   () => {
     const html = renderToString(ReaderPage({ overview }))
 
     assertStringIncludes(html, 'const STRIP_MARKUP_PATTERNS = ')
     assertStringIncludes(html, 'const STRIP_MARKUP_REPLACERS = STRIP_MARKUP_PATTERNS.map(')
     assertStringIncludes(html, 'for (const [pattern, replacement] of STRIP_MARKUP_REPLACERS)')
-    assertStringIncludes(html, 'const getOverrideTextareaValue = function getOverrideTextareaValue')
     assertStringIncludes(html, 'const buildSourceCardView = function buildSourceCardView')
     assertStringIncludes(html, 'const buildEntryView = function buildEntryView')
     assertStringIncludes(html, 'Latest posts')
-    assertStringIncludes(html, '{\n  &quot;text&quot;: &quot;{{ entry.title }}&quot;\n}')
+    assertStringIncludes(html, 'Config Workbench')
   },
 )

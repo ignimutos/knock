@@ -1,5 +1,6 @@
 import type { ReaderOverview } from '../../web/reader_overview.ts'
 import type { SourceManagementError } from './source_management.ts'
+import { isSameOriginWriteRequest } from './same_origin_write.ts'
 
 export interface SourceActionSuccessResult {
   message: string
@@ -46,6 +47,23 @@ export function createSourceActionHandler(options: CreateSourceActionHandlerOpti
   ): Promise<Response> {
     const runAction = deps.runAction ?? options.runAction
 
+    if (!isSameOriginWriteRequest(request)) {
+      deps.onLogMeta?.({
+        action: options.action,
+        errorCode: 'source_action_forbidden',
+        errorCategory: 'forbidden',
+        errorMessage: 'source 写请求必须来自同源页面',
+      })
+      return Response.json(
+        {
+          message: 'source 写请求必须来自同源页面',
+          code: 'source_action_forbidden',
+          category: 'forbidden',
+        },
+        { status: 403 },
+      )
+    }
+
     let payload: unknown
     try {
       payload = await request.json()
@@ -88,9 +106,13 @@ export function createSourceActionHandler(options: CreateSourceActionHandlerOpti
         errorCategory: classified.category,
         errorMessage: classified.message,
       })
+      const message =
+        classified.category === 'internal'
+          ? 'source 操作失败，请查看服务端日志。'
+          : classified.message
       return Response.json(
         {
-          message: classified.message,
+          message,
           code: classified.code,
           category: classified.category,
         },

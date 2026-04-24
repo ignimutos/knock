@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
+import type { SourceDeliveryOverride } from '../../config/types.ts'
 import {
   getConfigDocumentLookupFromEnv,
   loadRawConfigDocument,
@@ -18,8 +18,17 @@ import { throwConflict, throwNotFound, throwValidation } from './source_manageme
 import { createFactsDbClient, runInTransaction } from '../../db/client.ts'
 import { sourceRuns } from '../../infrastructure/sqlite/schema.ts'
 import { buildCurrentReaderOverview, type ReaderOverview } from '../../web/reader_overview.ts'
+import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
 
 export { classifySourceManagementError, SourceManagementError } from './source_management_errors.ts'
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function cloneRecord(value: unknown): Record<string, unknown> {
+  return isPlainObject(value) ? structuredClone(value) : {}
+}
 
 export async function updateSourceConfig(input: unknown): Promise<{
   message: string
@@ -35,8 +44,20 @@ export async function updateSourceConfig(input: unknown): Promise<{
     throw error
   }
   const loaded = await loadRawConfigDocument(getConfigDocumentLookupFromEnv())
+  const currentSource = cloneRecord(cloneRecord(loaded.document.sources)[request.sourceId])
+  const currentOverrides = cloneRecord(currentSource.deliveries)
+  const deliveryOverrides = Object.fromEntries(
+    Object.entries(request.deliveryOverrides).map(([deliveryId, override]) => [
+      deliveryId,
+      restoreConfigSecrets(override, currentOverrides[deliveryId]) as SourceDeliveryOverride,
+    ]),
+  )
+
   try {
-    applySourceConfigDocumentUpdate(loaded.document, request)
+    applySourceConfigDocumentUpdate(loaded.document, {
+      ...request,
+      deliveryOverrides,
+    })
   } catch (error) {
     if (error instanceof SourceConfigDocumentUpdateError) {
       if (error.kind === 'not_found') {
@@ -86,6 +107,7 @@ export async function runSourceNow(input: unknown): Promise<{
     throwConflict(`source ${context.request.sourceId} 已停用，不能强制获取`)
   }
 
+  const { createProductionRuntime } = await import('../../composition/create_production_runtime.ts')
   const runtime = createProductionRuntime({
     config: context.loaded.config,
     definitions: context.loaded.definitions,

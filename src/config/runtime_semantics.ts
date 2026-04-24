@@ -1,9 +1,27 @@
-import { isAbsolute, join } from '@std/path'
+import { isAbsolute, join, normalize } from '@std/path'
 import { z } from 'zod'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 
 export function resolveRuntimePath(runtimeDir: string, path: string): string {
   return isAbsolute(path) ? path : join(runtimeDir, path)
+}
+
+export function assertRuntimeRelativePath(path: string, field: string): string {
+  const trimmed = path.trim()
+  if (trimmed === '') {
+    return trimmed
+  }
+
+  if (isAbsolute(trimmed)) {
+    throw new Error(`${field} 必须是 runtime 内相对路径`)
+  }
+
+  const normalized = normalize(trimmed)
+  if (normalized === '..' || normalized.startsWith('../') || normalized.startsWith('..\\')) {
+    throw new Error(`${field} 不能逃逸 runtime 目录`)
+  }
+
+  return normalized
 }
 
 function createRuntimeDurationSchema(field: string, options: { allowDays?: boolean } = {}) {

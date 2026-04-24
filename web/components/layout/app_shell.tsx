@@ -30,6 +30,12 @@ export function AppShell(props: {
               Reader
             </a>
             <a
+              href="/config"
+              class="nav-link"
+            >
+              Config
+            </a>
+            <a
               href="/xquery"
               class="nav-link"
             >

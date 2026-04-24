@@ -1,33 +1,19 @@
 import { App, staticFiles } from 'fresh'
-import type { JSX } from 'preact'
-import { renderToString } from 'preact-render-to-string'
 import { createLogger, type Logger } from '../src/core/logger.ts'
 import AppDocument from './routes/_app.tsx'
 import IndexPage from './routes/index.tsx'
 import ReaderPage from './routes/reader.tsx'
+import ConfigPage from './routes/config.tsx'
 import XqueryPage from './routes/xquery.tsx'
 import SyndicationPage from './routes/syndication.tsx'
 import { loadReaderOverview } from '../src/web/reader_overview.ts'
+import { loadConfigWorkbenchOverview } from '../src/web/config_workbench_overview.ts'
 import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
 import type { SourceActionLogMeta } from '../src/interfaces/web/create_source_action_handler.ts'
 import { getCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
-import { handler as evaluateHandler } from './routes/api/xquery/evaluate.ts'
-import { handler as evaluateSyndicationHandler } from './routes/api/syndication/evaluate.ts'
-import { handler as updateSourceHandler } from './routes/api/sources/update.ts'
-import { handler as runSourceHandler } from './routes/api/sources/run.ts'
-import { handler as clearSourceHandler } from './routes/api/sources/clear.ts'
 
 function createWebRequestId(now: number = Date.now()): string {
   return `web.${now.toString(36)}.${crypto.randomUUID()}`
-}
-
-function renderPage(Component: () => JSX.Element): Response {
-  const html = `<!doctype html>${renderToString(AppDocument({ Component } as never))}`
-  return new Response(html, {
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-    },
-  })
 }
 
 function createDefaultWebLogger(): Logger {
@@ -139,17 +125,27 @@ export function withApiRequestLogging(
 
 export const app = new App()
   .use(staticFiles())
-  .get('/', () => renderPage(IndexPage))
-  .get('/reader', async () => {
+  .appWrapper(AppDocument)
+  .get('/', (ctx) => ctx.render(IndexPage()))
+  .get('/reader', async (ctx) => {
     const overview = await loadReaderOverview()
-    return renderPage(() => ReaderPage({ overview }))
+    return ctx.render(ReaderPage({ overview }))
   })
-  .get('/xquery', () => renderPage(XqueryPage))
-  .get('/syndication', () => renderPage(SyndicationPage))
+  .get('/config', async (ctx) => {
+    const workbench = await loadConfigWorkbenchOverview()
+    return ctx.render(ConfigPage({ workbench }))
+  })
+  .get('/xquery', (ctx) => ctx.render(XqueryPage()))
+  .get('/syndication', (ctx) => ctx.render(SyndicationPage()))
   .post(
     '/api/xquery/evaluate',
-    withApiRequestLogging('/api/xquery/evaluate', 'web.api.xquery.evaluate', (request, onLogMeta) =>
-      evaluateHandler(request, { onLogMeta }),
+    withApiRequestLogging(
+      '/api/xquery/evaluate',
+      'web.api.xquery.evaluate',
+      async (request, onLogMeta) => {
+        const { handler } = await import('./routes/api/xquery/evaluate.ts')
+        return await handler(request, { onLogMeta })
+      },
     ),
   )
   .post(
@@ -157,25 +153,68 @@ export const app = new App()
     withApiRequestLogging(
       '/api/syndication/evaluate',
       'web.api.syndication.evaluate',
-      (request, onLogMeta) => evaluateSyndicationHandler(request, { onLogMeta }),
+      async (request, onLogMeta) => {
+        const { handler } = await import('./routes/api/syndication/evaluate.ts')
+        return await handler(request, { onLogMeta })
+      },
+    ),
+  )
+  .post(
+    '/api/config/global',
+    withApiRequestLogging('/api/config/global', 'web.api.config.global', async (request) => {
+      const { handler } = await import('./routes/api/config/global.ts')
+      return await handler(request)
+    }),
+  )
+  .post(
+    '/api/config/deliveries',
+    withApiRequestLogging(
+      '/api/config/deliveries',
+      'web.api.config.deliveries',
+      async (request) => {
+        const { handler } = await import('./routes/api/config/deliveries.ts')
+        return await handler(request)
+      },
+    ),
+  )
+  .post(
+    '/api/config/deliveries/delete',
+    withApiRequestLogging(
+      '/api/config/deliveries/delete',
+      'web.api.config.deliveries.delete',
+      async (request) => {
+        const { handler } = await import('./routes/api/config/deliveries_delete.ts')
+        return await handler(request)
+      },
     ),
   )
   .post(
     '/api/sources/update',
-    withApiRequestLogging('/api/sources/update', 'web.api.sources.update', (request, onLogMeta) =>
-      updateSourceHandler(request, { onLogMeta }),
+    withApiRequestLogging(
+      '/api/sources/update',
+      'web.api.sources.update',
+      async (request, onLogMeta) => {
+        const { handler } = await import('./routes/api/sources/update.ts')
+        return await handler(request, { onLogMeta })
+      },
     ),
   )
   .post(
     '/api/sources/run',
-    withApiRequestLogging('/api/sources/run', 'web.api.sources.run', (request, onLogMeta) =>
-      runSourceHandler(request, { onLogMeta }),
-    ),
+    withApiRequestLogging('/api/sources/run', 'web.api.sources.run', async (request, onLogMeta) => {
+      const { handler } = await import('./routes/api/sources/run.ts')
+      return await handler(request, { onLogMeta })
+    }),
   )
   .post(
     '/api/sources/clear',
-    withApiRequestLogging('/api/sources/clear', 'web.api.sources.clear', (request, onLogMeta) =>
-      clearSourceHandler(request, { onLogMeta }),
+    withApiRequestLogging(
+      '/api/sources/clear',
+      'web.api.sources.clear',
+      async (request, onLogMeta) => {
+        const { handler } = await import('./routes/api/sources/clear.ts')
+        return await handler(request, { onLogMeta })
+      },
     ),
   )
 

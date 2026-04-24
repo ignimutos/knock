@@ -19,6 +19,7 @@ async function readCommandOutput(
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let output = ''
+  let timeoutId: number | undefined
 
   try {
     const result = await Promise.race([
@@ -29,11 +30,16 @@ async function readCommandOutput(
           output += decoder.decode(value, { stream: true })
         }
       })(),
-      new Promise<string>((resolve) => setTimeout(() => resolve(output), timeoutMs)),
+      new Promise<string>((resolve) => {
+        timeoutId = setTimeout(() => resolve(output), timeoutMs)
+      }),
     ])
 
     return result
   } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
     try {
       await reader.cancel()
     } catch {
@@ -584,6 +590,89 @@ Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host�
       assertEquals(output.includes('"web.host"'), false)
       assertEquals(output.includes('TELEGRAM_BOT_TOKEN'), false)
       assertEquals(output.includes('TELEGRAM_CHAT_ID'), false)
+    } finally {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // noop
+      }
+      try {
+        await child.stdout?.cancel()
+      } catch {
+        // noop
+      }
+      try {
+        await child.stderr?.cancel()
+      } catch {
+        // noop
+      }
+      await child.status
+    }
+  })
+})
+
+Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    await Deno.writeTextFile(join(runtimeDir, 'config.yml'), 'sources: {}\n')
+
+    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+    const { port } = listener.addr as Deno.NetAddr
+    listener.close()
+
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        'run',
+        '--allow-read',
+        '--allow-write',
+        '--allow-env',
+        '--allow-net',
+        '--allow-ffi',
+        '--allow-run',
+        '--allow-sys',
+        'src/main.ts',
+        '--mode',
+        'web',
+        '--web_host',
+        '127.0.0.1',
+        '--web_port',
+        String(port),
+      ],
+      cwd: Deno.cwd(),
+      env: {
+        ...Deno.env.toObject(),
+        KNOCK_RUNTIME_DIR: runtimeDir,
+      },
+      stdout: 'piped',
+      stderr: 'piped',
+    }).spawn()
+
+    try {
+      const deadline = Date.now() + 15000
+      let response: Response | undefined
+      let lastError: unknown
+
+      while (Date.now() < deadline) {
+        try {
+          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
+          if (candidate.status === 200) {
+            response = candidate
+            break
+          }
+          lastError = new Error(`unexpected status: ${candidate.status}`)
+        } catch (error) {
+          lastError = error
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+
+      if (!response) {
+        throw lastError instanceof Error ? lastError : new Error('等待 /config 可达超时')
+      }
+
+      const html = await response.text()
+      assertStringIncludes(html, 'Knock Config')
+      assertStringIncludes(html, 'config workbench')
     } finally {
       try {
         child.kill('SIGTERM')

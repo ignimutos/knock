@@ -6,13 +6,20 @@ async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
+function sameOriginHeaders(origin: string = 'http://localhost') {
+  return {
+    'content-type': 'application/json',
+    origin,
+  }
+}
+
 Deno.test('[flow] sources update api: 应转发 payload 并返回 overview', async () => {
   const logs: SourceActionLogMeta[] = []
 
   const response = await handler(
     new Request('http://localhost/api/sources/update', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: sameOriginHeaders(),
       body: JSON.stringify({
         sourceId: 'rust',
         name: 'Rust Blog',
@@ -56,7 +63,7 @@ Deno.test('[contract] sources update api: 非法 JSON 应返回 400', async () =
   const response = await handler(
     new Request('http://localhost/api/sources/update', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: sameOriginHeaders(),
       body: '{',
     }),
   )
@@ -71,7 +78,7 @@ Deno.test('[contract] sources update api: 编译期配置错误应返回 400 val
   const response = await handler(
     new Request('http://localhost/api/sources/update', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: sameOriginHeaders(),
       body: JSON.stringify({ sourceId: 'rust' }),
     }),
     {
@@ -91,4 +98,26 @@ Deno.test('[contract] sources update api: 编译期配置错误应返回 400 val
   const payload = await readJson(response)
   assertEquals(payload.code, 'source_request_invalid')
   assertEquals(payload.category, 'validation')
+})
+
+Deno.test('[contract] sources update api: 跨源写请求应返回 403', async () => {
+  const logs: SourceActionLogMeta[] = []
+
+  const response = await handler(
+    new Request('http://localhost/api/sources/update', {
+      method: 'POST',
+      headers: sameOriginHeaders('http://evil.example'),
+      body: JSON.stringify({ sourceId: 'rust' }),
+    }),
+    {
+      runAction: () => Promise.reject(new Error('should not run')),
+      onLogMeta: (meta) => logs.push(meta),
+    },
+  )
+
+  assertEquals(response.status, 403)
+  const payload = await readJson(response)
+  assertEquals(payload.code, 'source_action_forbidden')
+  assertEquals(payload.category, 'forbidden')
+  assertEquals(logs[0]?.errorCode, 'source_action_forbidden')
 })

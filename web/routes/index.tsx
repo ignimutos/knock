@@ -20,6 +20,16 @@ export default function IndexPage() {
       </section>
       <section class="card-grid">
         <article class="panel">
+          <h2>Config Workbench</h2>
+          <p>集中编辑 source 配置；当前保存会直接重写 runtime/config.yml 的 YAML 格式与注释。</p>
+          <a
+            href="/config"
+            class="cta-link"
+          >
+            打开 Config →
+          </a>
+        </article>
+        <article class="panel">
           <h2>XQuery Playground</h2>
           <p>
             在浏览器里快速验证 URL、定位表达式和映射逻辑，先得到结构化 JSON，再决定是否写入正式

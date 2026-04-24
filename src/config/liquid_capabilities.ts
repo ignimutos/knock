@@ -1,4 +1,4 @@
-import { renderLiquidSync } from '../core/liquid_runtime.ts'
+import { validateLiquidTemplateIfUsed } from '../core/liquid_validation.ts'
 import { getConfigFieldCapability } from './capabilities.ts'
 
 function normalizePath(path: string): string {
@@ -14,6 +14,6 @@ export function assertLiquidCapability(path: string, value: string): void {
   if (!capability || capability.allowLiquid) return
   if (!usesLiquidTemplate(value)) return
 
-  renderLiquidSync(value, {})
+  validateLiquidTemplateIfUsed(value)
   throw new Error(`${path} 不支持 Liquid 模板`)
 }

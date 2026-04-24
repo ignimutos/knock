@@ -216,6 +216,40 @@ Deno.test(
   },
 )
 
+Deno.test('[contract] source management: 应保留未修改的 source override secret', async () => {
+  await withRuntimeDir(async (runtimeDir) => {
+    const configYml = `sqlite:\n  path: facts.db\nlogging:\n  level: info\ndeliveries:\n  telegram:\n    push:\n      http:\n        url: https://example.com/webhook\n      request:\n        type: body\n        payload:\n          text: '{{ entry.title }}'\nsources:\n  rust:\n    enabled: true\n    http:\n      url: https://example.com/feed.xml\n    syndication: {}\n    deliveries:\n      telegram:\n        payload:\n          text: hi\n          token: real-token\n`
+    await Deno.writeTextFile(`${runtimeDir}/config.yml`, configYml)
+
+    await updateSourceConfig({
+      sourceId: 'rust',
+      name: 'Rust Blog',
+      enabled: true,
+      schedule: '*/30 * * * *',
+      filter: '',
+      deliveryIds: ['telegram'],
+      deliveryOverrides: {
+        telegram: {
+          payload: {
+            text: 'updated',
+            token: '__KNOCK_SECRET_UNCHANGED__',
+          },
+        },
+      },
+      transport: 'http',
+      parser: 'syndication',
+      targetUrl: 'https://example.com/feed.xml',
+      xqueryLocate: '',
+      xqueryEntryId: '',
+    })
+
+    const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+      sources?: Record<string, { deliveries?: Record<string, { payload?: { token?: string } }> }>
+    }
+    assertEquals(nextConfig.sources?.rust?.deliveries?.telegram?.payload?.token, 'real-token')
+  })
+})
+
 Deno.test('[contract] source management: runSourceNow 对停用 source 应返回冲突错误', async () => {
   await withRuntimeDir(async () => {
     let message = ''

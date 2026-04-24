@@ -17,6 +17,17 @@ Deno.test('[contract] web main: 应注册 reader 页面路由', async () => {
   assertStringIncludes(html, 'id="reader-source-list"')
 })
 
+Deno.test('[contract] web main: 应注册 config 页面路由', async () => {
+  const response = await app.handler()(new Request('http://localhost/config'))
+
+  assertEquals(response.status, 200)
+  assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
+  const html = await response.text()
+  assertStringIncludes(html, 'Knock Config')
+  assertStringIncludes(html, 'id="config-global-save"')
+  assertStringIncludes(html, 'id="config-manager-save"')
+})
+
 Deno.test('[contract] web main: 应注册 syndication 页面路由', async () => {
   const response = await app.handler()(new Request('http://localhost/syndication'))
 

@@ -5,6 +5,7 @@ import type {
   ResolvedSourceConfig,
   SourceDeliveryOverride,
 } from '../config/types.ts'
+import { redactConfigSecrets } from './config_secret_redaction.ts'
 import { getRawSourceDeliveryOverrides } from '../config/source_delivery_overrides.ts'
 import {
   getConfigDocumentLookupFromEnv,
@@ -381,7 +382,9 @@ export function buildReaderOverview(input: {
       deliveryCount: source.deliveries.length,
       deliveryIds: source.deliveries.map((delivery) => delivery.deliveryId),
       deliveryKinds: Array.from(new Set(source.deliveries.map(getDeliveryKind))),
-      deliveryOverrides: getRawSourceDeliveryOverrides(input.rawDocument, source.id),
+      deliveryOverrides: redactConfigSecrets(
+        getRawSourceDeliveryOverrides(input.rawDocument, source.id),
+      ),
       lastRun: lastRunRow ? toLastRun(lastRunRow) : undefined,
       feed: lastRunRow ? parseFeedSnapshot(lastRunRow.feedJson) : undefined,
       entries: sortEntries(entryRows.map(parseEntrySnapshot)).slice(0, 80),

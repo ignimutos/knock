@@ -21,7 +21,7 @@ import {
 import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilities.ts'
 import { assertLiquidCapability } from './liquid_capabilities.ts'
 import { isRuntimeDuration } from './runtime_semantics.ts'
-import { assertLiquidTemplateSyntax } from '../core/liquid_runtime.ts'
+import { assertLiquidTemplateSyntax } from '../core/liquid_validation.ts'
 
 export const FEED_FIELD_KEYS = [
   'title',

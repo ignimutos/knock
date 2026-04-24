@@ -1,11 +1,9 @@
 import { AppShell } from '../components/layout/app_shell.tsx'
 import type {
-  ReaderDeliveryCatalogItem,
   ReaderEntrySnapshot,
   ReaderOverview,
   ReaderSourceOverview,
 } from '../../src/web/reader_overview.ts'
-import type { SourceDeliveryOverride } from '../../src/config/types.ts'
 
 function toBootstrapJson(overview: ReaderOverview): string {
   return JSON.stringify(overview).replace(/</g, '\\u003c')
@@ -85,39 +83,6 @@ function stripMarkup(value: string | undefined): string {
 
 function getInitialSource(overview: ReaderOverview): ReaderSourceOverview | undefined {
   return overview.sources[0]
-}
-
-function isSummarySource(source: ReaderSourceOverview | undefined): boolean {
-  return source?.transport === 'summary' || source?.parser === 'summary'
-}
-
-function getOverrideTextareaValue(
-  kind: ReaderDeliveryCatalogItem['kind'],
-  override: SourceDeliveryOverride | undefined,
-): string {
-  if (!override) return ''
-  if (kind === 'file') {
-    return 'content' in override && typeof override.content === 'string' ? override.content : ''
-  }
-  if (kind === 'push') {
-    return 'payload' in override && override.payload !== undefined
-      ? JSON.stringify(override.payload, null, 2)
-      : ''
-  }
-  return 'message' in override && override.message !== undefined
-    ? JSON.stringify(override.message, null, 2)
-    : ''
-}
-
-function deliveryOverrideLabel(kind: ReaderDeliveryCatalogItem['kind']): string {
-  switch (kind) {
-    case 'file':
-      return 'content override'
-    case 'push':
-      return 'payload override (JSON)'
-    default:
-      return 'message override (JSON)'
-  }
 }
 
 function inlineBrowserFunction(name: string, fn: { toString(): string }): string {
@@ -335,52 +300,7 @@ function FeedBanner(props: { source?: ReaderSourceOverview }) {
   )
 }
 
-function DeliveryOverrideEditor(props: {
-  delivery: ReaderDeliveryCatalogItem
-  source: ReaderSourceOverview
-}) {
-  const checked = props.source.deliveryIds.includes(props.delivery.id)
-  const override = props.source.deliveryOverrides[props.delivery.id]
-
-  return (
-    <div class="reader-delivery-block">
-      <label class={`reader-check reader-delivery-toggle${checked ? ' is-checked' : ''}`}>
-        <input
-          type="checkbox"
-          class="reader-check-input"
-          data-delivery-id={props.delivery.id}
-          checked={checked}
-        />
-        <span class="reader-check-ui" />
-        <span class="reader-check-copy">
-          <span class="reader-check-label">{props.delivery.id}</span>
-          <span class="reader-check-meta">{props.delivery.kind}</span>
-        </span>
-      </label>
-      <div
-        class="reader-delivery-editor"
-        data-delivery-editor={props.delivery.id}
-        data-delivery-kind={props.delivery.kind}
-        hidden={!checked}
-      >
-        <label class="field reader-manager-wide">
-          <span>{deliveryOverrideLabel(props.delivery.kind)}</span>
-          <textarea
-            class="textarea reader-delivery-textarea"
-            data-delivery-field={props.delivery.id}
-          >
-            {getOverrideTextareaValue(props.delivery.kind, override)}
-          </textarea>
-        </label>
-      </div>
-    </div>
-  )
-}
-
-function SourceManager(props: {
-  source?: ReaderSourceOverview
-  allDeliveries: ReaderOverview['deliveries']
-}) {
+function SourceManager(props: { source?: ReaderSourceOverview }) {
   if (!props.source) {
     return (
       <section
@@ -393,8 +313,6 @@ function SourceManager(props: {
   }
 
   const source = props.source
-  const summary = isSummarySource(source)
-  const showXqueryFields = !summary && source.parser === 'xquery'
 
   return (
     <section
@@ -403,7 +321,7 @@ function SourceManager(props: {
     >
       <div class="reader-manager-head">
         <div>
-          <p class="reader-kicker">source 管理</p>
+          <p class="reader-kicker">source 运维</p>
           <h2
             id="reader-manager-title"
             class="reader-manager-title"
@@ -411,151 +329,28 @@ function SourceManager(props: {
             {source.id}
           </h2>
         </div>
-        <span class={`reader-state-badge is-${source.enabled ? 'enabled' : 'disabled'}`}>
+        <span
+          id="reader-manager-state-badge"
+          class={`reader-state-badge is-${source.enabled ? 'enabled' : 'disabled'}`}
+        >
           {source.enabled ? '启用' : '停用'}
         </span>
       </div>
 
-      <div class="reader-manager-grid">
-        <div class="field">
-          <label htmlFor="reader-manager-name">显示名称</label>
-          <input
-            id="reader-manager-name"
-            class="input"
-            value={source.name}
-          />
-        </div>
-        <div class="field">
-          <label htmlFor="reader-manager-schedule">schedule</label>
-          <input
-            id="reader-manager-schedule"
-            class="input"
-            value={source.schedule ?? ''}
-          />
-        </div>
-        <div class="field">
-          <label htmlFor="reader-manager-transport">transport</label>
-          <select
-            id="reader-manager-transport"
-            class="input"
-            disabled={summary}
-            value={source.transport}
-          >
-            <option value="http">http</option>
-            <option value="byparr">byparr</option>
-            <option
-              value="summary"
-              disabled={!summary}
-            >
-              summary
-            </option>
-          </select>
-        </div>
-        <div class="field">
-          <label htmlFor="reader-manager-parser">parser</label>
-          <select
-            id="reader-manager-parser"
-            class="input"
-            disabled={summary}
-            value={source.parser}
-          >
-            <option value="syndication">syndication</option>
-            <option value="xquery">xquery</option>
-            <option
-              value="summary"
-              disabled={!summary}
-            >
-              summary
-            </option>
-          </select>
-        </div>
-        <div class="field reader-manager-wide">
-          <label htmlFor="reader-manager-target-url">目标 URL</label>
-          <input
-            id="reader-manager-target-url"
-            class="input"
-            value={source.sourceUrl ?? ''}
-            disabled={summary}
-          />
-        </div>
-        <div class="field reader-manager-wide">
-          <label htmlFor="reader-manager-filter">filter</label>
-          <textarea
-            id="reader-manager-filter"
-            class="textarea"
-          >
-            {source.filter ?? ''}
-          </textarea>
-        </div>
-        <div
-          id="reader-manager-xquery-fields"
-          class="reader-manager-xquery-fields reader-manager-wide"
-          hidden={!showXqueryFields}
-        >
-          <div class="reader-manager-grid">
-            <div class="field reader-manager-wide">
-              <label htmlFor="reader-manager-xquery-locate">xquery.locate</label>
-              <input
-                id="reader-manager-xquery-locate"
-                class="input"
-                value={source.xqueryLocate ?? ''}
-                disabled={!showXqueryFields}
-              />
-            </div>
-            <div class="field reader-manager-wide">
-              <label htmlFor="reader-manager-xquery-entry-id">xquery.entry.id</label>
-              <input
-                id="reader-manager-xquery-entry-id"
-                class="input"
-                value={source.xqueryEntryId ?? ''}
-                disabled={!showXqueryFields}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <label class={`reader-check reader-manager-enabled${source.enabled ? ' is-checked' : ''}`}>
-        <input
-          id="reader-manager-enabled"
-          type="checkbox"
-          class="reader-check-input"
-          checked={source.enabled}
-        />
-        <span class="reader-check-ui" />
-        <span class="reader-check-copy">
-          <span class="reader-check-label">启用该 source</span>
-        </span>
-      </label>
-
-      <div class="reader-manager-deliveries">
-        <p class="reader-kicker">deliveries</p>
-        <div
-          id="reader-manager-delivery-list"
-          class="reader-manager-delivery-list"
-        >
-          {props.allDeliveries.length === 0 ? (
-            <p class="reader-empty">当前没有可绑定 delivery。</p>
-          ) : (
-            props.allDeliveries.map((delivery) => (
-              <DeliveryOverrideEditor
-                key={delivery.id}
-                delivery={delivery}
-                source={source}
-              />
-            ))
-          )}
-        </div>
-      </div>
+      <p class="reader-empty">
+        配置编辑已迁到{' '}
+        <a href={`/config?source=${encodeURIComponent(source.id)}`}>Config Workbench</a>
+        ；这里仅保留运行与清理。
+      </p>
 
       <div class="toolbar reader-manager-actions">
-        <button
-          type="button"
+        <a
+          href={`/config?source=${encodeURIComponent(source.id)}`}
           class="btn btn-primary"
-          id="reader-manager-save"
+          id="reader-manager-config-link"
         >
-          保存配置
-        </button>
+          打开 Config
+        </a>
         <button
           type="button"
           class="btn btn-secondary"
@@ -753,7 +548,6 @@ const readerPageScript = `(() => {
   ${inlineBrowserFunction('formatTransport', formatTransport)}
   ${inlineBrowserFunction('formatDeliveryKinds', formatDeliveryKinds)}
   ${inlineBrowserFunction('stripMarkup', stripMarkup)}
-  ${inlineBrowserFunction('getOverrideTextareaValue', getOverrideTextareaValue)}
   ${inlineBrowserFunction('buildSourceListItemView', buildSourceListItemView)}
   ${inlineBrowserFunction('buildSourceCardView', buildSourceCardView)}
   ${inlineBrowserFunction('buildFeedBannerView', buildFeedBannerView)}
@@ -766,17 +560,8 @@ const readerPageScript = `(() => {
   const summary = document.getElementById('reader-summary')
   const managerPanel = document.getElementById('reader-manager')
   const managerTitle = document.getElementById('reader-manager-title')
-  const managerName = document.getElementById('reader-manager-name')
-  const managerSchedule = document.getElementById('reader-manager-schedule')
-  const managerTransport = document.getElementById('reader-manager-transport')
-  const managerParser = document.getElementById('reader-manager-parser')
-  const managerTargetUrl = document.getElementById('reader-manager-target-url')
-  const managerFilter = document.getElementById('reader-manager-filter')
-  const managerXqueryFields = document.getElementById('reader-manager-xquery-fields')
-  const managerXqueryLocate = document.getElementById('reader-manager-xquery-locate')
-  const managerXqueryEntryId = document.getElementById('reader-manager-xquery-entry-id')
-  const managerEnabled = document.getElementById('reader-manager-enabled')
-  const managerSave = document.getElementById('reader-manager-save')
+  const managerStateBadge = document.getElementById('reader-manager-state-badge')
+  const managerConfigLink = document.getElementById('reader-manager-config-link')
   const managerRun = document.getElementById('reader-manager-run')
   const managerClear = document.getElementById('reader-manager-clear')
   const managerMessage = document.getElementById('reader-manager-message')
@@ -795,17 +580,8 @@ const readerPageScript = `(() => {
     !(summary instanceof HTMLElement) ||
     !(managerPanel instanceof HTMLElement) ||
     !(managerTitle instanceof HTMLElement) ||
-    !(managerName instanceof HTMLInputElement) ||
-    !(managerSchedule instanceof HTMLInputElement) ||
-    !(managerTransport instanceof HTMLSelectElement) ||
-    !(managerParser instanceof HTMLSelectElement) ||
-    !(managerTargetUrl instanceof HTMLInputElement) ||
-    !(managerFilter instanceof HTMLTextAreaElement) ||
-    !(managerXqueryFields instanceof HTMLElement) ||
-    !(managerXqueryLocate instanceof HTMLInputElement) ||
-    !(managerXqueryEntryId instanceof HTMLInputElement) ||
-    !(managerEnabled instanceof HTMLInputElement) ||
-    !(managerSave instanceof HTMLButtonElement) ||
+    !(managerStateBadge instanceof HTMLElement) ||
+    !(managerConfigLink instanceof HTMLAnchorElement) ||
     !(managerRun instanceof HTMLButtonElement) ||
     !(managerClear instanceof HTMLButtonElement) ||
     !(managerMessage instanceof HTMLElement) ||
@@ -826,7 +602,6 @@ const readerPageScript = `(() => {
 
   const storageKey = 'knock.reader.sourceId'
   let sources = Array.isArray(overview?.sources) ? overview.sources : []
-  const deliveries = Array.isArray(overview?.deliveries) ? overview.deliveries : []
   let sourceIndex = 0
   let entryIndex = 0
   let confirmResolver = undefined
@@ -837,18 +612,10 @@ const readerPageScript = `(() => {
     if (text !== undefined) node.textContent = text
     return node
   }
-  const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
-  const escapeAttr = (value) => {
-    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-      return CSS.escape(value)
-    }
-    return value.replace(/"/g, '\\"')
-  }
 
   const getSource = () => sources[sourceIndex]
   const getEntries = () => Array.isArray(getSource()?.entries) ? getSource().entries : []
   const isEntryExpanded = (index) => entryIndex === index
-  const isSummarySource = (source) => source?.transport === 'summary' || source?.parser === 'summary'
   const readStoredSourceId = () => {
     try {
       return sessionStorage.getItem(storageKey) || ''
@@ -945,49 +712,6 @@ const readerPageScript = `(() => {
   const focusSelectedEntry = () => {
     const active = entryList.querySelector('[data-entry-index="' + String(entryIndex) + '"]')
     if (active instanceof HTMLButtonElement) active.focus()
-  }
-
-  const renderDeliveryOverrides = (source) => {
-    const selectedDeliveryIds = Array.isArray(source?.deliveryIds) ? source.deliveryIds : []
-    const overrides = isRecord(source?.deliveryOverrides) ? source.deliveryOverrides : {}
-
-    getDeliveryCheckboxes().forEach((input) => {
-      const deliveryId = input.dataset.deliveryId || ''
-      const editor = getDeliveryEditor(deliveryId)
-      const field = getDeliveryField(deliveryId)
-      const checked = selectedDeliveryIds.includes(deliveryId)
-      input.checked = checked
-      if (editor instanceof HTMLElement) {
-        editor.hidden = !checked
-      }
-      const toggle = getDeliveryToggle(deliveryId)
-      if (toggle instanceof HTMLElement) {
-        toggle.classList.toggle('is-checked', checked)
-      }
-      if (!(field instanceof HTMLTextAreaElement) || !(editor instanceof HTMLElement)) {
-        return
-      }
-      field.value = getOverrideTextareaValue(editor.dataset.deliveryKind, overrides[deliveryId])
-    })
-  }
-
-  const syncManagerXqueryFields = (source) => {
-    const summarySource = isSummarySource(source)
-    const showXquery = !summarySource && managerParser.value === 'xquery'
-    managerXqueryFields.hidden = !showXquery
-    managerXqueryLocate.disabled = !showXquery
-    managerXqueryEntryId.disabled = !showXquery
-    managerTransport.disabled = summarySource
-    managerParser.disabled = summarySource
-    managerTargetUrl.disabled = summarySource
-    const summaryTransport = managerTransport.querySelector('option[value="summary"]')
-    if (summaryTransport instanceof HTMLOptionElement) {
-      summaryTransport.disabled = !summarySource
-    }
-    const summaryParser = managerParser.querySelector('option[value="summary"]')
-    if (summaryParser instanceof HTMLOptionElement) {
-      summaryParser.disabled = !summarySource
-    }
   }
 
   const renderSourceList = () => {
@@ -1100,22 +824,9 @@ const readerPageScript = `(() => {
 
     managerPanel.hidden = false
     managerTitle.textContent = source.id
-    managerName.value = source.name || source.id
-    managerSchedule.value = typeof source.schedule === 'string' ? source.schedule : ''
-    managerTransport.value = source.transport === 'byparr' ? 'byparr' : source.transport === 'summary' ? 'summary' : 'http'
-    managerParser.value = source.parser === 'xquery' ? 'xquery' : source.parser === 'summary' ? 'summary' : 'syndication'
-    managerTargetUrl.value = typeof source.sourceUrl === 'string' ? source.sourceUrl : ''
-    managerFilter.value = typeof source.filter === 'string' ? source.filter : ''
-    managerXqueryLocate.value = typeof source.xqueryLocate === 'string' ? source.xqueryLocate : ''
-    managerXqueryEntryId.value = typeof source.xqueryEntryId === 'string' ? source.xqueryEntryId : ''
-    managerEnabled.checked = Boolean(source.enabled)
-    const enabledToggle = managerEnabled.closest('.reader-check')
-    if (enabledToggle instanceof HTMLElement) {
-      enabledToggle.classList.toggle('is-checked', managerEnabled.checked)
-    }
-    renderDeliveryOverrides(source)
-    syncManagerXqueryFields(source)
-    clearManagerStatus()
+    managerStateBadge.textContent = source.enabled ? '启用' : '停用'
+    managerStateBadge.className = 'reader-state-badge is-' + (source.enabled ? 'enabled' : 'disabled')
+    managerConfigLink.href = '/config?source=' + encodeURIComponent(source.id)
   }
 
   const renderEntryList = () => {
@@ -1203,6 +914,7 @@ const readerPageScript = `(() => {
     if (sourceIndex >= sources.length) sourceIndex = 0
     const entries = getEntries()
     if (entryIndex >= entries.length) entryIndex = entries.length === 0 ? -1 : 0
+    clearManagerStatus()
     renderSourceList()
     renderSourceCard()
     renderFeedBanner()
@@ -1211,8 +923,7 @@ const readerPageScript = `(() => {
   }
 
   const applyOverview = (nextOverview, preferredSourceId) => {
-    if (!isRecord(nextOverview)) return
-    sources = Array.isArray(nextOverview.sources) ? nextOverview.sources : []
+    sources = Array.isArray(nextOverview?.sources) ? nextOverview.sources : []
     const nextIndex = typeof preferredSourceId === 'string' && preferredSourceId !== ''
       ? sources.findIndex((source) => source?.id === preferredSourceId)
       : 0
@@ -1234,113 +945,6 @@ const readerPageScript = `(() => {
     }
     return body
   }
-
-  const buildDeliveryOverrides = () => {
-    const overrides = {}
-    getDeliveryCheckboxes()
-      .filter((input) => input.checked)
-      .forEach((input) => {
-        const deliveryId = input.dataset.deliveryId || ''
-        const editor = getDeliveryEditor(deliveryId)
-        const field = getDeliveryField(deliveryId)
-        if (!(editor instanceof HTMLElement) || !(field instanceof HTMLTextAreaElement)) {
-          overrides[deliveryId] = {}
-          return
-        }
-        const raw = field.value.trim()
-        const kind = editor.dataset.deliveryKind
-        if (kind === 'file') {
-          overrides[deliveryId] = raw === '' ? {} : { content: field.value }
-          return
-        }
-        if (raw === '') {
-          overrides[deliveryId] = {}
-          return
-        }
-        try {
-          const parsed = JSON.parse(raw)
-          overrides[deliveryId] = kind === 'push' ? { payload: parsed } : { message: parsed }
-        } catch {
-          throw new Error(deliveryId + ' override 必须是合法 JSON')
-        }
-      })
-    return overrides
-  }
-
-  const buildManagerPayload = () => {
-    const source = getSource()
-    if (!source) return undefined
-    return {
-      sourceId: source.id,
-      name: managerName.value,
-      enabled: managerEnabled.checked,
-      schedule: managerSchedule.value,
-      filter: managerFilter.value,
-      deliveryIds: getDeliveryCheckboxes()
-        .filter((input) => input.checked)
-        .map((input) => input.dataset.deliveryId)
-        .filter((value) => typeof value === 'string' && value !== ''),
-      deliveryOverrides: buildDeliveryOverrides(),
-      transport: managerTransport.value === 'byparr'
-        ? 'byparr'
-        : managerTransport.value === 'summary'
-          ? 'summary'
-          : 'http',
-      parser: managerParser.value === 'xquery'
-        ? 'xquery'
-        : managerParser.value === 'summary'
-          ? 'summary'
-          : 'syndication',
-      targetUrl: managerTargetUrl.value,
-      xqueryLocate: managerXqueryLocate.value,
-      xqueryEntryId: managerXqueryEntryId.value,
-    }
-  }
-
-  managerEnabled.addEventListener('change', () => {
-    const toggle = managerEnabled.closest('.reader-check')
-    if (toggle instanceof HTMLElement) {
-      toggle.classList.toggle('is-checked', managerEnabled.checked)
-    }
-  })
-
-  managerParser.addEventListener('change', () => {
-    syncManagerXqueryFields(getSource())
-  })
-
-  managerPanel.addEventListener('change', (event) => {
-    const target = event.target
-    if (!(target instanceof HTMLInputElement) || target.dataset.deliveryId === undefined) {
-      return
-    }
-    const deliveryId = target.dataset.deliveryId
-    const editor = getDeliveryEditor(deliveryId)
-    if (editor instanceof HTMLElement) {
-      editor.hidden = !target.checked
-    }
-    const toggle = getDeliveryToggle(deliveryId)
-    if (toggle instanceof HTMLElement) {
-      toggle.classList.toggle('is-checked', target.checked)
-    }
-  })
-
-  managerSave.addEventListener('click', async () => {
-    const source = getSource()
-    const payload = buildManagerPayload()
-    if (!source || !payload) return
-    clearManagerStatus()
-    setButtonState(managerSave, true, '保存配置', '保存中…')
-    try {
-      const result = await requestAction('/api/sources/update', payload)
-      storeSourceId(source.id)
-      applyOverview(result?.overview, source.id)
-      showManagerMessage(typeof result?.message === 'string' ? result.message : 'source 配置已保存')
-    } catch (error) {
-      showManagerError(error instanceof Error ? error.message : '保存失败')
-    } finally {
-      setButtonState(managerSave, false, '保存配置', '保存中…')
-    }
-  })
 
   managerRun.addEventListener('click', async () => {
     const source = getSource()
@@ -1483,10 +1087,7 @@ export default function ReaderPage(props: { overview: ReaderOverview }) {
 
         <section class="reader-main-column">
           <FeedBanner source={source} />
-          <SourceManager
-            source={source}
-            allDeliveries={props.overview.deliveries}
-          />
+          <SourceManager source={source} />
           <EntryList source={source} />
         </section>
       </section>

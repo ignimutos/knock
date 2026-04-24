@@ -62,7 +62,9 @@ Deno.test('[contract] httpDelivery: body 请求应发送 JSON body 与合并后�
     httpClient: createHttpClient({
       fetcher: async (input, init) => {
         const body =
-          input instanceof Request ? await input.clone().text() : String(init?.body ?? '')
+          input instanceof Request
+            ? await input.clone().text()
+            : String((init as (RequestInit & { body?: BodyInit | null }) | undefined)?.body ?? '')
         calls.push({
           input,
           init,
@@ -157,7 +159,9 @@ Deno.test('[contract] httpDelivery: form 请求应默认设置 form content-type
     httpClient: createHttpClient({
       fetcher: async (input, init) => {
         const body =
-          input instanceof Request ? await input.clone().text() : String(init?.body ?? '')
+          input instanceof Request
+            ? await input.clone().text()
+            : String((init as (RequestInit & { body?: BodyInit | null }) | undefined)?.body ?? '')
         calls.push({ input, init, body })
         return Promise.resolve(new Response('ok', { status: 200 }))
       },
