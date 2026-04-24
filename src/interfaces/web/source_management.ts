@@ -1,10 +1,9 @@
 import { and, eq } from 'drizzle-orm'
 import type { SourceDeliveryOverride } from '../../config/types.ts'
 import {
-  getConfigDocumentLookupFromEnv,
-  loadRawConfigDocument,
-  writeValidatedConfigDocument,
-} from '../../config/raw_config_document.ts'
+  loadConfigRuntimeContext,
+  writeConfigRuntimeContext,
+} from '../../config/runtime_config_context.ts'
 import {
   applySourceConfigDocumentUpdate,
   SourceConfigDocumentUpdateError,
@@ -43,8 +42,10 @@ export async function updateSourceConfig(input: unknown): Promise<{
     }
     throw error
   }
-  const loaded = await loadRawConfigDocument(getConfigDocumentLookupFromEnv())
-  const currentSource = cloneRecord(cloneRecord(loaded.document.sources)[request.sourceId])
+  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
+  const currentSource = cloneRecord(
+    cloneRecord(context.rawDocument.document.sources)[request.sourceId],
+  )
   const currentOverrides = cloneRecord(currentSource.deliveries)
   const deliveryOverrides = Object.fromEntries(
     Object.entries(request.deliveryOverrides).map(([deliveryId, override]) => [
@@ -54,7 +55,7 @@ export async function updateSourceConfig(input: unknown): Promise<{
   )
 
   try {
-    applySourceConfigDocumentUpdate(loaded.document, {
+    applySourceConfigDocumentUpdate(context.rawDocument.document, {
       ...request,
       deliveryOverrides,
     })
@@ -67,9 +68,9 @@ export async function updateSourceConfig(input: unknown): Promise<{
     }
     throw error
   }
-  let overviewLoaded
+  let updatedContext
   try {
-    overviewLoaded = await writeValidatedConfigDocument(loaded)
+    updatedContext = await writeConfigRuntimeContext(context.rawDocument)
   } catch (error) {
     if (error instanceof Error) {
       throwValidation(error.message)
@@ -80,8 +81,8 @@ export async function updateSourceConfig(input: unknown): Promise<{
   return {
     message: `source ${request.sourceId} 配置已保存`,
     overview: await buildCurrentReaderOverview({
-      loaded: overviewLoaded,
-      rawDocument: loaded.document,
+      loaded: updatedContext.loaded,
+      rawDocument: updatedContext.rawDocument.document,
     }),
   }
 }

@@ -1,4 +1,4 @@
-import { writeValidatedConfigDocument } from '../../config/raw_config_document.ts'
+import { writeConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import {
   applyGlobalConfigDocumentUpdate,
   ConfigDocumentUpdateError,
@@ -18,12 +18,14 @@ import {
   throwValidation,
 } from './config_management_errors.ts'
 import {
+  buildConfigWorkbenchOverview,
   loadConfigWorkbenchContext,
   type ConfigWorkbenchOverview,
 } from '../../web/config_workbench_overview.ts'
 import { deliverySchema, loggingSchema, sqliteSchema, aiSchema } from '../../config/schema.ts'
 import { assertRuntimeRelativePath } from '../../config/runtime_semantics.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
+import { buildCurrentReaderOverview } from '../../web/reader_overview.ts'
 
 export { classifyConfigManagementError, ConfigManagementError } from './config_management_errors.ts'
 
@@ -267,6 +269,19 @@ function assertManagedDeliveryPaths(
   }
 }
 
+async function buildWorkbenchFromUpdatedContext(input: {
+  loaded: { config: import('../../config/types.ts').AppConfigResolved; configPath: string }
+  rawDocument: { document: Record<string, unknown> }
+}): Promise<ConfigWorkbenchOverview> {
+  return buildConfigWorkbenchOverview({
+    rawDocument: input.rawDocument.document,
+    reader: await buildCurrentReaderOverview({
+      loaded: input.loaded,
+      rawDocument: input.rawDocument.document,
+    }),
+  })
+}
+
 function deliveryIsReferenced(rawDocument: Record<string, unknown>, deliveryId: string): string[] {
   const sources = rawDocument.sources
   if (!isPlainObject(sources)) return []
@@ -500,15 +515,16 @@ export async function updateGlobalConfig(input: unknown): Promise<{
     throw error
   }
 
+  let updatedContext
   try {
-    await writeValidatedConfigDocument(loaded.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(loaded.rawDocument)
   } catch (error) {
     throw classifyConfigManagementError(error)
   }
 
   return {
     message: 'global 配置已保存',
-    workbench: (await loadConfigWorkbenchContext()).workbench,
+    workbench: await buildWorkbenchFromUpdatedContext(updatedContext),
   }
 }
 
@@ -570,15 +586,16 @@ export async function upsertDeliveryConfig(input: unknown): Promise<{
     throw error
   }
 
+  let updatedContext
   try {
-    await writeValidatedConfigDocument(loaded.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(loaded.rawDocument)
   } catch (error) {
     throw classifyConfigManagementError(error)
   }
 
   return {
     message: `delivery ${request.deliveryId} 配置已保存`,
-    workbench: (await loadConfigWorkbenchContext()).workbench,
+    workbench: await buildWorkbenchFromUpdatedContext(updatedContext),
   }
 }
 
@@ -614,14 +631,15 @@ export async function deleteDeliveryConfig(input: unknown): Promise<{
     throw error
   }
 
+  let updatedContext
   try {
-    await writeValidatedConfigDocument(loaded.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(loaded.rawDocument)
   } catch (error) {
     throw classifyConfigManagementError(error)
   }
 
   return {
     message: `delivery ${request.deliveryId} 已删除`,
-    workbench: (await loadConfigWorkbenchContext()).workbench,
+    workbench: await buildWorkbenchFromUpdatedContext(updatedContext),
   }
 }

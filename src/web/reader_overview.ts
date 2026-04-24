@@ -7,16 +7,12 @@ import type {
 } from '../config/types.ts'
 import { redactConfigSecrets } from './config_secret_redaction.ts'
 import { getRawSourceDeliveryOverrides } from '../config/source_delivery_overrides.ts'
-import {
-  getConfigDocumentLookupFromEnv,
-  loadRawConfigDocument,
-} from '../config/raw_config_document.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
 import {
-  loadCompiledConfig,
   parseRawConfigDocument,
   type LoadedCompiledConfig,
 } from '../config/load_compiled_config.ts'
+import { loadConfigRuntimeContext } from '../config/runtime_config_context.ts'
 import { pipelineItems, sourceRuns } from '../infrastructure/sqlite/schema.ts'
 
 export interface ReaderRunSummary {
@@ -100,18 +96,13 @@ async function loadReaderConfig(): Promise<{
   loaded: Pick<LoadedCompiledConfig, 'config' | 'configPath'>
   rawDocument: Record<string, unknown>
 }> {
-  const rawConfig = await loadRawConfigDocument(getConfigDocumentLookupFromEnv())
-  const loaded = await loadCompiledConfig({
-    runtimeDir: rawConfig.runtimeDir,
-    configPath: rawConfig.configPath,
-    envMode: 'preserve_unknown',
-  })
+  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
   return {
     loaded: {
-      config: loaded.config,
-      configPath: loaded.configPath,
+      config: context.loaded.config,
+      configPath: context.loaded.configPath,
     },
-    rawDocument: rawConfig.document,
+    rawDocument: context.rawDocument.document,
   }
 }
 

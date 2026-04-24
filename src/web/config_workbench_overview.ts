@@ -1,8 +1,5 @@
-import {
-  getConfigDocumentLookupFromEnv,
-  loadRawConfigDocument,
-  type RawConfigDocumentLoadResult,
-} from '../config/raw_config_document.ts'
+import type { RawConfigDocumentLoadResult } from '../config/raw_config_document.ts'
+import { loadConfigRuntimeContext } from '../config/runtime_config_context.ts'
 import { redactConfigSecrets } from './config_secret_redaction.ts'
 import type {
   AiConfigInput,
@@ -13,7 +10,6 @@ import type {
   SqliteConfigInput,
 } from '../config/schema.ts'
 import { buildCurrentReaderOverview, type ReaderOverview } from './reader_overview.ts'
-import { loadCompiledConfig } from '../config/load_compiled_config.ts'
 
 export type ConfigWorkbenchDeliveryKind = 'file' | 'push' | 'email'
 export type ConfigWorkbenchDeliveryConfig = FileDeliveryConfig | PushConfig | EmailConfig
@@ -122,28 +118,33 @@ function buildGlobal(rawDocument: Record<string, unknown>): ConfigWorkbenchOverv
   }
 }
 
+export function buildConfigWorkbenchOverview(input: {
+  rawDocument: Record<string, unknown>
+  reader: ReaderOverview
+}): ConfigWorkbenchOverview {
+  return {
+    reader: input.reader,
+    global: buildGlobal(input.rawDocument),
+    deliveries: buildDeliveries(input.rawDocument),
+  }
+}
+
 export async function loadConfigWorkbenchContext(): Promise<{
   rawDocument: RawConfigDocumentLoadResult
   workbench: ConfigWorkbenchOverview
 }> {
-  const rawDocument = await loadRawConfigDocument(getConfigDocumentLookupFromEnv())
-  const loaded = await loadCompiledConfig({
-    runtimeDir: rawDocument.runtimeDir,
-    configPath: rawDocument.configPath,
-    envMode: 'preserve_unknown',
-  })
+  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
   const reader = await buildCurrentReaderOverview({
-    loaded,
-    rawDocument: rawDocument.document,
+    loaded: context.loaded,
+    rawDocument: context.rawDocument.document,
   })
 
   return {
-    rawDocument,
-    workbench: {
+    rawDocument: context.rawDocument,
+    workbench: buildConfigWorkbenchOverview({
+      rawDocument: context.rawDocument.document,
       reader,
-      global: buildGlobal(rawDocument.document),
-      deliveries: buildDeliveries(rawDocument.document),
-    },
+    }),
   }
 }
 
