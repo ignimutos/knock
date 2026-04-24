@@ -1,4 +1,8 @@
 import type { SourceByparrConfig, SourceConfigInput, SourceHttpConfig } from './schema.ts'
+import { resolveSourceDeliveries } from './resolve_delivery_config.ts'
+import type { DeliveryConfig, ResolvedSourceConfig } from './types.ts'
+
+type NormalizedSourceConfig = SourceConfigInput & { id: string }
 
 function cloneSourceHttpConfig(input?: SourceHttpConfig): SourceHttpConfig | undefined {
   if (!input) return undefined
@@ -28,7 +32,7 @@ export function cloneSourceSummaryConfig(
 
 export function normalizeSources(
   value: Record<string, SourceConfigInput>,
-): Array<SourceConfigInput & { id: string }> {
+): NormalizedSourceConfig[] {
   return Object.entries(value).map(([id, source]) => ({
     ...source,
     id,
@@ -36,4 +40,30 @@ export function normalizeSources(
     byparr: cloneSourceByparrConfig(source.byparr),
     summary: cloneSourceSummaryConfig(source.summary),
   }))
+}
+
+function resolveSource(
+  source: NormalizedSourceConfig,
+  deliveryMap: ReadonlyMap<string, DeliveryConfig>,
+): ResolvedSourceConfig {
+  return {
+    ...source,
+    http: source.summary ? undefined : source.http,
+    byparr: source.summary ? undefined : source.byparr,
+    summary: cloneSourceSummaryConfig(source.summary),
+    syndication: source.summary
+      ? undefined
+      : (source.syndication ?? (source.xquery ? undefined : {})),
+    xquery: source.summary ? undefined : source.xquery,
+    enabled: source.enabled ?? true,
+    deliveries: resolveSourceDeliveries(source.id, source.deliveries ?? {}, deliveryMap),
+  }
+}
+
+export function resolveSources(
+  value: Record<string, SourceConfigInput>,
+  deliveries: readonly DeliveryConfig[],
+): ResolvedSourceConfig[] {
+  const deliveryMap = new Map(deliveries.map((delivery) => [delivery.id, delivery] as const))
+  return normalizeSources(value).map((source) => resolveSource(source, deliveryMap))
 }

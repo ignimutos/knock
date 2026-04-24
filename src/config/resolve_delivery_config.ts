@@ -9,12 +9,15 @@ import type {
 import type { DeliveryConfigInput, EmailConfig, FileDeliveryConfig, PushConfig } from './schema.ts'
 import { resolveRuntimePath } from './runtime_semantics.ts'
 
-function normalizeObjectConfig<T extends { id: string }>(
-  value: Record<string, Omit<T, 'id'>>,
-): T[] {
-  return Object.entries(value).map(
-    ([id, item]) => ({ id, ...(item as Record<string, unknown>) }) as T,
-  )
+type DeliveryKind = 'file' | 'push' | 'email' | 'empty'
+type ResolvedDeliveryContent = Pick<ResolvedDeliveryConfig, 'file' | 'push' | 'email'>
+
+function createEmptyResolvedDeliveryContent(): ResolvedDeliveryContent {
+  return {
+    file: undefined,
+    push: undefined,
+    email: undefined,
+  }
 }
 
 function clonePushConfig(input?: PushConfig): PushConfig | undefined {
@@ -53,26 +56,41 @@ function cloneEmailConfig(input?: EmailConfig): EmailConfig | undefined {
   }
 }
 
-function normalizeFileConfig(runtimeDir: string, file: unknown): FileDeliveryConfig | undefined {
+function normalizeFileConfig(
+  runtimeDir: string,
+  file?: FileDeliveryConfig,
+): FileDeliveryConfig | undefined {
   if (file === undefined) return undefined
 
-  const asObject = file as FileDeliveryConfig
-  if (!asObject.rotation) {
+  if (!file.rotation) {
     return {
-      ...asObject,
-      path: resolveRuntimePath(runtimeDir, asObject.path),
+      ...file,
+      path: resolveRuntimePath(runtimeDir, file.path),
     }
   }
 
   return {
-    ...asObject,
-    path: resolveRuntimePath(runtimeDir, asObject.path),
+    ...file,
+    path: resolveRuntimePath(runtimeDir, file.path),
     rotation: {
-      enabled: asObject.rotation.enabled ?? false,
-      size: asObject.rotation.size,
-      backups: asObject.rotation.backups,
-      age: asObject.rotation.age,
+      enabled: file.rotation.enabled ?? false,
+      size: file.rotation.size,
+      backups: file.rotation.backups,
+      age: file.rotation.age,
     },
+  }
+}
+
+function normalizeCanonicalDelivery(
+  runtimeDir: string,
+  [id, delivery]: [string, DeliveryConfigInput],
+): DeliveryConfig {
+  return {
+    id,
+    enabled: delivery.enabled ?? true,
+    file: normalizeFileConfig(runtimeDir, delivery.file),
+    push: clonePushConfig(delivery.push),
+    email: cloneEmailConfig(delivery.email),
   }
 }
 
@@ -80,13 +98,7 @@ export function normalizeDeliveries(
   runtimeDir: string,
   value: Record<string, DeliveryConfigInput>,
 ): DeliveryConfig[] {
-  return normalizeObjectConfig<DeliveryConfig>(value).map((delivery) => ({
-    id: delivery.id,
-    enabled: delivery.enabled ?? true,
-    file: normalizeFileConfig(runtimeDir, delivery.file),
-    push: clonePushConfig(delivery.push),
-    email: cloneEmailConfig(delivery.email),
-  }))
+  return Object.entries(value).map((entry) => normalizeCanonicalDelivery(runtimeDir, entry))
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -111,7 +123,99 @@ function deepMergeValue(base: unknown, override: unknown): unknown {
   return structuredClone(override)
 }
 
-function createResolvedDeliveryShell(
+function getDeliveryKind(delivery: DeliveryConfig): DeliveryKind {
+  if (delivery.file) return 'file'
+  if (delivery.push) return 'push'
+  if (delivery.email) return 'email'
+  return 'empty'
+}
+
+function mergeFileDeliveryOverride(
+  file: FileDeliveryConfig | undefined,
+  override: SourceFileDeliveryOverride,
+): ResolvedDeliveryContent {
+  return {
+    file:
+      file === undefined
+        ? undefined
+        : {
+            ...file,
+            ...(override.content === undefined ? {} : { content: override.content }),
+          },
+    push: undefined,
+    email: undefined,
+  }
+}
+
+function mergePushDeliveryOverride(
+  push: PushConfig | undefined,
+  override: SourcePushDeliveryOverride,
+): ResolvedDeliveryContent {
+  if (push === undefined) {
+    return createEmptyResolvedDeliveryContent()
+  }
+
+  const clonedPush = clonePushConfig(push)
+  if (clonedPush === undefined) {
+    return createEmptyResolvedDeliveryContent()
+  }
+
+  return {
+    file: undefined,
+    push: {
+      ...clonedPush,
+      request: {
+        ...clonedPush.request,
+        payload: deepMergeValue(
+          clonedPush.request.payload,
+          override.payload,
+        ) as PushConfig['request']['payload'],
+      },
+    },
+    email: undefined,
+  }
+}
+
+function mergeEmailDeliveryOverride(
+  email: EmailConfig | undefined,
+  override: SourceEmailDeliveryOverride,
+): ResolvedDeliveryContent {
+  if (email === undefined) {
+    return createEmptyResolvedDeliveryContent()
+  }
+
+  const clonedEmail = cloneEmailConfig(email)
+  if (clonedEmail === undefined) {
+    return createEmptyResolvedDeliveryContent()
+  }
+
+  return {
+    file: undefined,
+    push: undefined,
+    email: {
+      ...clonedEmail,
+      message: deepMergeValue(clonedEmail.message, override.message) as EmailConfig['message'],
+    },
+  }
+}
+
+function mergeSourceDeliveryOverride(
+  delivery: DeliveryConfig,
+  override: SourceFileDeliveryOverride | SourcePushDeliveryOverride | SourceEmailDeliveryOverride,
+): ResolvedDeliveryContent {
+  switch (getDeliveryKind(delivery)) {
+    case 'file':
+      return mergeFileDeliveryOverride(delivery.file, override as SourceFileDeliveryOverride)
+    case 'push':
+      return mergePushDeliveryOverride(delivery.push, override as SourcePushDeliveryOverride)
+    case 'email':
+      return mergeEmailDeliveryOverride(delivery.email, override as SourceEmailDeliveryOverride)
+    case 'empty':
+      return createEmptyResolvedDeliveryContent()
+  }
+}
+
+function createResolvedDeliveryBase(
   sourceId: string,
   delivery: DeliveryConfig,
 ): Omit<ResolvedDeliveryConfig, 'file' | 'push' | 'email'> {
@@ -122,100 +226,15 @@ function createResolvedDeliveryShell(
   }
 }
 
-function resolveFileDelivery(
+function materializeResolvedDelivery(
   sourceId: string,
   delivery: DeliveryConfig,
-  override: SourceFileDeliveryOverride,
+  content: ResolvedDeliveryContent,
 ): ResolvedDeliveryConfig {
   return {
-    ...createResolvedDeliveryShell(sourceId, delivery),
-    file: delivery.file
-      ? {
-          ...delivery.file,
-          ...(override.content === undefined ? {} : { content: override.content }),
-        }
-      : undefined,
-    push: undefined,
-    email: undefined,
+    ...createResolvedDeliveryBase(sourceId, delivery),
+    ...content,
   }
-}
-
-function resolvePushDelivery(
-  sourceId: string,
-  delivery: DeliveryConfig,
-  override: SourcePushDeliveryOverride,
-): ResolvedDeliveryConfig {
-  const push = clonePushConfig(delivery.push)
-
-  return {
-    ...createResolvedDeliveryShell(sourceId, delivery),
-    file: undefined,
-    push: push
-      ? {
-          ...push,
-          request: {
-            ...push.request,
-            payload: deepMergeValue(
-              push.request.payload,
-              override.payload,
-            ) as PushConfig['request']['payload'],
-          },
-        }
-      : undefined,
-    email: undefined,
-  }
-}
-
-function resolveEmailDelivery(
-  sourceId: string,
-  delivery: DeliveryConfig,
-  override: SourceEmailDeliveryOverride,
-): ResolvedDeliveryConfig {
-  const email = cloneEmailConfig(delivery.email)
-
-  return {
-    ...createResolvedDeliveryShell(sourceId, delivery),
-    file: undefined,
-    push: undefined,
-    email: email
-      ? {
-          ...email,
-          message: deepMergeValue(email.message, override.message) as EmailConfig['message'],
-        }
-      : undefined,
-  }
-}
-
-function createEmptyResolvedDelivery(
-  sourceId: string,
-  delivery: DeliveryConfig,
-): ResolvedDeliveryConfig {
-  return {
-    ...createResolvedDeliveryShell(sourceId, delivery),
-    file: undefined,
-    push: undefined,
-    email: undefined,
-  }
-}
-
-function applySourceDeliveryOverride(
-  sourceId: string,
-  delivery: DeliveryConfig,
-  override: SourceFileDeliveryOverride | SourcePushDeliveryOverride | SourceEmailDeliveryOverride,
-): ResolvedDeliveryConfig {
-  if (delivery.file) {
-    return resolveFileDelivery(sourceId, delivery, override as SourceFileDeliveryOverride)
-  }
-
-  if (delivery.push) {
-    return resolvePushDelivery(sourceId, delivery, override as SourcePushDeliveryOverride)
-  }
-
-  if (delivery.email) {
-    return resolveEmailDelivery(sourceId, delivery, override as SourceEmailDeliveryOverride)
-  }
-
-  return createEmptyResolvedDelivery(sourceId, delivery)
 }
 
 export function resolveSourceDeliveries(
@@ -234,6 +253,7 @@ export function resolveSourceDeliveries(
       return []
     }
 
-    return [applySourceDeliveryOverride(sourceId, delivery, override)]
+    const content = mergeSourceDeliveryOverride(delivery, override)
+    return [materializeResolvedDelivery(sourceId, delivery, content)]
   })
 }

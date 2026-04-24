@@ -6,7 +6,7 @@ import type { DefinitionSet } from '../definitions/definition_set.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import { isEnvExpansionAllowed } from './capabilities.ts'
 import { resolveConfig } from './resolve_config.ts'
-import { phase1ConfigSchema, rawConfigSyntaxSchema } from './schema.ts'
+import { phase1ConfigSchema, rawConfigSyntaxSchema, type AppConfigValidated } from './schema.ts'
 import type { AppConfigResolved } from './types.ts'
 import { validateConfig } from './validate_config.ts'
 
@@ -128,19 +128,25 @@ export function parseRawConfigDocument(raw: string): Record<string, unknown> {
   )
 }
 
-export function compileConfigDocument(options: {
+function validateCompiledConfigDocument(input: {
   document: Record<string, unknown>
   runtimeDir: string
-  configPath: string
   envMode?: 'strict' | 'preserve_unknown'
-}): LoadedCompiledConfig {
-  const runtimeDir = resolve(options.runtimeDir)
-  const configPath = resolve(options.configPath)
-  const validatedInput = validateConfig({
-    ...expandEnvInConfig(options.document, options.envMode),
-    runtimeDir,
+}): AppConfigValidated {
+  return validateConfig({
+    ...expandEnvInConfig(input.document, input.envMode),
+    runtimeDir: resolve(input.runtimeDir),
   })
-  const config = resolveConfig(validatedInput)
+}
+
+function createCompiledConfigResult(input: {
+  validatedInput: AppConfigValidated
+  runtimeDir: string
+  configPath: string
+}): LoadedCompiledConfig {
+  const runtimeDir = resolve(input.runtimeDir)
+  const configPath = resolve(input.configPath)
+  const config = resolveConfig(input.validatedInput)
 
   return {
     config,
@@ -151,18 +157,29 @@ export function compileConfigDocument(options: {
   }
 }
 
-function parseConfigDocument(
-  raw: string,
-  envMode: LoadCompiledConfigOptions['envMode'],
-): Record<string, unknown> {
-  return expandEnvInConfig(parseRawConfigDocument(raw), envMode)
+export function compileConfigDocument(options: {
+  document: Record<string, unknown>
+  runtimeDir: string
+  configPath: string
+  envMode?: 'strict' | 'preserve_unknown'
+}): LoadedCompiledConfig {
+  const runtimeDir = resolve(options.runtimeDir)
+  const validatedInput = validateCompiledConfigDocument({
+    document: options.document,
+    runtimeDir,
+    envMode: options.envMode,
+  })
+
+  return createCompiledConfigResult({
+    validatedInput,
+    runtimeDir,
+    configPath: options.configPath,
+  })
 }
 
-async function loadResolvedConfig(options: LoadCompiledConfigOptions): Promise<{
-  config: AppConfigResolved
-  configPath: string
-  runtimeDir: string
-}> {
+async function loadResolvedConfig(
+  options: LoadCompiledConfigOptions,
+): Promise<LoadedCompiledConfig> {
   const runtimeDir = getRuntimeDir(options)
   const configPath = options.configPath
     ? resolve(options.configPath)
@@ -177,11 +194,7 @@ async function loadResolvedConfig(options: LoadCompiledConfigOptions): Promise<{
 
   try {
     const raw = await Deno.readTextFile(configPath)
-    const parsed = parseConfigDocument(raw, options.envMode)
-    const input = {
-      ...parsed,
-      runtimeDir,
-    }
+    const document = parseRawConfigDocument(raw)
 
     options.logger?.info('开始校验配置', {
       module: 'config.validate',
@@ -190,7 +203,11 @@ async function loadResolvedConfig(options: LoadCompiledConfigOptions): Promise<{
       'config.path': configPath,
       'config.runtime_dir': runtimeDir,
     })
-    const validatedInput = validateConfig(input)
+    const validatedInput = validateCompiledConfigDocument({
+      document,
+      runtimeDir,
+      envMode: options.envMode,
+    })
     options.logger?.info('配置校验通过', {
       module: 'config.validate',
       'config.operation': 'validate_config',
@@ -199,7 +216,11 @@ async function loadResolvedConfig(options: LoadCompiledConfigOptions): Promise<{
       'config.runtime_dir': runtimeDir,
     })
 
-    const config = resolveConfig(validatedInput)
+    const loaded = createCompiledConfigResult({
+      validatedInput,
+      runtimeDir,
+      configPath,
+    })
     options.logger?.info('配置解析完成', {
       module: 'config.resolve',
       'config.operation': 'resolve_config',
@@ -215,11 +236,7 @@ async function loadResolvedConfig(options: LoadCompiledConfigOptions): Promise<{
       'config.runtime_dir': runtimeDir,
     })
 
-    return {
-      config,
-      configPath,
-      runtimeDir,
-    }
+    return loaded
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     options.logger?.error('配置加载失败', {
@@ -239,11 +256,5 @@ async function loadResolvedConfig(options: LoadCompiledConfigOptions): Promise<{
 export async function loadCompiledConfig(
   options: LoadCompiledConfigOptions = {},
 ): Promise<LoadedCompiledConfig> {
-  const loaded = await loadResolvedConfig(options)
-
-  return {
-    ...loaded,
-    definitions: compileDefinitionsFromResolvedConfig(loaded.config),
-    diagnostics: [],
-  }
+  return await loadResolvedConfig(options)
 }
