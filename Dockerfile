@@ -11,7 +11,7 @@ COPY src ./src
 COPY web ./web
 COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
 
-RUN deno cache src/main.ts web/main.ts
+RUN deno cache src/main.ts web/main.ts vite.config.ts npm:vite
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["deno", "task", "start"]

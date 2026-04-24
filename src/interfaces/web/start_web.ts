@@ -21,6 +21,20 @@ const WEB_TIMESTAMP_FORMAT_ENV = 'KNOCK_WEB_TIMESTAMP_FORMAT'
 const WEB_LOG_LEVEL_ENV = 'KNOCK_WEB_LOG_LEVEL'
 const WEB_READY_PATH = '/config'
 const WEB_READY_MARKER = 'Knock Config'
+const WEB_READY_PROBE_TIMEOUT_MS = 5_000
+
+function normalizeWebReadyProbeHost(host: string): string {
+  if (host === '0.0.0.0') return '127.0.0.1'
+  if (host === '::' || host === '[::]') return '::1'
+  return host
+}
+
+function formatHttpHost(host: string): string {
+  if (host.includes(':') && !host.startsWith('[')) {
+    return `[${host}]`
+  }
+  return host
+}
 
 let currentWebLoggingRuntime: StartWebLoggingRuntime | undefined
 
@@ -254,9 +268,13 @@ function startWebReadyProbe(
   port: number,
 ): { promise: Promise<void>; cancel: () => Promise<void> } {
   const controller = new AbortController()
-  let timeoutId: number | undefined = setTimeout(() => controller.abort(), 1_000)
+  const probeHost = formatHttpHost(normalizeWebReadyProbeHost(host))
+  let timeoutId: number | undefined = setTimeout(
+    () => controller.abort(),
+    WEB_READY_PROBE_TIMEOUT_MS,
+  )
   const promise = (async () => {
-    const response = await fetch(`http://${host}:${port}${WEB_READY_PATH}`, {
+    const response = await fetch(`http://${probeHost}:${port}${WEB_READY_PATH}`, {
       signal: controller.signal,
     })
     if (!response.ok) {
