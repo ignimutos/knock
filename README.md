@@ -584,8 +584,26 @@ deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-
 ### 构建
 
 ```bash
-docker build -t knock:local .
+deno task docker:build
 ```
+
+默认产物标签是 `knock:local`；也可通过 `KNOCK_IMAGE_TAG` 覆盖：
+
+```bash
+KNOCK_IMAGE_TAG=knock:dev deno task docker:build
+```
+
+### 本地镜像验证
+
+```bash
+deno task docker:size:check
+deno task docker:smoke
+```
+
+`scripts/docker_smoke.ts` 会验证两条路径：
+
+- 离线 `--mode daemon --immediate` 在 `sources: {}` 最小配置下可完成一次启动并写出日志文件。
+- 默认 `web` 模式可在容器内启动，并可从宿主机访问 `/config`。
 
 ### 运行
 
@@ -598,7 +616,9 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入配置路径、密钥与令牌。镜像默认入口是 `deno task start --mode web`；入口脚本会把它重写成离线 `deno eval --cached-only --node-modules-dir=none 'import { main } from "./src/main.ts"; await main(Deno.args)' -- --mode web`，再补齐 `start` 可接受的默认参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器默认环境变量。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入配置路径、密钥与令牌。镜像默认入口是离线 `/app/container_main.ts`，它会调用 `src/container_entrypoint.ts`：默认等价于 `--mode web`，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器默认环境变量。
+
+CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `deno task verify:full`，再构建/体积检查/容器 smoke，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
 
 Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 

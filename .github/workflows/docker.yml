@@ -10,6 +10,9 @@ on:
       - vite.config.ts
       - Dockerfile
       - .dockerignore
+      - docker/**
+      - scripts/**
+      - README.md
       - .github/workflows/docker.yml
   push:
     branches:
@@ -22,11 +25,54 @@ on:
       - vite.config.ts
       - Dockerfile
       - .dockerignore
+      - docker/**
+      - scripts/**
+      - README.md
       - .github/workflows/docker.yml
   workflow_dispatch:
 
 jobs:
-  docker:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
+
+      - name: Verify release pipeline inputs
+        run: deno task verify:full
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      KNOCK_IMAGE_TAG: knock:ci
+      KNOCK_IMAGE_MAX_SIZE_MB: 450
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
+
+      - name: Build, size-check, and smoke-test image
+        run: deno task image:prepare
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,50 +83,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Verify types
-        run: deno task check
-
-      - name: Verify risk matrix contract
-        run: deno task test:arch
-
-      - name: Install Playwright Chromium
-        run: deno task playwright:install
-
-      - name: Verify browser smoke tests
-        run: deno task test:web-smoke
-
-      - name: Verify startup tests
-        run: deno task test src/config/config_example_test.ts src/interfaces/cli/parse_cli_command_test.ts src/core/app_test.ts web/main_test.ts
-
-      - name: Run full test suite
-        run: deno task test
-
       - name: Set up QEMU
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image for pull request
-        if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          tags: ${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Extract Docker metadata
         id: meta
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_REPOSITORY }}
@@ -89,14 +99,12 @@ jobs:
             type=sha,format=short,prefix=sha-
 
       - name: Log in to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push image for main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -109,11 +117,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Verify Docker Hub README exists
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: test -s docker/README.md
 
       - name: Update Docker Hub description
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -122,11 +128,18 @@ jobs:
           short-description: Knock is a Deno subscription fetch and delivery daemon.
           readme-filepath: ./docker/README.md
 
+  notify:
+    if: always()
+    needs:
+      - verify
+      - image
+      - publish
+    runs-on: ubuntu-latest
+    steps:
       - name: Telegram Notify
         uses: proDreams/actions-telegram-notifier@main
-        if: always()
         with:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
-          status: ${{ job.status }}
+          status: ${{ (needs.verify.result == 'success' && needs.image.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')) && 'success' || 'failure' }}
           notify_fields: "actor,repository,workflow,branch,commit"
