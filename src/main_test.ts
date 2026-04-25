@@ -4,12 +4,15 @@ import { withOwnedRuntime } from './test_runtime.ts'
 import { createStableChildEnv } from './testing/runtime_harness.ts'
 import type { StartAppOptions } from './main.ts'
 import { dispatchCliCommand, main, startWeb } from './main.ts'
+import { waitForWebReady } from './interfaces/web/start_web.ts'
 import {
   buildChildArgs,
   parseCliCommand,
   resolveDaemonStartOptions,
   toDaemonStartOptions,
 } from './interfaces/cli/parse_cli_command.ts'
+
+const WEB_STARTUP_TEST_TIMEOUT_MS = 90_000
 
 async function readCommandOutputUntil(
   stream: ReadableStream<Uint8Array> | null,
@@ -486,7 +489,7 @@ Deno.test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty
       }).spawn()
 
       try {
-        const output = await readStartupOutput(child, port, 15000)
+        const output = await readStartupOutput(child, port, WEB_STARTUP_TEST_TIMEOUT_MS)
 
         assertEquals(output.includes('\u001b['), false)
         assertStringIncludes(output, '"severityText":"INFO"')
@@ -627,7 +630,7 @@ Deno.test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host�
     }).spawn()
 
     try {
-      const output = await readStartupOutput(child, port, 15000)
+      const output = await readStartupOutput(child, port, WEB_STARTUP_TEST_TIMEOUT_MS)
 
       assertStringIncludes(output, '\u001b[')
       assertStringIncludes(output, 'info')
@@ -692,7 +695,7 @@ Deno.test('[contract] startWeb: 监听 0.0.0.0 时应通过回环地址完成就
     }).spawn()
 
     try {
-      const deadline = Date.now() + 15000
+      const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
       let configResponse: Response | undefined
       let lastError: unknown
 
@@ -737,6 +740,50 @@ Deno.test('[contract] startWeb: 监听 0.0.0.0 时应通过回环地址完成就
   })
 })
 
+Deno.test('[contract] waitForWebReady: 单次长首访应在总等待窗口内成功', async () => {
+  const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+  const { port } = listener.addr as Deno.NetAddr
+  listener.close()
+
+  let requestCount = 0
+  const server = Deno.serve({ hostname: '127.0.0.1', port }, async (request) => {
+    if (new URL(request.url).pathname !== '/config') {
+      return new Response('not found', { status: 404 })
+    }
+
+    requestCount += 1
+    if (requestCount === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 18_000))
+    }
+
+    return new Response('<html><body>Knock Config</body></html>', {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+      },
+    })
+  })
+
+  const startedAt = Date.now()
+  try {
+    await waitForWebReady(
+      {
+        status: new Promise<Deno.CommandStatus>(() => {}),
+      } as Deno.ChildProcess,
+      '127.0.0.1',
+      port,
+    )
+  } finally {
+    await server.shutdown()
+  }
+
+  if (requestCount !== 1) {
+    throw new Error(`长首访不应被中断重试，实际请求了 ${requestCount} 次`)
+  }
+  if (Date.now() - startedAt < 18_000) {
+    throw new Error('waitForWebReady 不应在长首访完成前返回')
+  }
+})
+
 Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
     await Deno.writeTextFile(join(runtimeDir, 'config.yml'), 'sources: {}\n')
@@ -772,7 +819,7 @@ Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', asyn
     }).spawn()
 
     try {
-      const deadline = Date.now() + 15000
+      const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
       let homeResponse: Response | undefined
       let lastError: unknown
 
@@ -885,7 +932,7 @@ Deno.test('[contract] startWeb: 就绪后短窗口内不应因 config watcher �
     }).spawn()
 
     try {
-      const deadline = Date.now() + 15000
+      const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
       let configResponse: Response | undefined
       let lastError: unknown
 

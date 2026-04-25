@@ -21,7 +21,7 @@ const WEB_TIMESTAMP_FORMAT_ENV = 'KNOCK_WEB_TIMESTAMP_FORMAT'
 const WEB_LOG_LEVEL_ENV = 'KNOCK_WEB_LOG_LEVEL'
 const WEB_READY_PATH = '/config'
 const WEB_READY_MARKER = 'Knock Config'
-const WEB_READY_PROBE_TIMEOUT_MS = 5_000
+const WEB_READY_TIMEOUT_MS = 90_000
 
 function normalizeWebReadyProbeHost(host: string): string {
   if (host === '0.0.0.0') return '127.0.0.1'
@@ -266,23 +266,36 @@ function createDelay(ms: number): { promise: Promise<void>; cancel: () => void }
 function startWebReadyProbe(
   host: string,
   port: number,
+  timeoutMs: number,
 ): { promise: Promise<void>; cancel: () => Promise<void> } {
   const controller = new AbortController()
   const probeHost = formatHttpHost(normalizeWebReadyProbeHost(host))
-  let timeoutId: number | undefined = setTimeout(
-    () => controller.abort(),
-    WEB_READY_PROBE_TIMEOUT_MS,
-  )
+  let timedOut = false
+  let timeoutId: number | undefined = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
   const promise = (async () => {
-    const response = await fetch(`http://${probeHost}:${port}${WEB_READY_PATH}`, {
-      signal: controller.signal,
-    })
-    if (!response.ok) {
-      throw new Error(`unexpected status: ${response.status}`)
-    }
-    const html = await response.text()
-    if (!html.includes(WEB_READY_MARKER)) {
-      throw new Error('unexpected ready payload')
+    try {
+      const response = await fetch(`http://${probeHost}:${port}${WEB_READY_PATH}`, {
+        signal: controller.signal,
+      })
+      if (!response.ok) {
+        throw new Error(`unexpected status: ${response.status}`)
+      }
+      const html = await response.text()
+      if (!html.includes(WEB_READY_MARKER)) {
+        throw new Error('unexpected ready payload')
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(
+          timedOut
+            ? `等待 ${WEB_READY_PATH} 就绪探测超时`
+            : `等待 ${WEB_READY_PATH} 就绪探测已取消`,
+        )
+      }
+      throw error
     }
   })().finally(() => {
     if (timeoutId !== undefined) {
@@ -308,17 +321,20 @@ async function waitForStartupChildExit(child: Deno.ChildProcess): Promise<never>
   throw new Error('web 子进程在就绪前退出')
 }
 
-async function waitForWebReady(
+export async function waitForWebReady(
   child: Deno.ChildProcess,
   host: string,
   port: number,
 ): Promise<void> {
-  const deadline = Date.now() + 15_000
+  const deadline = Date.now() + WEB_READY_TIMEOUT_MS
   let lastError: unknown
   const childExit = waitForStartupChildExit(child)
 
-  while (Date.now() < deadline) {
-    const probe = startWebReadyProbe(host, port)
+  while (true) {
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) break
+
+    const probe = startWebReadyProbe(host, port, remainingMs)
     try {
       await Promise.race([probe.promise, childExit])
       return
@@ -330,7 +346,7 @@ async function waitForWebReady(
       lastError = error
     }
 
-    const delay = createDelay(100)
+    const delay = createDelay(Math.min(100, Math.max(0, deadline - Date.now())))
     try {
       await Promise.race([delay.promise, childExit])
     } finally {
@@ -338,7 +354,11 @@ async function waitForWebReady(
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('等待 Web 服务就绪超时')
+  throw new Error(
+    lastError instanceof Error
+      ? `等待 Web 服务就绪超时: ${lastError.message}`
+      : '等待 Web 服务就绪超时',
+  )
 }
 
 export async function startWeb(options: StartWebOptions) {
