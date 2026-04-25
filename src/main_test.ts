@@ -337,6 +337,8 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进
   assertEquals(buildChildArgs(command, 'daemon'), [
     'run',
     '--allow-all',
+    '--cached-only',
+    '--node-modules-dir=none',
     'src/main.ts',
     '--mode',
     'daemon',
@@ -361,6 +363,8 @@ Deno.test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程
   assertEquals(buildChildArgs(command, 'web'), [
     'run',
     '--allow-all',
+    '--cached-only',
+    '--node-modules-dir=none',
     'src/main.ts',
     '--mode',
     'web',

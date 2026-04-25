@@ -10,7 +10,8 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 默认运行目录：`/app/runtime`
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
 - 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
-- 默认命令：`deno task start`
+- 容器默认以非 root 用户 `knock` 运行
+- 默认命令：`deno task start --mode web`（入口脚本会重写为离线 `deno eval --cached-only --node-modules-dir=none 'import { main } from "./src/main.ts"; await main(Deno.args)' -- --mode web`）
 - 已发布标签：`latest`、`sha-<git-sha>`
 
 ## 准备配置
@@ -49,7 +50,7 @@ sources:
 - `KNOCK_WEB_PORT=8000`
 - `KNOCK_IMMEDIATE=true|false`
 
-这些变量只在镜像默认入口 `deno task start` 下生效；入口脚本只补齐 `start` 可接受的默认参数。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
+这些变量只在镜像默认入口下生效；入口脚本会把默认 `deno task start --mode web` 重写为离线 `deno eval --cached-only --node-modules-dir=none 'import { main } from "./src/main.ts"; await main(Deno.args)' -- --mode web`，再补齐 `start` 可接受的默认参数。若显式指定 `--mode daemon`，入口脚本不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
 
 ## 一次性执行 daemon
 

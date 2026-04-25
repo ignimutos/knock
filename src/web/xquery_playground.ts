@@ -1,3 +1,4 @@
+import { join, toFileUrl } from '@std/path'
 import { z } from 'zod'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import {
@@ -6,7 +7,7 @@ import {
   xquerySchema,
   type SourceConfigInput,
 } from '../config/schema.ts'
-import { evaluatePlaygroundPreview, type PlaygroundPreviewResult } from './playground_preview.ts'
+import type { PlaygroundPreviewResult } from './playground_preview.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 
 const playgroundFieldMappingSchema = z.record(z.string(), z.string())
@@ -290,6 +291,9 @@ export async function evaluatePlayground(input: EvaluatePlaygroundInput) {
     ...parsed.source,
     deliveries: [],
   }
+
+  const previewModuleUrl = toFileUrl(join(Deno.cwd(), 'src', 'web', 'playground_preview.ts')).href
+  const { evaluatePlaygroundPreview } = await import(previewModuleUrl)
 
   return await evaluatePlaygroundPreview({
     source: resolvedSource,

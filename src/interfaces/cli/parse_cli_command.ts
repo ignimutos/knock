@@ -238,7 +238,15 @@ export function resolveDaemonStartOptions(
 export function buildChildArgs(command: CliCommand, mode: 'web' | 'daemon'): string[] {
   assertAllCommand(command)
 
-  const args = ['run', '--allow-all', 'src/main.ts', '--mode', mode]
+  const args = [
+    'run',
+    '--allow-all',
+    '--cached-only',
+    '--node-modules-dir=none',
+    'src/main.ts',
+    '--mode',
+    mode,
+  ]
 
   if (mode === 'daemon') {
     if (command.configPath !== undefined) {

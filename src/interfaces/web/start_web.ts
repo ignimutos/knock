@@ -22,6 +22,7 @@ const WEB_LOG_LEVEL_ENV = 'KNOCK_WEB_LOG_LEVEL'
 const WEB_READY_PATH = '/config'
 const WEB_READY_MARKER = 'Knock Config'
 const WEB_READY_TIMEOUT_MS = 90_000
+const WEB_SERVER_ENTRY = '_fresh/server.js'
 
 function normalizeWebReadyProbeHost(host: string): string {
   if (host === '0.0.0.0') return '127.0.0.1'
@@ -88,7 +89,7 @@ function applyWebLoggingRuntimeEnv(runtime: StartWebLoggingRuntime | undefined):
   Deno.env.set(WEB_LOG_LEVEL_ENV, runtime.logging.level)
 }
 
-function buildViteChildEnv(): Record<string, string> {
+function buildWebChildEnv(): Record<string, string> {
   const next: Record<string, string> = {
     NO_COLOR: '1',
     FORCE_COLOR: '0',
@@ -241,6 +242,31 @@ async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | un
   }
 }
 
+async function ensureWebBuildExists(): Promise<void> {
+  try {
+    await Deno.stat(join(Deno.cwd(), WEB_SERVER_ENTRY))
+    return
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error
+    }
+  }
+
+  const build = new Deno.Command(Deno.execPath(), {
+    args: ['run', '-A', '--node-modules-dir=none', 'npm:vite', 'build', '--configLoader', 'native'],
+    cwd: Deno.cwd(),
+    env: buildWebChildEnv(),
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  }).spawn()
+
+  const status = await build.status
+  if (!status.success) {
+    throw new Error(`web 生产构建失败: ${status.code}`)
+  }
+}
+
 async function waitForChildExit(child: Deno.ChildProcess): Promise<void> {
   const status = await child.status
   if (!status.success && status.code !== 143) {
@@ -378,21 +404,20 @@ export async function startWeb(options: StartWebOptions) {
     timestampFormat: loggingRuntime?.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss',
   })
 
+  await ensureWebBuildExists()
+
   const child = new Deno.Command(Deno.execPath(), {
     args: [
-      'run',
+      'serve',
       '-A',
-      'npm:vite',
       '--host',
       options.host,
       '--port',
       String(options.port),
-      '--strictPort',
-      '--configLoader',
-      'native',
+      '_fresh/server.js',
     ],
     cwd: Deno.cwd(),
-    env: buildViteChildEnv(),
+    env: buildWebChildEnv(),
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',

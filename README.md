@@ -598,7 +598,7 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入配置路径、密钥与令牌。入口脚本只会把这些变量补成 `deno task start` 可接受的默认参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器默认环境变量。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入配置路径、密钥与令牌。镜像默认入口是 `deno task start --mode web`；入口脚本会把它重写成离线 `deno eval --cached-only --node-modules-dir=none 'import { main } from "./src/main.ts"; await main(Deno.args)' -- --mode web`，再补齐 `start` 可接受的默认参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器默认环境变量。
 
 Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 

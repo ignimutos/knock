@@ -23,6 +23,7 @@ __pycache__/
 build/
 coverage/
 dist/
+_fresh/
 node_modules/
 npm/
 runtime/

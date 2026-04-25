@@ -1,6 +1,6 @@
+import { join, toFileUrl } from '@std/path'
 import { z } from 'zod'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
-import { evaluatePlaygroundPreview } from './playground_preview.ts'
 import {
   byparrSchema,
   sourceHttpSchema,
@@ -114,6 +114,9 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
     ...parsed.source,
     deliveries: [],
   }
+
+  const previewModuleUrl = toFileUrl(join(Deno.cwd(), 'src', 'web', 'playground_preview.ts')).href
+  const { evaluatePlaygroundPreview } = await import(previewModuleUrl)
 
   return await evaluatePlaygroundPreview({
     source: resolvedSource,

@@ -1,3 +1,4 @@
+import { join, toFileUrl } from '@std/path'
 import { and, eq } from 'drizzle-orm'
 import type { SourceDeliveryOverride } from '../../config/types.ts'
 import {
@@ -108,7 +109,10 @@ export async function runSourceNow(input: unknown): Promise<{
     throwConflict(`source ${context.request.sourceId} 已停用，不能强制获取`)
   }
 
-  const { createProductionRuntime } = await import('../../composition/create_production_runtime.ts')
+  const runtimeModuleUrl = toFileUrl(
+    join(Deno.cwd(), 'src', 'composition', 'create_production_runtime.ts'),
+  ).href
+  const { createProductionRuntime } = await import(runtimeModuleUrl)
   const runtime = createProductionRuntime({
     config: context.loaded.config,
     definitions: context.loaded.definitions,
