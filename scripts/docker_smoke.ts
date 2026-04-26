@@ -4,6 +4,8 @@ const image = Deno.env.get('KNOCK_IMAGE_TAG') ?? 'knock:local'
 const runtimeRoot = await Deno.makeTempDir({ prefix: 'knock-docker-smoke-' })
 const runtimeDir = join(runtimeRoot, 'runtime')
 const logPath = join(runtimeDir, 'logs', 'app.jsonl')
+const containerUserArgs =
+  Deno.build.os === 'windows' ? [] : ['--user', `${Deno.uid()}:${Deno.gid()}`]
 
 await Deno.mkdir(runtimeDir, { recursive: true })
 await Deno.chmod(runtimeDir, 0o777)
@@ -64,6 +66,7 @@ const daemonRun = new Deno.Command('docker', {
   args: [
     'run',
     '--rm',
+    ...containerUserArgs,
     '--network',
     'none',
     '-v',
@@ -89,6 +92,7 @@ const webRun = await run(
     args: [
       'run',
       '--detach',
+      ...containerUserArgs,
       '--name',
       containerName,
       '-v',
