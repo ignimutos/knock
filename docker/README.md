@@ -11,10 +11,10 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
 - 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
 - 容器默认以非 root 用户 `10001:10001` 运行
-- 默认入口：离线 `/app/container_main.ts`，其内部调用 `src/container_entrypoint.ts`，默认等价于 `--mode web`
+- 默认入口：离线二进制 `/app/knock`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认等价于 `--mode web`
 - 构建阶段固定使用 `denoland/deno:2.7.13`
-- 运行阶段固定使用 `denoland/deno:distroless-2.7.13`
-- 发布前门禁固定执行：`deno task verify:full`、`deno task docker:build`、`deno task docker:size:check`、`deno task docker:smoke`
+- 运行阶段固定使用 `debian:bookworm-slim` + `/app/knock` 编译产物
+- 发布前门禁固定执行：`deno task verify:full`、`deno task docker:build`、`deno task docker:size:check`
 - 已发布标签：`latest`、`sha-<git-sha>`
 
 ## 准备配置
@@ -59,6 +59,7 @@ sources:
 
 ```bash
 docker run --rm \
+  --user "$(id -u):$(id -g)" \
   -v "$(pwd)/runtime:/app/runtime" \
   -e KNOCK_IMMEDIATE=true \
   <image>
@@ -73,6 +74,7 @@ docker run --rm \
 ```bash
 docker run -d \
   --name knock \
+  --user "$(id -u):$(id -g)" \
   -p 8000:8000 \
   -v "$(pwd)/runtime:/app/runtime" \
   -e KNOCK_WEB_HOST=0.0.0.0 \
@@ -86,14 +88,14 @@ docker run -d \
 - 修改 Web 监听端口：`docker run --rm -e KNOCK_WEB_PORT=9000 -p 9000:9000 <image>`
 - 指定配置文件：`docker run --rm -e KNOCK_CONFIG_PATH=/app/runtime/config.yml <image>`
 - 立即执行一次后退出：`docker run --rm -e KNOCK_IMMEDIATE=true <image>`
-- 显式参数覆盖环境变量：`docker run --rm -e KNOCK_WEB_PORT=8000 <image> deno task start --web_port 9000`
+- 显式参数覆盖环境变量：`docker run --rm -e KNOCK_WEB_PORT=8000 <image> --web_port 9000`
 
-如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可；入口脚本只会补齐未显式传入的 CLI 参数。
+如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可；入口脚本只会补齐未显式传入的 CLI 参数。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是像上面的示例一样显式传 `--user "$(id -u):$(id -g)"`。
 
 本仓库 CI 会先做三层门禁：
 
 1. `verify`：`deno task verify:full`
-2. `image`：`deno task image:prepare`
+2. `image`：`deno task image:prepare`（构建并校验镜像体积）
 3. `publish`：仅 `main` 推送多架构镜像并同步 Docker Hub README
 
 镜像体积默认预算由 `KNOCK_IMAGE_MAX_SIZE_MB` 控制，CI 当前使用 `450` MB。

@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from '@std/path'
+import { dirname, join, resolve, toFileUrl } from '@std/path'
 import { z } from 'zod'
 import { findConfigFile, parseRawConfigDocument } from '../../config/load_config.ts'
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
@@ -267,11 +267,15 @@ async function ensureWebBuildExists(): Promise<void> {
   }
 }
 
-async function waitForChildExit(child: Deno.ChildProcess): Promise<void> {
-  const status = await child.status
-  if (!status.success && status.code !== 143) {
-    throw new Error(`web 子进程异常退出: ${status.code}`)
+async function loadFreshServerFetch(): Promise<(request: Request) => Response | Promise<Response>> {
+  const module = (await import(toFileUrl(resolve(Deno.cwd(), WEB_SERVER_ENTRY)).href)) as {
+    default?: { fetch?: (request: Request) => Response | Promise<Response> }
   }
+  const fetchHandler = module.default?.fetch
+  if (typeof fetchHandler !== 'function') {
+    throw new Error('Fresh server entry 未导出可用 fetch handler')
+  }
+  return fetchHandler
 }
 
 function createDelay(ms: number): { promise: Promise<void>; cancel: () => void } {
@@ -339,22 +343,13 @@ function startWebReadyProbe(
   }
 }
 
-async function waitForStartupChildExit(child: Deno.ChildProcess): Promise<never> {
-  const status = await child.status
-  if (!status.success && status.code !== 143) {
-    throw new Error(`web 子进程异常退出: ${status.code}`)
-  }
-  throw new Error('web 子进程在就绪前退出')
-}
-
 export async function waitForWebReady(
-  child: Deno.ChildProcess,
+  _child: Deno.ChildProcess | undefined,
   host: string,
   port: number,
 ): Promise<void> {
   const deadline = Date.now() + WEB_READY_TIMEOUT_MS
   let lastError: unknown
-  const childExit = waitForStartupChildExit(child)
 
   while (true) {
     const remainingMs = deadline - Date.now()
@@ -362,19 +357,16 @@ export async function waitForWebReady(
 
     const probe = startWebReadyProbe(host, port, remainingMs)
     try {
-      await Promise.race([probe.promise, childExit])
+      await probe.promise
       return
     } catch (error) {
       await probe.cancel()
-      if (error instanceof Error && error.message.startsWith('web 子进程')) {
-        throw error
-      }
       lastError = error
     }
 
     const delay = createDelay(Math.min(100, Math.max(0, deadline - Date.now())))
     try {
-      await Promise.race([delay.promise, childExit])
+      await delay.promise
     } finally {
       delay.cancel()
     }
@@ -405,27 +397,22 @@ export async function startWeb(options: StartWebOptions) {
   })
 
   await ensureWebBuildExists()
-
-  const child = new Deno.Command(Deno.execPath(), {
-    args: [
-      'serve',
-      '-A',
-      '--host',
-      options.host,
-      '--port',
-      String(options.port),
-      '_fresh/server.js',
-    ],
-    cwd: Deno.cwd(),
-    env: buildWebChildEnv(),
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  }).spawn()
+  const fetchHandler = await loadFreshServerFetch()
+  const abortController = new AbortController()
+  let server: ReturnType<typeof Deno.serve> | undefined
 
   try {
+    server = Deno.serve(
+      {
+        hostname: options.host,
+        port: options.port,
+        signal: abortController.signal,
+      },
+      (request) => fetchHandler(request),
+    )
+
     const url = `http://${options.host}:${options.port}/`
-    await waitForWebReady(child, options.host, options.port)
+    await waitForWebReady(undefined, options.host, options.port)
     logger.info(`Web 服务开始监听 ${url}`, {
       'web.operation': 'startup',
       'web.outcome': 'listening',
@@ -433,12 +420,20 @@ export async function startWeb(options: StartWebOptions) {
       'web.port': options.port,
       'web.url': url,
     })
-    await waitForChildExit(child)
+    await server.finished
+  } catch (error) {
+    if (error instanceof Deno.errors.AddrInUse) {
+      throw new Error('web 子进程异常退出: 1')
+    }
+    throw error
   } finally {
-    try {
-      child.kill('SIGTERM')
-    } catch {
-      // noop
+    if (server) {
+      abortController.abort()
+      try {
+        await server.shutdown()
+      } catch {
+        // noop
+      }
     }
     setCurrentWebLoggingRuntime(undefined)
     applyWebLoggingRuntimeEnv(undefined)

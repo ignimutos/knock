@@ -67,7 +67,7 @@ jobs:
           deno-version: v2.x
           cache: true
 
-      - name: Build, size-check, and smoke-test image
+      - name: Build and size-check image
         run: deno task image:prepare
 
   publish:

@@ -1,3 +1,4 @@
+import { fromFileUrl } from '@std/path'
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
 import { loadCompiledConfig } from './config/load_compiled_config.ts'
@@ -134,6 +135,21 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
   }
 }
 
+function buildSelfCommandArgs(args: string[]): string[] {
+  if (/([/\\]|^)deno(?:\.exe)?$/i.test(Deno.execPath())) {
+    return [
+      'run',
+      '--allow-all',
+      '--cached-only',
+      '--node-modules-dir=none',
+      fromFileUrl(Deno.mainModule),
+      ...args,
+    ]
+  }
+
+  return args
+}
+
 export async function runAllModes(command: AllCliCommand): Promise<void> {
   const childEnv = {
     ...Deno.env.toObject(),
@@ -142,7 +158,7 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
   }
 
   const daemonChild = new Deno.Command(Deno.execPath(), {
-    args: buildChildArgs(command, 'daemon'),
+    args: buildSelfCommandArgs(buildChildArgs(command, 'daemon')),
     env: childEnv,
     stdin: 'inherit',
     stdout: 'inherit',
@@ -150,7 +166,7 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
   }).spawn()
 
   const webChild = new Deno.Command(Deno.execPath(), {
-    args: buildChildArgs(command, 'web'),
+    args: buildSelfCommandArgs(buildChildArgs(command, 'web')),
     env: childEnv,
     stdin: 'inherit',
     stdout: 'inherit',

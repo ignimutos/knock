@@ -60,7 +60,6 @@
     "npm:luxon@^3.7.2": "3.7.2",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:nodemailer@^7.0.13": "7.0.13",
-    "npm:playwright@*": "1.58.2",
     "npm:preact-render-to-string@^6.6.3": "6.6.7_preact@10.29.1",
     "npm:preact-render-to-string@^6.6.7": "6.6.7_preact@10.29.1",
     "npm:preact@^10.28.2": "10.29.1",
@@ -2169,20 +2168,6 @@
     },
     "picomatch@4.0.4": {
       "integrity": "sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A=="
-    },
-    "playwright-core@1.58.2": {
-      "integrity": "sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==",
-      "bin": true
-    },
-    "playwright@1.58.2": {
-      "integrity": "sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==",
-      "dependencies": [
-        "playwright-core"
-      ],
-      "optionalDependencies": [
-        "fsevents@2.3.2"
-      ],
-      "bin": true
     },
     "postcss@8.5.9": {
       "integrity": "sha512-7a70Nsot+EMX9fFU3064K/kdHWZqGVY+BADLyXc8Dfv+mTLLVl6JzJpPaCZ2kQL9gIJvKXSLMHhqdRRjwQeFtw==",
