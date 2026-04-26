@@ -12,7 +12,11 @@ import {
 } from './interfaces/cli/parse_cli_command.ts'
 import { createProductionRuntime } from './composition/create_production_runtime.ts'
 import { startDaemon } from './interfaces/daemon/start_daemon.ts'
-import { startWeb as startWebImpl, type StartWebOptions } from './interfaces/web/start_web.ts'
+import {
+  SKIP_WEB_RUNTIME_READY_CHECK_ENV,
+  startWeb as startWebImpl,
+  type StartWebOptions,
+} from './interfaces/web/start_web.ts'
 import { parseWithFirstIssue } from './zod_utils.ts'
 
 export const startWeb = startWebImpl
@@ -167,7 +171,10 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
 
   const webChild = new Deno.Command(Deno.execPath(), {
     args: buildSelfCommandArgs(buildChildArgs(command, 'web')),
-    env: childEnv,
+    env: {
+      ...childEnv,
+      [SKIP_WEB_RUNTIME_READY_CHECK_ENV]: '1',
+    },
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',

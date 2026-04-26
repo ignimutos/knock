@@ -2,9 +2,9 @@ import { assertEquals, assertThrows } from '@std/assert'
 
 const moduleUrl = new URL('./container_entrypoint.ts', import.meta.url)
 
-Deno.test('[contract] container entrypoint: 空参数应默认收敛为 web 模式', async () => {
-  const { normalizeAppArgs } = await import(`${moduleUrl.href}?default-web`)
-  assertEquals(normalizeAppArgs([]), ['--mode', 'web'])
+Deno.test('[contract] container entrypoint: 空参数应保留 CLI 默认模式', async () => {
+  const { normalizeAppArgs } = await import(`${moduleUrl.href}?default-all`)
+  assertEquals(normalizeAppArgs([]), [])
 })
 
 Deno.test('[contract] container entrypoint: deno task start 应被改写为应用参数', async () => {
@@ -31,6 +31,21 @@ Deno.test(
         KNOCK_WEB_PORT: '9000',
       }),
       ['--mode', 'web', '--web_host', '0.0.0.0', '--web_port', '9000'],
+    )
+  },
+)
+
+Deno.test(
+  '[contract] container entrypoint: 空参数默认值应同时保留 daemon config 与 web host/port 注入',
+  async () => {
+    const { applyContainerDefaults } = await import(`${moduleUrl.href}?all-defaults`)
+    assertEquals(
+      applyContainerDefaults([], {
+        KNOCK_CONFIG_PATH: '/app/runtime/config.yml',
+        KNOCK_WEB_HOST: '0.0.0.0',
+        KNOCK_WEB_PORT: '9000',
+      }),
+      ['--config', '/app/runtime/config.yml', '--web_host', '0.0.0.0', '--web_port', '9000'],
     )
   },
 )

@@ -21,6 +21,7 @@ const WEB_RUNTIME_DIR_ENV = 'KNOCK_WEB_RUNTIME_DIR'
 const WEB_TIMEZONE_ENV = 'KNOCK_WEB_TIMEZONE'
 const WEB_TIMESTAMP_FORMAT_ENV = 'KNOCK_WEB_TIMESTAMP_FORMAT'
 const WEB_LOG_LEVEL_ENV = 'KNOCK_WEB_LOG_LEVEL'
+export const SKIP_WEB_RUNTIME_READY_CHECK_ENV = 'KNOCK_SKIP_WEB_RUNTIME_READY_CHECK'
 const WEB_READY_PATH = '/config'
 const WEB_READY_MARKER = 'Knock Config'
 const WEB_READY_TIMEOUT_MS = 90_000
@@ -281,6 +282,10 @@ async function loadFreshServerFetch(): Promise<(request: Request) => Response | 
 }
 
 async function assertWebRuntimeReady(): Promise<void> {
+  if (Deno.env.get(SKIP_WEB_RUNTIME_READY_CHECK_ENV) === '1') {
+    return
+  }
+
   try {
     const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
     const factsDb = createFactsDbClient({ sqlite: context.loaded.config.sqlite })

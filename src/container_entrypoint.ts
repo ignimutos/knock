@@ -40,11 +40,11 @@ export function resolveTargetMode(args: string[]): 'web' | 'daemon' | 'all' {
     }
   }
 
-  return 'web'
+  return 'all'
 }
 
 export function normalizeAppArgs(rawArgs: string[]): string[] | undefined {
-  if (rawArgs.length === 0) return ['--mode', 'web']
+  if (rawArgs.length === 0) return []
   if (rawArgs[0] === 'deno' && rawArgs[1] === 'task' && rawArgs[2] === 'start') {
     return rawArgs.slice(3)
   }
@@ -75,12 +75,12 @@ export function applyContainerDefaults(
     if (configPath) nextArgs.push('--config', configPath)
   }
 
-  if (targetMode === 'web' && !hasFlag('--web_host', nextArgs)) {
+  if (targetMode !== 'daemon' && !hasFlag('--web_host', nextArgs)) {
     const webHost = env.KNOCK_WEB_HOST
     if (webHost) nextArgs.push('--web_host', webHost)
   }
 
-  if (targetMode === 'web' && !hasFlag('--web_port', nextArgs)) {
+  if (targetMode !== 'daemon' && !hasFlag('--web_port', nextArgs)) {
     const webPort = env.KNOCK_WEB_PORT
     if (webPort) nextArgs.push('--web_port', webPort)
   }

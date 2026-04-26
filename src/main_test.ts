@@ -426,6 +426,90 @@ Deno.test('[contract] main: 通过 main(args) 应走同一 dispatch 路径', asy
   assertEquals(calls, ['all'])
 })
 
+Deno.test('[contract] main: all 模式启动不应因 web 预检抢占 sqlite 而失败', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    await Deno.writeTextFile(
+      join(runtimeDir, 'config.yml'),
+      ['sqlite:', '  path: db/knock.db', 'sources: {}'].join('\n'),
+    )
+
+    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
+    const { port } = listener.addr as Deno.NetAddr
+    listener.close()
+
+    const child = new Deno.Command(Deno.execPath(), {
+      args: [
+        'run',
+        '--allow-read',
+        '--allow-write',
+        '--allow-env',
+        '--allow-net',
+        '--allow-ffi',
+        '--allow-run',
+        '--allow-sys',
+        'src/main.ts',
+        '--web_host',
+        '127.0.0.1',
+        '--web_port',
+        String(port),
+      ],
+      cwd: Deno.cwd(),
+      env: createStableChildEnv({
+        KNOCK_RUNTIME_DIR: runtimeDir,
+      }),
+      stdout: 'piped',
+      stderr: 'piped',
+    }).spawn()
+
+    try {
+      const deadline = Date.now() + 10_000
+      let response: Response | undefined
+      let lastError: unknown
+
+      while (Date.now() < deadline) {
+        const lifecycle = await Promise.race([
+          child.status.then(() => 'exited' as const),
+          new Promise<'running'>((resolve) => setTimeout(() => resolve('running'), 100)),
+        ])
+        assertEquals(lifecycle, 'running')
+
+        try {
+          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
+          if (candidate.status === 200) {
+            response = candidate
+            break
+          }
+          lastError = new Error(`unexpected status: ${candidate.status}`)
+        } catch (error) {
+          lastError = error
+        }
+      }
+
+      if (!response) {
+        throw lastError instanceof Error ? lastError : new Error('等待 all 模式 web 页面可达超时')
+      }
+      await response.text()
+    } finally {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // noop
+      }
+      try {
+        await child.stdout?.cancel()
+      } catch {
+        // noop
+      }
+      try {
+        await child.stderr?.cancel()
+      } catch {
+        // noop
+      }
+      await child.status.catch(() => undefined)
+    }
+  })
+})
+
 Deno.test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty', async () => {
   const originalCi = Deno.env.get('CI')
   const originalForceColor = Deno.env.get('FORCE_COLOR')

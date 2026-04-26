@@ -11,7 +11,7 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
 - 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
 - 容器默认以非 root 用户 `10001:10001` 运行
-- 默认入口：离线二进制 `/app/knock`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认等价于 `--mode web`
+- 默认入口：离线二进制 `/app/knock`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
 - 构建阶段固定使用 `denoland/deno:2.7.13`
 - 运行阶段固定使用 `cgr.dev/chainguard/glibc-dynamic` + `/app/knock` 编译产物，并内置 CA 证书与 `tzdata`
 - 发布前门禁固定执行：`deno task verify:full`、`deno task docker:build`、`deno task docker:size:check`
@@ -54,7 +54,7 @@ sources:
 - 可选覆盖：`KNOCK_WEB_PORT=8000`
 - 可选覆盖：`KNOCK_IMMEDIATE=true|false`
 
-这些变量只在镜像默认入口下生效；挂载到 `/app/runtime` 的 `config.yml` 会被默认读取。`src/container_entrypoint.ts` 会在未显式提供参数时补齐 `--web_host`、`--web_port` 与 `--immediate`；非 `web` 模式下若设置了 `KNOCK_CONFIG_PATH`，入口还会补齐 `--config`。默认 `web` 分支则直接读取 `KNOCK_CONFIG_PATH` / `KNOCK_RUNTIME_DIR` 做配置发现。若显式指定 `--mode daemon`，入口不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
+这些变量只在镜像默认入口下生效；挂载到 `/app/runtime` 的 `config.yml` 会被默认读取。`src/container_entrypoint.ts` 会在未显式提供参数时保留项目 CLI 的 `all` 模式：`KNOCK_CONFIG_PATH` 会继续注入到含 daemon 分支的启动参数，`KNOCK_WEB_HOST` / `KNOCK_WEB_PORT` 会继续注入到含 web 分支的启动参数，`KNOCK_IMMEDIATE` 则按原约定补齐。若显式指定 `--mode daemon`，入口不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`；若显式指定 `--mode web`，入口不会把 `KNOCK_CONFIG_PATH` 改写成 CLI `--config`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
 
 ## 一次性执行 daemon
 
