@@ -932,10 +932,14 @@ Deno.test('[contract] startWeb: 启动后 config 页面应实际可访问', asyn
 
 Deno.test('[contract] startWeb: 端口被占用时应直接报子进程退出而不是等待超时', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
+    const originalRuntimeDir = Deno.env.get('KNOCK_RUNTIME_DIR')
+
     await Deno.writeTextFile(join(runtimeDir, 'config.yml'), 'sources: {}\n')
 
     const occupied = Deno.listen({ hostname: '127.0.0.1', port: 0 })
     const { port } = occupied.addr as Deno.NetAddr
+
+    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
 
     try {
       const startedAt = Date.now()
@@ -953,6 +957,11 @@ Deno.test('[contract] startWeb: 端口被占用时应直接报子进程退出而
         throw new Error(`端口占用失败不应等待接近超时窗口，实际耗时 ${elapsedMs}ms`)
       }
     } finally {
+      if (originalRuntimeDir === undefined) {
+        Deno.env.delete('KNOCK_RUNTIME_DIR')
+      } else {
+        Deno.env.set('KNOCK_RUNTIME_DIR', originalRuntimeDir)
+      }
       occupied.close()
     }
   })
