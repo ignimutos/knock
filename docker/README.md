@@ -46,14 +46,15 @@ sources:
 
 `config.yml` 支持 `${ENV_VAR}` 展开；`sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `/app/runtime` 解析。
 
-容器启动默认变量说明：
+容器启动相关环境变量：
 
-- `KNOCK_CONFIG_PATH=/app/runtime/config.yml`
-- `KNOCK_WEB_HOST=0.0.0.0`
-- `KNOCK_WEB_PORT=8000`
-- `KNOCK_IMMEDIATE=true|false`
+- 镜像内置：`KNOCK_RUNTIME_DIR=/app/runtime`
+- 可选覆盖：`KNOCK_CONFIG_PATH=/app/runtime/config.yml`
+- 可选覆盖：`KNOCK_WEB_HOST=0.0.0.0`
+- 可选覆盖：`KNOCK_WEB_PORT=8000`
+- 可选覆盖：`KNOCK_IMMEDIATE=true|false`
 
-这些变量只在镜像默认入口下生效；`src/container_entrypoint.ts` 会在未显式提供参数时补齐 `--config`、`--web_host`、`--web_port` 与 `--immediate`。若显式指定 `--mode daemon`，入口不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
+这些变量只在镜像默认入口下生效；挂载到 `/app/runtime` 的 `config.yml` 会被默认读取。`src/container_entrypoint.ts` 会在未显式提供参数时补齐 `--web_host`、`--web_port` 与 `--immediate`；非 `web` 模式下若设置了 `KNOCK_CONFIG_PATH`，入口还会补齐 `--config`。默认 `web` 分支则直接读取 `KNOCK_CONFIG_PATH` / `KNOCK_RUNTIME_DIR` 做配置发现。若显式指定 `--mode daemon`，入口不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
 
 ## 一次性执行 daemon
 
