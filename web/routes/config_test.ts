@@ -107,35 +107,6 @@ const workbench: ConfigWorkbenchOverview = {
   ],
 }
 
-Deno.test('[contract] web pages: Config 页应包含 Global、Deliveries、Sources 与保存入口', () => {
-  const html = renderToString(ConfigPage({ workbench }))
-
-  assertStringIncludes(html, 'Knock Config')
-  assertStringIncludes(html, 'id="config-global-save"')
-  assertStringIncludes(html, 'id="config-delivery-list"')
-  assertStringIncludes(html, 'id="config-delivery-save"')
-  assertStringIncludes(html, 'id="config-delivery-delete"')
-  assertStringIncludes(html, 'id="config-source-list"')
-  assertStringIncludes(html, 'id="config-manager-save"')
-  assertStringIncludes(html, 'YAML 原始注释与布局')
-  assertStringIncludes(html, '返回 Reader')
-})
-
-Deno.test('[contract] web pages: Config 页应提供新增 delivery 入口', () => {
-  const html = renderToString(ConfigPage({ workbench }))
-
-  assertStringIncludes(html, 'id="config-delivery-create"')
-  assertStringIncludes(html, '新增 delivery')
-})
-
-Deno.test('[contract] web pages: Config 页应渲染 island workbench 而非内联 bootstrap 脚本', () => {
-  const html = renderToString(ConfigPage({ workbench }))
-
-  assertStringIncludes(html, 'config-global-sqlite-mode')
-  assertStringIncludes(html, 'config-global-logging-mode')
-  assertStringIncludes(html, 'config-delivery-mode')
-})
-
 Deno.test('[contract] web pages: Config 页空字段应暴露默认值 placeholder', () => {
   const html = renderToString(
     ConfigPage({

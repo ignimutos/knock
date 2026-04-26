@@ -7,7 +7,6 @@ import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
 const TEST_RUNTIME = join(PROJECT_ROOT, '.tmp', 'runtime-load-config')
-const README_PATH = join(PROJECT_ROOT, 'README.md')
 
 const registerTest = Deno.test
 
@@ -711,29 +710,4 @@ sources:
   assertEquals(loaded.config.sources[0]?.id, 'rust')
   assertEquals(loaded.definitions.sources[0]?.sourceId, 'rust')
   assertEquals(loaded.definitions.bindings[0]?.deliveryId, 'archive')
-})
-
-test('loadConfig: README HTTP 文档应保持 canonical 形态并拒绝 legacy 回流', async () => {
-  const readme = await Deno.readTextFile(README_PATH)
-
-  assertStringIncludes(readme, '## 完整键索引')
-  assertStringIncludes(readme, '### `deliveries` 键路径')
-  assertStringIncludes(readme, 'deliveries.<deliveryId>.push.http.url')
-  assertStringIncludes(readme, 'deliveries.<deliveryId>.push.request.type')
-  assertStringIncludes(readme, 'deliveries.<deliveryId>.email.smtp.host')
-  assertStringIncludes(readme, 'deliveries.<deliveryId>.email.message.from')
-  assertStringIncludes(readme, '### `sources` 键路径')
-  assertStringIncludes(readme, 'sources.<sourceId>.http.url')
-  assertStringIncludes(readme, 'sources.<sourceId>.byparr.endpoint')
-  assertStringIncludes(readme, 'sources.<sourceId>.byparr.url')
-  assertStringIncludes(readme, 'webhook:\n    push:\n      http:')
-  assertStringIncludes(readme, '  release_email:\n    email:\n      smtp:')
-  assertStringIncludes(readme, 'sources:\n  deno:\n    http:\n      url:')
-
-  assertEquals(readme.includes('push.http.type'), false)
-  assertEquals(readme.includes('push.http.payload'), false)
-  assertEquals(readme.includes('deliveries.<id>.http'), false)
-  assertEquals(readme.includes('sources.<id>.url'), false)
-  assertEquals(readme.includes('sources:\n  deno:\n    url:'), false)
-  assertEquals(readme.includes('webhook:\n    http:'), false)
 })

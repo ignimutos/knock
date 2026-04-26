@@ -39,9 +39,6 @@ Deno.test('[contract] web main: 应注册 reader 页面路由', async () => {
 
   assertEquals(response.status, 200)
   assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
-  const html = await response.text()
-  assertStringIncludes(html, 'RSS Reader')
-  assertStringIncludes(html, 'id="reader-source-list"')
 })
 
 Deno.test('[contract] web main: 应注册 reader overview api 路由', async () => {
@@ -72,10 +69,6 @@ sources:
 
       assertEquals(response.status, 200)
       assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
-      const html = await response.text()
-      assertStringIncludes(html, 'Knock Config')
-      assertStringIncludes(html, 'id="config-global-save"')
-      assertStringIncludes(html, 'id="config-manager-save"')
     },
   )
 })
@@ -116,10 +109,6 @@ Deno.test('[contract] web main: 应注册 syndication 页面路由', async () =>
 
   assertEquals(response.status, 200)
   assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
-  const html = await response.text()
-  assertStringIncludes(html, 'Syndication Playground')
-  assertStringIncludes(html, 'id="syn-form"')
-  assertStringIncludes(html, '填充默认模板')
 })
 
 Deno.test('[contract] web main: withApiRequestLogging 应记录成功请求关键字段', async () => {

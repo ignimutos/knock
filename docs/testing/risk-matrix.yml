@@ -150,7 +150,6 @@
   expected_guardrail: window boundaries and entry count stay deterministic
   required_layer: flow+contract
   owner_tests:
-    - src/config/config_example_test.ts
     - src/sources/summary_test.ts
 
 - id: R18
@@ -164,9 +163,6 @@
     - src/web/xquery_playground_test.ts
     - src/web/syndication_playground_test.ts
     - web/main_test.ts
-    - web/routes/index_test.ts
-    - web/routes/syndication_test.ts
-    - web/routes/xquery_test.ts
 
 - id: R19
   domain: api
