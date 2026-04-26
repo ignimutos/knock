@@ -17,19 +17,36 @@ Deno.test('[contract] container entrypoint: deno task start 应被改写为应�
 
 Deno.test('[contract] container entrypoint: 非法 KNOCK_IMMEDIATE 应报错', async () => {
   const { shouldEnableImmediate } = await import(`${moduleUrl.href}?invalid-immediate`)
-  const previous = Deno.env.get('KNOCK_IMMEDIATE')
-  Deno.env.set('KNOCK_IMMEDIATE', 'maybe')
-
-  try {
-    assertThrows(() => shouldEnableImmediate(), Error, 'KNOCK_IMMEDIATE 非法: maybe')
-  } finally {
-    if (previous === undefined) {
-      Deno.env.delete('KNOCK_IMMEDIATE')
-    } else {
-      Deno.env.set('KNOCK_IMMEDIATE', previous)
-    }
-  }
+  assertThrows(() => shouldEnableImmediate('maybe'), Error, 'KNOCK_IMMEDIATE 非法: maybe')
 })
+
+Deno.test(
+  '[contract] container entrypoint: web 模式默认值不应把 KNOCK_CONFIG_PATH 注入为 CLI --config',
+  async () => {
+    const { applyContainerDefaults } = await import(`${moduleUrl.href}?web-defaults`)
+    assertEquals(
+      applyContainerDefaults(['--mode', 'web'], {
+        KNOCK_CONFIG_PATH: '/app/runtime/config.yml',
+        KNOCK_WEB_HOST: '0.0.0.0',
+        KNOCK_WEB_PORT: '9000',
+      }),
+      ['--mode', 'web', '--web_host', '0.0.0.0', '--web_port', '9000'],
+    )
+  },
+)
+
+Deno.test(
+  '[contract] container entrypoint: daemon 模式仍应从 KNOCK_CONFIG_PATH 注入 CLI --config',
+  async () => {
+    const { applyContainerDefaults } = await import(`${moduleUrl.href}?daemon-defaults`)
+    assertEquals(
+      applyContainerDefaults(['--mode', 'daemon'], {
+        KNOCK_CONFIG_PATH: '/app/runtime/config.yml',
+      }),
+      ['--mode', 'daemon', '--config', '/app/runtime/config.yml'],
+    )
+  },
+)
 
 Deno.test('[contract] container entrypoint: 显式 daemon immediate 应在当前进程内返回', async () => {
   const { runContainerEntrypoint } = await import(`${moduleUrl.href}?daemon-immediate`)

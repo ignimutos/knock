@@ -4,9 +4,9 @@ export function hasFlag(flag: string, args: string[]): boolean {
   return args.includes(flag)
 }
 
-export function shouldEnableImmediate(): boolean {
-  const value = Deno.env.get('KNOCK_IMMEDIATE')
-
+export function shouldEnableImmediate(
+  value: string | undefined = Deno.env.get('KNOCK_IMMEDIATE'),
+): boolean {
   switch (value) {
     case undefined:
     case '':
@@ -63,6 +63,35 @@ async function runRawCommand(args: string[]): Promise<void> {
   Deno.exit(status.code)
 }
 
+export function applyContainerDefaults(
+  appArgs: string[],
+  env: Record<string, string | undefined> = Deno.env.toObject(),
+): string[] {
+  const nextArgs = [...appArgs]
+  const targetMode = resolveTargetMode(nextArgs)
+
+  if (targetMode !== 'web' && !hasFlag('--config', nextArgs)) {
+    const configPath = env.KNOCK_CONFIG_PATH
+    if (configPath) nextArgs.push('--config', configPath)
+  }
+
+  if (targetMode === 'web' && !hasFlag('--web_host', nextArgs)) {
+    const webHost = env.KNOCK_WEB_HOST
+    if (webHost) nextArgs.push('--web_host', webHost)
+  }
+
+  if (targetMode === 'web' && !hasFlag('--web_port', nextArgs)) {
+    const webPort = env.KNOCK_WEB_PORT
+    if (webPort) nextArgs.push('--web_port', webPort)
+  }
+
+  if (!hasFlag('--immediate', nextArgs) && shouldEnableImmediate(env.KNOCK_IMMEDIATE)) {
+    nextArgs.push('--immediate')
+  }
+
+  return nextArgs
+}
+
 export async function runContainerEntrypoint(rawArgs: string[] = [...Deno.args]): Promise<void> {
   const appArgs = normalizeAppArgs(rawArgs)
 
@@ -71,27 +100,7 @@ export async function runContainerEntrypoint(rawArgs: string[] = [...Deno.args])
     return
   }
 
-  if (!hasFlag('--config', appArgs)) {
-    const configPath = Deno.env.get('KNOCK_CONFIG_PATH')
-    if (configPath) appArgs.push('--config', configPath)
-  }
-
-  const targetMode = resolveTargetMode(appArgs)
-  if (targetMode === 'web' && !hasFlag('--web_host', appArgs)) {
-    const webHost = Deno.env.get('KNOCK_WEB_HOST')
-    if (webHost) appArgs.push('--web_host', webHost)
-  }
-
-  if (targetMode === 'web' && !hasFlag('--web_port', appArgs)) {
-    const webPort = Deno.env.get('KNOCK_WEB_PORT')
-    if (webPort) appArgs.push('--web_port', webPort)
-  }
-
-  if (!hasFlag('--immediate', appArgs) && shouldEnableImmediate()) {
-    appArgs.push('--immediate')
-  }
-
-  await main(appArgs)
+  await main(applyContainerDefaults(appArgs))
 }
 
 if (import.meta.main) {
