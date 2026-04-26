@@ -14,7 +14,7 @@ COPY web ./web
 RUN deno task deps:prefetch \
   && deno task build:web
 
-FROM denoland/deno:${DENO_VERSION} AS build
+FROM --platform=$BUILDPLATFORM denoland/deno:${DENO_VERSION} AS build
 
 WORKDIR /app
 
@@ -24,16 +24,24 @@ COPY src ./src
 COPY web ./web
 COPY --from=web-build /app/_fresh ./_fresh
 
-RUN deno compile \
-  --allow-read \
-  --allow-write \
-  --allow-env \
-  --allow-net \
-  --allow-ffi \
-  --allow-run \
-  --allow-sys \
-  --output /app/knock \
-  /app/src/container_main.ts
+ARG TARGETARCH
+
+RUN case "${TARGETARCH:-$(uname -m)}" in \
+    amd64 | x86_64) DENO_COMPILE_TARGET=x86_64-unknown-linux-gnu ;; \
+    arm64 | aarch64) DENO_COMPILE_TARGET=aarch64-unknown-linux-gnu ;; \
+    *) echo "Unsupported target architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
+  esac \
+  && deno compile \
+    --target "$DENO_COMPILE_TARGET" \
+    --allow-read \
+    --allow-write \
+    --allow-env \
+    --allow-net \
+    --allow-ffi \
+    --allow-run \
+    --allow-sys \
+    --output /app/knock \
+    /app/src/container_main.ts
 
 FROM debian:bookworm-slim
 
