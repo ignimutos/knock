@@ -1,11 +1,13 @@
 import { dirname, join, resolve, toFileUrl } from '@std/path'
 import { z } from 'zod'
+import { loadConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import { findConfigFile, parseRawConfigDocument } from '../../config/load_config.ts'
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
 import { loggingSchema, timezoneSchema } from '../../config/schema.ts'
 import type { LoggingConfigResolved } from '../../config/types.ts'
 import { createLogger } from '../../core/logger.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from '../../core/logging_runtime.ts'
+import { createFactsDbClient } from '../../db/client.ts'
 import { parseWithFirstIssue } from '../../zod_utils.ts'
 
 export interface StartWebLoggingRuntime {
@@ -278,6 +280,17 @@ async function loadFreshServerFetch(): Promise<(request: Request) => Response | 
   return fetchHandler
 }
 
+async function assertWebRuntimeReady(): Promise<void> {
+  try {
+    const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
+    const factsDb = createFactsDbClient({ sqlite: context.loaded.config.sqlite })
+    factsDb.$client.close()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Web 启动前检查失败: ${message}`)
+  }
+}
+
 function createDelay(ms: number): { promise: Promise<void>; cancel: () => void } {
   let timeoutId: number | undefined
   return {
@@ -386,6 +399,8 @@ export async function startWeb(options: StartWebOptions) {
   if (loggingRuntime) {
     await configureLoggingRuntime(loggingRuntime)
   }
+
+  await assertWebRuntimeReady()
 
   const logger = createLogger({
     enabled: true,

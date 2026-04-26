@@ -80,6 +80,37 @@ sources:
   )
 })
 
+Deno.test(
+  '[contract] web main: sqlite 不可用时 config 页面应暴露 issue 而不是静默空状态',
+  async () => {
+    await withRuntimeDir(
+      `sqlite:
+  path: db/knock.db
+deliveries:
+  local:
+    file:
+      path: outputs/releases.md
+      content: "{{ entry.title }}"
+sources:
+  rust:
+    enabled: true
+    http:
+      url: https://example.com/feed.xml
+    syndication: {}
+    deliveries:
+      local: {}
+`,
+      async () => {
+        await Deno.writeTextFile(`${Deno.env.get('KNOCK_RUNTIME_DIR')}/db`, 'not-a-directory')
+        const response = await app.handler()(new Request('http://localhost/config'))
+        assertEquals(response.status, 200)
+        const html = await response.text()
+        assertStringIncludes(html, '读取 Config Workbench 数据失败，请查看服务端日志。')
+      },
+    )
+  },
+)
+
 Deno.test('[contract] web main: 应注册 syndication 页面路由', async () => {
   const response = await app.handler()(new Request('http://localhost/syndication'))
 
