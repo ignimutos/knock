@@ -1,6 +1,7 @@
 ARG DENO_VERSION=2.7.13
+ARG BUILDPLATFORM
 
-FROM denoland/deno:${DENO_VERSION} AS build
+FROM --platform=$BUILDPLATFORM denoland/deno:${DENO_VERSION} AS web-build
 
 WORKDIR /app
 
@@ -12,6 +13,16 @@ COPY web ./web
 
 RUN deno task deps:prefetch \
   && deno task build:web
+
+FROM denoland/deno:${DENO_VERSION} AS build
+
+WORKDIR /app
+
+COPY deno.json ./
+COPY deno.lock ./
+COPY src ./src
+COPY web ./web
+COPY --from=web-build /app/_fresh ./_fresh
 
 RUN deno eval 'const config = JSON.parse(await Deno.readTextFile("deno.json")); delete config.imports.vite; delete config.imports["@fresh/plugin-vite"]; config.nodeModulesDir = "none"; config.tasks = { start: "deno run --cached-only --node-modules-dir=none --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run --allow-sys src/main.ts", web: "deno task start --mode web", daemon: "deno task start --mode daemon" }; await Deno.writeTextFile("/tmp/deno.runtime.json", `${JSON.stringify(config, null, 2)}\n`);'
 
