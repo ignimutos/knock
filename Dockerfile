@@ -24,15 +24,8 @@ COPY src ./src
 COPY web ./web
 COPY --from=web-build /app/_fresh ./_fresh
 
-ARG TARGETARCH
-
-RUN case "${TARGETARCH:-$(uname -m)}" in \
-    amd64 | x86_64) DENO_COMPILE_TARGET=x86_64-unknown-linux-gnu ;; \
-    arm64 | aarch64) DENO_COMPILE_TARGET=aarch64-unknown-linux-gnu ;; \
-    *) echo "Unsupported target architecture: ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
-  esac \
-  && deno compile \
-    --target "$DENO_COMPILE_TARGET" \
+RUN deno compile \
+    --target x86_64-unknown-linux-gnu \
     --allow-read \
     --allow-write \
     --allow-env \
@@ -43,18 +36,22 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
     --output /app/knock \
     /app/src/container_main.ts
 
-FROM debian:bookworm-slim
+FROM alpine:3.21 AS runtime-assets
+
+RUN apk add --no-cache ca-certificates tzdata \
+  && mkdir -p /runtime
+
+FROM cgr.dev/chainguard/glibc-dynamic
 
 WORKDIR /app
 
 ENV KNOCK_RUNTIME_DIR=/app/runtime
 
-RUN useradd --system --uid 10001 --create-home knock
-
+COPY --from=runtime-assets /etc/ssl/certs /etc/ssl/certs
+COPY --from=runtime-assets /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=runtime-assets --chown=10001:10001 /runtime /app/runtime
 COPY --from=build --chown=10001:10001 /app/knock ./knock
 COPY --from=build --chown=10001:10001 /app/_fresh ./_fresh
-
-RUN install -d -o 10001 -g 10001 /app/runtime
 
 USER 10001:10001
 

@@ -13,7 +13,7 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 容器默认以非 root 用户 `10001:10001` 运行
 - 默认入口：离线二进制 `/app/knock`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认等价于 `--mode web`
 - 构建阶段固定使用 `denoland/deno:2.7.13`
-- 运行阶段固定使用 `debian:bookworm-slim` + `/app/knock` 编译产物
+- 运行阶段固定使用 `cgr.dev/chainguard/glibc-dynamic` + `/app/knock` 编译产物，并内置 CA 证书与 `tzdata`
 - 发布前门禁固定执行：`deno task verify:full`、`deno task docker:build`、`deno task docker:size:check`
 - 已发布标签：`latest`、`sha-<git-sha>`
 
@@ -96,6 +96,6 @@ docker run -d \
 
 1. `verify`：`deno task verify:full`
 2. `image`：`deno task image:prepare`（构建并校验镜像体积）
-3. `publish`：仅 `main` 推送多架构镜像并同步 Docker Hub README
+3. `publish`：仅 `main` 推送 `linux/amd64` 镜像并同步 Docker Hub README
 
 镜像体积默认预算由 `KNOCK_IMAGE_MAX_SIZE_MB` 控制，CI 当前使用 `450` MB。
