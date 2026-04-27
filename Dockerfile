@@ -20,11 +20,13 @@ WORKDIR /app
 
 COPY deno.json ./
 COPY deno.lock ./
+COPY docker/deno.compile.json ./docker/deno.compile.json
 COPY src ./src
 COPY web ./web
 COPY --from=web-build /app/_fresh ./_fresh
 
 RUN deno compile \
+    --config /app/docker/deno.compile.json \
     --target x86_64-unknown-linux-gnu \
     --allow-read \
     --allow-write \
