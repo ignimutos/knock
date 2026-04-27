@@ -1,20 +1,14 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { join } from '@std/path'
-import { withOwnedRuntime } from '../test_runtime.ts'
 import { startApp } from '../main.ts'
-
-const registerTest = Deno.test
-
-function test(name: string, fn: () => Promise<void> | void): void {
-  const layeredName = name.startsWith('[') ? name : `[flow] ${name}`
-  registerTest(layeredName, fn)
-}
+import { test } from '../testing/test_api.ts'
+import { withRuntimeHarness, writeRuntimeFile } from '../testing/test_helpers.ts'
 
 function withAppRuntime(
   testName: string,
   run: (runtimeDir: string) => Promise<void>,
 ): Promise<void> {
-  return withOwnedRuntime(join(Deno.cwd(), '.tmp', `runtime-app-${testName}`), run)
+  return withRuntimeHarness(join(Deno.cwd(), '.tmp', `runtime-app-${testName}`), run)
 }
 
 test('[contract] app: 启动入口应拒绝非法 keepAlive 类型', async () => {
@@ -43,8 +37,9 @@ test('[contract] app: 启动入口应拒绝非法 httpProxyClientFactory 类型'
 
 test('[flow] R03 app: 未传 immediate 时入口模型应显式视为 false', async () => {
   await withAppRuntime('default-immediate-false', async (testRuntime) => {
-    await Deno.writeTextFile(
-      join(testRuntime, 'config.yml'),
+    await writeRuntimeFile(
+      testRuntime,
+      'config.yml',
       `
 sources: {}
 `,
@@ -57,8 +52,9 @@ sources: {}
 
 test('[flow] R03 app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果', async () => {
   await withAppRuntime('immediate-v2-daemon', async (testRuntime) => {
-    await Deno.writeTextFile(
-      join(testRuntime, 'config.yml'),
+    await writeRuntimeFile(
+      testRuntime,
+      'config.yml',
       `
 sources: {}
 `,
@@ -76,8 +72,9 @@ sources: {}
 
 test('[contract] app: stop 后应释放 logging runtime', async () => {
   await withAppRuntime('logging-runtime-dispose', async (testRuntime) => {
-    await Deno.writeTextFile(
-      join(testRuntime, 'config.yml'),
+    await writeRuntimeFile(
+      testRuntime,
+      'config.yml',
       `
 logging:
   sinks:

@@ -1,6 +1,8 @@
 import { fromFileUrl } from '@std/path'
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
+import { getEnvObject } from './platform/env.ts'
+import { execPath, spawnSelf } from './platform/process.ts'
 import { loadCompiledConfig } from './config/load_compiled_config.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
 import {
@@ -140,7 +142,7 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 }
 
 function buildSelfCommandArgs(args: string[]): string[] {
-  if (/([/\\]|^)deno(?:\.exe)?$/i.test(Deno.execPath())) {
+  if (/([/\\]|^)deno(?:\.exe)?$/i.test(execPath())) {
     return [
       'run',
       '--allow-all',
@@ -156,20 +158,20 @@ function buildSelfCommandArgs(args: string[]): string[] {
 
 export async function runAllModes(command: AllCliCommand): Promise<void> {
   const childEnv = {
-    ...Deno.env.toObject(),
+    ...getEnvObject(),
     ...(command.configPath ? { KNOCK_CONFIG_PATH: command.configPath } : {}),
     ...(command.runtimeDir ? { KNOCK_RUNTIME_DIR: command.runtimeDir } : {}),
   }
 
-  const daemonChild = new Deno.Command(Deno.execPath(), {
+  const daemonChild = spawnSelf({
     args: buildSelfCommandArgs(buildChildArgs(command, 'daemon')),
     env: childEnv,
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
-  }).spawn()
+  })
 
-  const webChild = new Deno.Command(Deno.execPath(), {
+  const webChild = spawnSelf({
     args: buildSelfCommandArgs(buildChildArgs(command, 'web')),
     env: {
       ...childEnv,
@@ -178,7 +180,7 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
-  }).spawn()
+  })
 
   const firstExit = await Promise.race([
     daemonChild.status.then((status) => ({ name: 'daemon', status })),

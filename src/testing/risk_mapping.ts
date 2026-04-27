@@ -107,11 +107,22 @@ function parseHelperDefaultLayer(source: string): TestLayer | undefined {
 function parseTestCases(filePath: string, source: string): TestCaseRef[] {
   const cases: TestCaseRef[] = []
   const helperDefaultLayer = parseHelperDefaultLayer(source)
+  const usesRepoTestApi =
+    source.includes("from '../testing/test_api.ts'") ||
+    source.includes('from "../testing/test_api.ts"') ||
+    source.includes("from './testing/test_api.ts'") ||
+    source.includes('from "./testing/test_api.ts"') ||
+    source.includes("from '../src/testing/test_api.ts'") ||
+    source.includes('from "../src/testing/test_api.ts"')
 
   for (const match of source.matchAll(testTitlePattern)) {
     const callee = match[1]
     const title = match[3]
-    const layer = parseLayerFromTitle(title) ?? (callee === 'test' ? helperDefaultLayer : undefined)
+    const layer =
+      parseLayerFromTitle(title) ??
+      (callee === 'test'
+        ? (helperDefaultLayer ?? (usesRepoTestApi ? 'contract' : undefined))
+        : undefined)
     if (!layer) continue
 
     cases.push({

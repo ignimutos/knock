@@ -1,11 +1,13 @@
 import { main } from './main.ts'
+import { getEnv, getEnvObject } from './platform/env.ts'
+import { exit, spawnCommand } from './platform/process.ts'
 
 export function hasFlag(flag: string, args: string[]): boolean {
   return args.includes(flag)
 }
 
 export function shouldEnableImmediate(
-  value: string | undefined = Deno.env.get('KNOCK_IMMEDIATE'),
+  value: string | undefined = getEnv('KNOCK_IMMEDIATE'),
 ): boolean {
   switch (value) {
     case undefined:
@@ -53,19 +55,19 @@ export function normalizeAppArgs(rawArgs: string[]): string[] | undefined {
 }
 
 async function runRawCommand(args: string[]): Promise<void> {
-  const command = new Deno.Command(args[0]!, {
+  const command = spawnCommand(args[0]!, {
     args: args.slice(1),
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
-  }).spawn()
+  })
   const status = await command.status
-  Deno.exit(status.code)
+  exit(status.code)
 }
 
 export function applyContainerDefaults(
   appArgs: string[],
-  env: Record<string, string | undefined> = Deno.env.toObject(),
+  env: Record<string, string | undefined> = getEnvObject(),
 ): string[] {
   const nextArgs = [...appArgs]
   const targetMode = resolveTargetMode(nextArgs)

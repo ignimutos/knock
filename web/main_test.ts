@@ -1,54 +1,44 @@
 import { assertEquals, assertStringIncludes } from '@std/assert'
-import app, { withApiRequestLogging } from './main.ts'
 import { createLogger } from '../src/core/logger.ts'
 import { setCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
+import { test } from '../src/testing/test_api.ts'
+import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../src/testing/test_helpers.ts'
+import app, { withApiRequestLogging } from './main.ts'
 
-async function withRuntimeDir(configYml: string, fn: () => Promise<void>) {
-  const runtimeDir = await Deno.makeTempDir()
-  const previousRuntimeDir = Deno.env.get('KNOCK_RUNTIME_DIR')
-  const previousConfigPath = Deno.env.get('KNOCK_CONFIG_PATH')
-
-  try {
-    await Deno.writeTextFile(`${runtimeDir}/config.yml`, configYml)
-    Deno.env.delete('KNOCK_CONFIG_PATH')
-    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
-    await fn()
-  } finally {
-    if (previousConfigPath === undefined) {
-      Deno.env.delete('KNOCK_CONFIG_PATH')
-    } else {
-      Deno.env.set('KNOCK_CONFIG_PATH', previousConfigPath)
-    }
-
-    if (previousRuntimeDir === undefined) {
-      Deno.env.delete('KNOCK_RUNTIME_DIR')
-    } else {
-      Deno.env.set('KNOCK_RUNTIME_DIR', previousRuntimeDir)
-    }
-
-    await Deno.remove(runtimeDir, { recursive: true })
-  }
+async function withRuntimeDir(configYml: string, fn: (runtimeDir: string) => Promise<void>) {
+  await withRuntimeHarness(async ({ runtimeDir }) => {
+    await writeRuntimeFile(runtimeDir, 'config.yml', configYml)
+    await withEnv(
+      {
+        KNOCK_CONFIG_PATH: undefined,
+        KNOCK_RUNTIME_DIR: runtimeDir,
+      },
+      async () => {
+        await fn(runtimeDir)
+      },
+    )
+  })
 }
 
-Deno.test('[contract] web main: 应暴露 fresh app 默认导出', () => {
+test('[contract] web main: 应暴露 fresh app 默认导出', () => {
   assertEquals(typeof app.listen, 'function')
 })
 
-Deno.test('[contract] web main: 应注册 reader 页面路由', async () => {
+test('[contract] web main: 应注册 reader 页面路由', async () => {
   const response = await app.handler()(new Request('http://localhost/reader'))
 
   assertEquals(response.status, 200)
   assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
 })
 
-Deno.test('[contract] web main: 应注册 reader overview api 路由', async () => {
+test('[contract] web main: 应注册 reader overview api 路由', async () => {
   const response = await app.handler()(new Request('http://localhost/api/reader/overview'))
 
   assertEquals(response.status, 200)
   assertStringIncludes(response.headers.get('content-type') ?? '', 'application/json')
 })
 
-Deno.test('[contract] web main: 应注册 config 页面路由', async () => {
+test('[contract] web main: 应注册 config 页面路由', async () => {
   await withRuntimeDir(
     `deliveries:
   local:
@@ -73,11 +63,9 @@ sources:
   )
 })
 
-Deno.test(
-  '[contract] web main: sqlite 不可用时 config 页面应暴露 issue 而不是静默空状态',
-  async () => {
-    await withRuntimeDir(
-      `sqlite:
+test('[contract] web main: sqlite 不可用时 config 页面应暴露 issue 而不是静默空状态', async () => {
+  await withRuntimeDir(
+    `sqlite:
   path: db/knock.db
 deliveries:
   local:
@@ -93,25 +81,24 @@ sources:
     deliveries:
       local: {}
 `,
-      async () => {
-        await Deno.writeTextFile(`${Deno.env.get('KNOCK_RUNTIME_DIR')}/db`, 'not-a-directory')
-        const response = await app.handler()(new Request('http://localhost/config'))
-        assertEquals(response.status, 200)
-        const html = await response.text()
-        assertStringIncludes(html, '读取 Config Workbench 数据失败，请查看服务端日志。')
-      },
-    )
-  },
-)
+    async (runtimeDir) => {
+      await writeRuntimeFile(runtimeDir, 'db', 'not-a-directory')
+      const response = await app.handler()(new Request('http://localhost/config'))
+      assertEquals(response.status, 200)
+      const html = await response.text()
+      assertStringIncludes(html, '读取 Config Workbench 数据失败，请查看服务端日志。')
+    },
+  )
+})
 
-Deno.test('[contract] web main: 应注册 syndication 页面路由', async () => {
+test('[contract] web main: 应注册 syndication 页面路由', async () => {
   const response = await app.handler()(new Request('http://localhost/syndication'))
 
   assertEquals(response.status, 200)
   assertStringIncludes(response.headers.get('content-type') ?? '', 'text/html')
 })
 
-Deno.test('[contract] web main: withApiRequestLogging 应记录成功请求关键字段', async () => {
+test('[contract] web main: withApiRequestLogging 应记录成功请求关键字段', async () => {
   const stdout: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -188,74 +175,71 @@ Deno.test('[contract] web main: withApiRequestLogging 应记录成功请求关�
   assertEquals(successAttributes['source.parse_duration_ms'], 5)
 })
 
-Deno.test(
-  '[contract] web main: withApiRequestLogging 应记录 syndication 请求关键字段',
-  async () => {
-    const stdout: string[] = []
-    const logger = createLogger({
-      enabled: true,
-      level: 'debug',
-      module: 'web.api',
-      component: 'web',
-      now: () => new Date('2026-03-24T21:45:12.345Z'),
-      writeStdout: (line: string) => stdout.push(line),
-      writeStderr: (line: string) => stdout.push(line),
-    })
+test('[contract] web main: withApiRequestLogging 应记录 syndication 请求关键字段', async () => {
+  const stdout: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'debug',
+    module: 'web.api',
+    component: 'web',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => stdout.push(line),
+    writeStderr: (line: string) => stdout.push(line),
+  })
 
-    const routeHandler = withApiRequestLogging(
-      '/api/syndication/evaluate',
-      'web.api.syndication.evaluate',
-      (_request, onLogMeta) => {
-        onLogMeta({
-          targetHost: 'example.com',
-          parser: 'rss',
-          warningCount: 1,
-          entryCount: 2,
-          fetchDurationMs: 12,
-          parseDurationMs: 5,
-        })
-        return Promise.resolve(Response.json({ ok: true }))
-      },
-      logger,
-    )
+  const routeHandler = withApiRequestLogging(
+    '/api/syndication/evaluate',
+    'web.api.syndication.evaluate',
+    (_request, onLogMeta) => {
+      onLogMeta({
+        targetHost: 'example.com',
+        parser: 'rss',
+        warningCount: 1,
+        entryCount: 2,
+        fetchDurationMs: 12,
+        parseDurationMs: 5,
+      })
+      return Promise.resolve(Response.json({ ok: true }))
+    },
+    logger,
+  )
 
-    const response = await routeHandler({
-      req: new Request('http://localhost/api/syndication/evaluate', { method: 'POST' }),
-    })
+  const response = await routeHandler({
+    req: new Request('http://localhost/api/syndication/evaluate', { method: 'POST' }),
+  })
 
-    assertEquals(response.status, 200)
-    assertEquals(stdout.length, 2)
+  assertEquals(response.status, 200)
+  assertEquals(stdout.length, 2)
 
-    const startRecord = JSON.parse(stdout[0]) as Record<string, unknown>
-    const startScope = (startRecord.scope ?? {}) as Record<string, unknown>
-    const startAttributes = (startRecord.attributes ?? {}) as Record<string, unknown>
-    assertEquals(startScope.name, 'web.api.syndication.evaluate')
-    assertEquals(startAttributes['http.route'], '/api/syndication/evaluate')
-    assertEquals(startAttributes['http.request.method'], 'POST')
-    assertEquals(startAttributes['web.operation'], 'request')
-    assertEquals(startAttributes['web.outcome'], 'start')
-    assertEquals('outcome' in startAttributes, false)
+  const startRecord = JSON.parse(stdout[0]) as Record<string, unknown>
+  const startScope = (startRecord.scope ?? {}) as Record<string, unknown>
+  const startAttributes = (startRecord.attributes ?? {}) as Record<string, unknown>
+  assertEquals(startScope.name, 'web.api.syndication.evaluate')
+  assertEquals(startAttributes['http.route'], '/api/syndication/evaluate')
+  assertEquals(startAttributes['http.request.method'], 'POST')
+  assertEquals(startAttributes['web.operation'], 'request')
+  assertEquals(startAttributes['web.outcome'], 'start')
+  assertEquals('outcome' in startAttributes, false)
 
-    const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
-    const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
-    const successAttributes = (successRecord.attributes ?? {}) as Record<string, unknown>
-    assertEquals(successScope.name, 'web.api.syndication.evaluate')
-    assertEquals(successAttributes['http.route'], '/api/syndication/evaluate')
-    assertEquals(successAttributes['http.request.method'], 'POST')
-    assertEquals(successAttributes['web.operation'], 'request')
-    assertEquals(successAttributes['web.outcome'], 'success')
-    assertEquals(typeof successAttributes['web.duration_ms'], 'number')
-    assertEquals('outcome' in successAttributes, false)
-    assertEquals(successAttributes['web.target_host'], 'example.com')
-    assertEquals(successAttributes['source.parser'], 'rss')
-    assertEquals(successAttributes['pipeline.warning_count'], 1)
-    assertEquals(successAttributes['pipeline.entry_count'], 2)
-    assertEquals(successAttributes['source.fetch_duration_ms'], 12)
-    assertEquals(successAttributes['source.parse_duration_ms'], 5)
-  },
-)
+  const successRecord = JSON.parse(stdout[1]) as Record<string, unknown>
+  const successScope = (successRecord.scope ?? {}) as Record<string, unknown>
+  const successAttributes = (successRecord.attributes ?? {}) as Record<string, unknown>
+  assertEquals(successScope.name, 'web.api.syndication.evaluate')
+  assertEquals(successAttributes['http.route'], '/api/syndication/evaluate')
+  assertEquals(successAttributes['http.request.method'], 'POST')
+  assertEquals(successAttributes['web.operation'], 'request')
+  assertEquals(successAttributes['web.outcome'], 'success')
+  assertEquals(typeof successAttributes['web.duration_ms'], 'number')
+  assertEquals('outcome' in successAttributes, false)
+  assertEquals(successAttributes['web.target_host'], 'example.com')
+  assertEquals(successAttributes['source.parser'], 'rss')
+  assertEquals(successAttributes['pipeline.warning_count'], 1)
+  assertEquals(successAttributes['pipeline.entry_count'], 2)
+  assertEquals(successAttributes['source.fetch_duration_ms'], 12)
+  assertEquals(successAttributes['source.parse_duration_ms'], 5)
+})
 
-Deno.test('[contract] web main: withApiRequestLogging 应记录失败请求关键字段', async () => {
+test('[contract] web main: withApiRequestLogging 应记录失败请求关键字段', async () => {
   const stderr: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -323,7 +307,7 @@ Deno.test('[contract] web main: withApiRequestLogging 应记录失败请求关�
   )
 })
 
-Deno.test('[contract] web main: 默认 route logger 应继承当前 web logging level', async () => {
+test('[contract] web main: 默认 route logger 应继承当前 web logging level', async () => {
   const stdout: string[] = []
   const previousLog = console.log
   const previousInfo = console.info

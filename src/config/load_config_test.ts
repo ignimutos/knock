@@ -1,34 +1,40 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
 import { dirname, fromFileUrl, join } from '@std/path'
 import { createLogger } from '../core/logger.ts'
-import { withOwnedRuntime } from '../test_runtime.ts'
+import { test as registerTest } from '../testing/test_api.ts'
+import {
+  withEnv,
+  withRuntimeHarness,
+  writeRuntimeFile,
+  writeTextFile,
+} from '../testing/test_helpers.ts'
 import { compileConfigDocument, loadCompiledConfig } from './load_compiled_config.ts'
 import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
 const TEST_RUNTIME = join(PROJECT_ROOT, '.tmp', 'runtime-load-config')
 
-const registerTest = Deno.test
-
 function test(name: string, fn: () => Promise<void> | void): void {
-  const layeredName = name.startsWith('[') ? name : `[contract] ${name}`
-  registerTest(layeredName, async () => {
-    await withOwnedRuntime(TEST_RUNTIME, async () => {
+  registerTest(name, async () => {
+    await withRuntimeHarness(TEST_RUNTIME, async () => {
       await fn()
     })
   })
 }
 
 test('loadConfig: 应递归展开配置中的环境变量字符串', async () => {
-  Deno.env.set('KNOCK_TEST_WEBHOOK_URL', 'https://example.com/webhook')
-  Deno.env.set('KNOCK_TEST_WEBHOOK_TOKEN', 'env-token')
-  Deno.env.set('KNOCK_TEST_SOURCE_URL', 'https://example.com/feed.xml')
-  Deno.env.set('KNOCK_TEST_FILE_PATH', 'outputs/feed.md')
-
-  try {
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
-      `
+  await withEnv(
+    {
+      KNOCK_TEST_WEBHOOK_URL: 'https://example.com/webhook',
+      KNOCK_TEST_WEBHOOK_TOKEN: 'env-token',
+      KNOCK_TEST_SOURCE_URL: 'https://example.com/feed.xml',
+      KNOCK_TEST_FILE_PATH: 'outputs/feed.md',
+    },
+    async () => {
+      await writeRuntimeFile(
+        TEST_RUNTIME,
+        'config.yml',
+        `
 deliveries:
   webhook:
     push:
@@ -58,34 +64,29 @@ sources:
         id: "{{ id }}"
         title: "{{ title }}"
 `,
-    )
+      )
 
-    const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
-    const webhookDelivery = config.deliveries.find((delivery) => delivery.id === 'webhook')
-    const archiveDelivery = config.deliveries.find((delivery) => delivery.id === 'archive')
+      const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+      const webhookDelivery = config.deliveries.find((delivery) => delivery.id === 'webhook')
+      const archiveDelivery = config.deliveries.find((delivery) => delivery.id === 'archive')
 
-    assertEquals(webhookDelivery?.push?.http.url, 'https://example.com/webhook')
-    assertEquals(webhookDelivery?.push?.http.headers?.Authorization, 'Bearer env-token')
-    assertEquals(webhookDelivery?.push?.request.payload, {
-      auth: 'Bearer env-token',
-      nested: ['env-token'],
-    })
-    assertEquals(archiveDelivery?.file?.path, join(TEST_RUNTIME, 'outputs', 'feed.md'))
-    assertEquals(config.sources[0].http?.url, 'https://example.com/feed.xml')
-  } finally {
-    Deno.env.delete('KNOCK_TEST_WEBHOOK_URL')
-    Deno.env.delete('KNOCK_TEST_WEBHOOK_TOKEN')
-    Deno.env.delete('KNOCK_TEST_SOURCE_URL')
-    Deno.env.delete('KNOCK_TEST_FILE_PATH')
-  }
+      assertEquals(webhookDelivery?.push?.http.url, 'https://example.com/webhook')
+      assertEquals(webhookDelivery?.push?.http.headers?.Authorization, 'Bearer env-token')
+      assertEquals(webhookDelivery?.push?.request.payload, {
+        auth: 'Bearer env-token',
+        nested: ['env-token'],
+      })
+      assertEquals(archiveDelivery?.file?.path, join(TEST_RUNTIME, 'outputs', 'feed.md'))
+      assertEquals(config.sources[0].http?.url, 'https://example.com/feed.xml')
+    },
+  )
 })
 
 test('loadConfig: 支持环境变量展开的 email.from 应成功展开', async () => {
-  Deno.env.set('KNOCK_TEST_EMAIL_URL', 'https://example.com/template')
-
-  try {
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
+  await withEnv({ KNOCK_TEST_EMAIL_URL: 'https://example.com/template' }, async () => {
+    await writeRuntimeFile(
+      TEST_RUNTIME,
+      'config.yml',
       `
 deliveries:
   release_email:
@@ -107,14 +108,13 @@ sources: {}
 
     const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
     assertEquals(config.deliveries[0].email?.message.from, 'https://example.com/template')
-  } finally {
-    Deno.env.delete('KNOCK_TEST_EMAIL_URL')
-  }
+  })
 })
 
 test('loadConfig: 应解析 logging file sink 与 time rotation', async () => {
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yml'),
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yml',
     `
 logging:
   level: debug
@@ -156,8 +156,9 @@ logging:
 })
 
 test('loadConfig: source.deliveries keyed map 应保留普通声明顺序并映射到 resolved delivery', async () => {
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yml'),
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yml',
     `
 deliveries:
   first:
@@ -191,11 +192,11 @@ sources:
 })
 
 test('R04 loadConfig: 缺失环境变量时应报出配置路径', async () => {
-  Deno.env.delete('KNOCK_TEST_MISSING_TOKEN')
-
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yml'),
-    `
+  await withEnv({ KNOCK_TEST_MISSING_TOKEN: undefined }, async () => {
+    await writeRuntimeFile(
+      TEST_RUNTIME,
+      'config.yml',
+      `
 deliveries:
   webhook:
     push:
@@ -206,11 +207,12 @@ deliveries:
 
 sources: {}
 `,
-  )
+    )
 
-  const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
-  assertStringIncludes(err.message, 'deliveries.webhook.push.http.headers.Authorization')
-  assertStringIncludes(err.message, 'KNOCK_TEST_MISSING_TOKEN')
+    const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
+    assertStringIncludes(err.message, 'deliveries.webhook.push.http.headers.Authorization')
+    assertStringIncludes(err.message, 'KNOCK_TEST_MISSING_TOKEN')
+  })
 })
 
 test('R03 loadConfig: 加载成功和失败都应记录结构化日志', async () => {
@@ -225,16 +227,18 @@ test('R03 loadConfig: 加载成功和失败都应记录结构化日志', async (
     writeStderr: (line: string) => logs.push(line),
   })
 
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yml'),
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yml',
     `
 sources: {}
 `,
   )
   await loadConfig({ runtimeDir: TEST_RUNTIME, logger })
 
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yml'),
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yml',
     `
 sources:
   broken:
@@ -340,14 +344,17 @@ sources:
 })
 
 test('loadConfig: 应递归展开 email 配置中的环境变量字符串', async () => {
-  Deno.env.set('KNOCK_TEST_SMTP_HOST', 'smtp.example.com')
-  Deno.env.set('KNOCK_TEST_SMTP_USER', 'mailer')
-  Deno.env.set('KNOCK_TEST_SMTP_PASS', 'secret')
-
-  try {
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
-      `
+  await withEnv(
+    {
+      KNOCK_TEST_SMTP_HOST: 'smtp.example.com',
+      KNOCK_TEST_SMTP_USER: 'mailer',
+      KNOCK_TEST_SMTP_PASS: 'secret',
+    },
+    async () => {
+      await writeRuntimeFile(
+        TEST_RUNTIME,
+        'config.yml',
+        `
 deliveries:
   release_email:
     email:
@@ -367,30 +374,30 @@ deliveries:
 
 sources: {}
 `,
-    )
+      )
 
-    const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
-    const delivery = config.deliveries.find((item) => item.id === 'release_email')
-    assertEquals(delivery?.email?.smtp.host, 'smtp.example.com')
-    assertEquals(delivery?.email?.smtp.auth?.username, 'mailer')
-    assertEquals(delivery?.email?.smtp.auth?.password, 'secret')
-  } finally {
-    Deno.env.delete('KNOCK_TEST_SMTP_HOST')
-    Deno.env.delete('KNOCK_TEST_SMTP_USER')
-    Deno.env.delete('KNOCK_TEST_SMTP_PASS')
-  }
+      const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+      const delivery = config.deliveries.find((item) => item.id === 'release_email')
+      assertEquals(delivery?.email?.smtp.host, 'smtp.example.com')
+      assertEquals(delivery?.email?.smtp.auth?.username, 'mailer')
+      assertEquals(delivery?.email?.smtp.auth?.password, 'secret')
+    },
+  )
 })
 
 test('loadConfig: summary.feed 与 summary.entry 中允许环境变量展开，与 capability 保持一致', async () => {
-  Deno.env.set('KNOCK_TEST_SUMMARY_TITLE', 'Daily Summary From Env')
-  Deno.env.set('KNOCK_TEST_SUMMARY_DESC_PREFIX', '窗口')
-  Deno.env.set('KNOCK_TEST_SUMMARY_ENTRY_TITLE', 'Deno Daily')
-  Deno.env.set('KNOCK_TEST_SUMMARY_ENTRY_ID_PREFIX', 'summary-window')
-
-  try {
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
-      `
+  await withEnv(
+    {
+      KNOCK_TEST_SUMMARY_TITLE: 'Daily Summary From Env',
+      KNOCK_TEST_SUMMARY_DESC_PREFIX: '窗口',
+      KNOCK_TEST_SUMMARY_ENTRY_TITLE: 'Deno Daily',
+      KNOCK_TEST_SUMMARY_ENTRY_ID_PREFIX: 'summary-window',
+    },
+    async () => {
+      await writeRuntimeFile(
+        TEST_RUNTIME,
+        'config.yml',
+        `
 deliveries:
   local:
     file:
@@ -418,33 +425,28 @@ sources:
         title: '${'${KNOCK_TEST_SUMMARY_ENTRY_TITLE}'} {{ sources.deno.name }}'
 
 `,
-    )
+      )
 
-    const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
-    const summarySource = config.sources.find((source) => source.id === 'daily_summary')
+      const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+      const summarySource = config.sources.find((source) => source.id === 'daily_summary')
 
-    assertEquals(summarySource?.summary?.feed, {
-      title: 'Daily Summary From Env',
-      description: '窗口: {{ source.runtime.window.scheduledAt }}',
-    })
-    assertEquals(summarySource?.summary?.entry, {
-      id: 'summary-window:{{ source.runtime.window.scheduledAt }}',
-      title: 'Deno Daily {{ sources.deno.name }}',
-    })
-  } finally {
-    Deno.env.delete('KNOCK_TEST_SUMMARY_TITLE')
-    Deno.env.delete('KNOCK_TEST_SUMMARY_DESC_PREFIX')
-    Deno.env.delete('KNOCK_TEST_SUMMARY_ENTRY_TITLE')
-    Deno.env.delete('KNOCK_TEST_SUMMARY_ENTRY_ID_PREFIX')
-  }
+      assertEquals(summarySource?.summary?.feed, {
+        title: 'Daily Summary From Env',
+        description: '窗口: {{ source.runtime.window.scheduledAt }}',
+      })
+      assertEquals(summarySource?.summary?.entry, {
+        id: 'summary-window:{{ source.runtime.window.scheduledAt }}',
+        title: 'Deno Daily {{ sources.deno.name }}',
+      })
+    },
+  )
 })
 
 test('loadConfig: AI defaultModel 禁止环境变量展开，与 validateConfig 保持一致', async () => {
-  Deno.env.set('KNOCK_TEST_DEFAULT_MODEL', 'main/mini')
-
-  try {
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
+  await withEnv({ KNOCK_TEST_DEFAULT_MODEL: 'main/mini' }, async () => {
+    await writeRuntimeFile(
+      TEST_RUNTIME,
+      'config.yml',
       `
 ai:
   defaultModel: ${'${KNOCK_TEST_DEFAULT_MODEL}'}
@@ -461,20 +463,21 @@ sources: {}
 
     const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
     assertStringIncludes(err.message, 'ai.defaultModel 不支持环境变量展开')
-  } finally {
-    Deno.env.delete('KNOCK_TEST_DEFAULT_MODEL')
-  }
+  })
 })
 
 test('loadConfig: provider-specific options 允许 ENV 但不允许 Liquid，与 validateConfig 保持一致', async () => {
-  Deno.env.set('KNOCK_TEST_OPENAI_ORG', 'org-demo')
-  Deno.env.set('KNOCK_TEST_OPENAI_PROJECT', 'proj-demo')
-  Deno.env.set('KNOCK_TEST_ANTHROPIC_AUTH', 'anthropic-token')
-
-  try {
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
-      `
+  await withEnv(
+    {
+      KNOCK_TEST_OPENAI_ORG: 'org-demo',
+      KNOCK_TEST_OPENAI_PROJECT: 'proj-demo',
+      KNOCK_TEST_ANTHROPIC_AUTH: 'anthropic-token',
+    },
+    async () => {
+      await writeRuntimeFile(
+        TEST_RUNTIME,
+        'config.yml',
+        `
 ai:
   providers:
     openai_main:
@@ -495,23 +498,24 @@ ai:
 
 sources: {}
 `,
-    )
+      )
 
-    const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
-    const openaiProvider = config.ai?.providers.find((provider) => provider.id === 'openai_main')
-    const anthropicProvider = config.ai?.providers.find((provider) => provider.id === 'claude')
+      const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
+      const openaiProvider = config.ai?.providers.find((provider) => provider.id === 'openai_main')
+      const anthropicProvider = config.ai?.providers.find((provider) => provider.id === 'claude')
 
-    assertEquals(openaiProvider?.options, {
-      organization: 'org-demo',
-      project: 'proj-demo',
-    })
-    assertEquals(anthropicProvider?.options, {
-      authToken: 'anthropic-token',
-    })
+      assertEquals(openaiProvider?.options, {
+        organization: 'org-demo',
+        project: 'proj-demo',
+      })
+      assertEquals(anthropicProvider?.options, {
+        authToken: 'anthropic-token',
+      })
 
-    await Deno.writeTextFile(
-      join(TEST_RUNTIME, 'config.yml'),
-      `
+      await writeRuntimeFile(
+        TEST_RUNTIME,
+        'config.yml',
+        `
 ai:
   providers:
     openai_main:
@@ -524,18 +528,15 @@ ai:
 
 sources: {}
 `,
-    )
+      )
 
-    const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
-    assertStringIncludes(
-      err.message,
-      'ai.providers.openai_main.options.organization 配置非法: ai.providers.*.options.organization 不支持 Liquid 模板',
-    )
-  } finally {
-    Deno.env.delete('KNOCK_TEST_OPENAI_ORG')
-    Deno.env.delete('KNOCK_TEST_OPENAI_PROJECT')
-    Deno.env.delete('KNOCK_TEST_ANTHROPIC_AUTH')
-  }
+      const err = await assertRejects(() => loadConfig({ runtimeDir: TEST_RUNTIME }), Error)
+      assertStringIncludes(
+        err.message,
+        'ai.providers.openai_main.options.organization 配置非法: ai.providers.*.options.organization 不支持 Liquid 模板',
+      )
+    },
+  )
 })
 
 test('loadConfig: configPath 应派生 runtimeDir 并解析相对路径', async () => {
@@ -543,7 +544,7 @@ test('loadConfig: configPath 应派生 runtimeDir 并解析相对路径', async 
   await Deno.mkdir(nestedRuntime, { recursive: true })
   const configPath = join(nestedRuntime, 'custom.yml')
 
-  await Deno.writeTextFile(
+  await writeTextFile(
     configPath,
     `
 logging:
@@ -570,11 +571,9 @@ test('loadConfig: 显式 runtimeDir 应优先于 KNOCK_RUNTIME_DIR 与 configPat
   await Deno.mkdir(otherDir, { recursive: true })
 
   const configPath = join(otherDir, 'custom.yml')
-  const previousRuntimeDir = Deno.env.get('KNOCK_RUNTIME_DIR')
-  Deno.env.set('KNOCK_RUNTIME_DIR', envRuntime)
 
-  try {
-    await Deno.writeTextFile(
+  await withEnv({ KNOCK_RUNTIME_DIR: envRuntime }, async () => {
+    await writeTextFile(
       configPath,
       `
 logging:
@@ -593,18 +592,13 @@ logging:
     })
     assertEquals(config.runtimeDir, explicitRuntime)
     assertEquals(config.logging.sinks.file?.path, join(explicitRuntime, 'logs', 'app.jsonl'))
-  } finally {
-    if (previousRuntimeDir === undefined) {
-      Deno.env.delete('KNOCK_RUNTIME_DIR')
-    } else {
-      Deno.env.set('KNOCK_RUNTIME_DIR', previousRuntimeDir)
-    }
-  }
+  })
 })
 
 test('loadConfig: 应支持 config.yaml fallback', async () => {
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yaml'),
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yaml',
     `
 logging:
   level: info
@@ -621,71 +615,72 @@ logging:
 })
 
 test('compileConfigDocument: 应保留 preserve_unknown 语义并返回统一编译结果', () => {
-  Deno.env.set('KNOCK_TEST_COMPILED_SOURCE_URL', 'https://example.com/feed.xml')
-  Deno.env.set('KNOCK_TEST_COMPILED_TOKEN', 'env-token')
-  Deno.env.delete('KNOCK_TEST_COMPILED_MISSING')
-
-  try {
-    const compiled = compileConfigDocument({
-      runtimeDir: TEST_RUNTIME,
-      configPath: join(TEST_RUNTIME, 'config.yml'),
-      envMode: 'preserve_unknown',
-      document: {
-        deliveries: {
-          archive: {
-            file: {
-              path: 'outputs/archive.md',
-              content: '{{ entry.title }}',
-            },
-          },
-          webhook: {
-            push: {
-              http: {
-                url: 'https://example.com/webhook',
+  return withEnv(
+    {
+      KNOCK_TEST_COMPILED_SOURCE_URL: 'https://example.com/feed.xml',
+      KNOCK_TEST_COMPILED_TOKEN: 'env-token',
+      KNOCK_TEST_COMPILED_MISSING: undefined,
+    },
+    () => {
+      const compiled = compileConfigDocument({
+        runtimeDir: TEST_RUNTIME,
+        configPath: join(TEST_RUNTIME, 'config.yml'),
+        envMode: 'preserve_unknown',
+        document: {
+          deliveries: {
+            archive: {
+              file: {
+                path: 'outputs/archive.md',
+                content: '{{ entry.title }}',
               },
-              request: {
-                type: 'body',
-                payload: {
-                  token: '${KNOCK_TEST_COMPILED_TOKEN}',
-                  missing: '${KNOCK_TEST_COMPILED_MISSING}',
+            },
+            webhook: {
+              push: {
+                http: {
+                  url: 'https://example.com/webhook',
+                },
+                request: {
+                  type: 'body',
+                  payload: {
+                    token: '${KNOCK_TEST_COMPILED_TOKEN}',
+                    missing: '${KNOCK_TEST_COMPILED_MISSING}',
+                  },
                 },
               },
             },
           },
-        },
-        sources: {
-          rust: {
-            http: {
-              url: '${KNOCK_TEST_COMPILED_SOURCE_URL}',
-            },
-            syndication: {},
-            deliveries: {
-              archive: {},
-              webhook: {},
+          sources: {
+            rust: {
+              http: {
+                url: '${KNOCK_TEST_COMPILED_SOURCE_URL}',
+              },
+              syndication: {},
+              deliveries: {
+                archive: {},
+                webhook: {},
+              },
             },
           },
         },
-      },
-    })
+      })
 
-    assertEquals(compiled.runtimeDir, TEST_RUNTIME)
-    assertEquals(compiled.configPath, join(TEST_RUNTIME, 'config.yml'))
-    assertEquals(compiled.config.sources[0]?.http?.url, 'https://example.com/feed.xml')
-    assertEquals(compiled.config.deliveries[1]?.push?.request.payload, {
-      token: 'env-token',
-      missing: '${KNOCK_TEST_COMPILED_MISSING}',
-    })
-    assertEquals(compiled.definitions.sources[0]?.sourceId, 'rust')
-    assertEquals(compiled.definitions.bindings.length, 2)
-  } finally {
-    Deno.env.delete('KNOCK_TEST_COMPILED_SOURCE_URL')
-    Deno.env.delete('KNOCK_TEST_COMPILED_TOKEN')
-  }
+      assertEquals(compiled.runtimeDir, TEST_RUNTIME)
+      assertEquals(compiled.configPath, join(TEST_RUNTIME, 'config.yml'))
+      assertEquals(compiled.config.sources[0]?.http?.url, 'https://example.com/feed.xml')
+      assertEquals(compiled.config.deliveries[1]?.push?.request.payload, {
+        token: 'env-token',
+        missing: '${KNOCK_TEST_COMPILED_MISSING}',
+      })
+      assertEquals(compiled.definitions.sources[0]?.sourceId, 'rust')
+      assertEquals(compiled.definitions.bindings.length, 2)
+    },
+  )
 })
 
 test('loadCompiledConfig: 应返回统一编译结果契约', async () => {
-  await Deno.writeTextFile(
-    join(TEST_RUNTIME, 'config.yml'),
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yml',
     `
 deliveries:
   archive:

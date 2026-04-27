@@ -1,5 +1,9 @@
 import { dirname, join, resolve, toFileUrl } from '@std/path'
 import { z } from 'zod'
+import { deleteEnv, getEnv, setEnv } from '../../platform/env.ts'
+import { cwd, readTextFile, statPath } from '../../platform/fs.ts'
+import { spawnSelf } from '../../platform/process.ts'
+import { serve } from '../../platform/serve.ts'
 import { loadConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import { findConfigFile, parseRawConfigDocument } from '../../config/load_config.ts'
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
@@ -57,10 +61,10 @@ function parseWebLogLevel(value: string | undefined): LoggingConfigResolved['lev
 }
 
 function readWebLoggingRuntimeFromEnv(): StartWebLoggingRuntime | undefined {
-  const runtimeDir = Deno.env.get(WEB_RUNTIME_DIR_ENV)
-  const timezone = Deno.env.get(WEB_TIMEZONE_ENV)
-  const timestampFormat = Deno.env.get(WEB_TIMESTAMP_FORMAT_ENV)
-  const level = parseWebLogLevel(Deno.env.get(WEB_LOG_LEVEL_ENV))
+  const runtimeDir = getEnv(WEB_RUNTIME_DIR_ENV)
+  const timezone = getEnv(WEB_TIMEZONE_ENV)
+  const timestampFormat = getEnv(WEB_TIMESTAMP_FORMAT_ENV)
+  const level = parseWebLogLevel(getEnv(WEB_LOG_LEVEL_ENV))
 
   if (!runtimeDir || !timezone || !timestampFormat || !level) {
     return undefined
@@ -79,17 +83,17 @@ function readWebLoggingRuntimeFromEnv(): StartWebLoggingRuntime | undefined {
 
 function applyWebLoggingRuntimeEnv(runtime: StartWebLoggingRuntime | undefined): void {
   if (!runtime) {
-    Deno.env.delete(WEB_RUNTIME_DIR_ENV)
-    Deno.env.delete(WEB_TIMEZONE_ENV)
-    Deno.env.delete(WEB_TIMESTAMP_FORMAT_ENV)
-    Deno.env.delete(WEB_LOG_LEVEL_ENV)
+    deleteEnv(WEB_RUNTIME_DIR_ENV)
+    deleteEnv(WEB_TIMEZONE_ENV)
+    deleteEnv(WEB_TIMESTAMP_FORMAT_ENV)
+    deleteEnv(WEB_LOG_LEVEL_ENV)
     return
   }
 
-  Deno.env.set(WEB_RUNTIME_DIR_ENV, runtime.runtimeDir)
-  Deno.env.set(WEB_TIMEZONE_ENV, runtime.timezone)
-  Deno.env.set(WEB_TIMESTAMP_FORMAT_ENV, runtime.timestampFormat)
-  Deno.env.set(WEB_LOG_LEVEL_ENV, runtime.logging.level)
+  setEnv(WEB_RUNTIME_DIR_ENV, runtime.runtimeDir)
+  setEnv(WEB_TIMEZONE_ENV, runtime.timezone)
+  setEnv(WEB_TIMESTAMP_FORMAT_ENV, runtime.timestampFormat)
+  setEnv(WEB_LOG_LEVEL_ENV, runtime.logging.level)
 }
 
 function buildWebChildEnv(): Record<string, string> {
@@ -115,7 +119,7 @@ function buildWebChildEnv(): Record<string, string> {
   ] as const
 
   for (const key of allowedKeys) {
-    const value = Deno.env.get(key)
+    const value = getEnv(key)
     if (value !== undefined) {
       next[key] = value
     }
@@ -129,7 +133,7 @@ function buildWebChildEnv(): Record<string, string> {
     WEB_TIMESTAMP_FORMAT_ENV,
     WEB_LOG_LEVEL_ENV,
   ]) {
-    const value = Deno.env.get(key)
+    const value = getEnv(key)
     if (value !== undefined) {
       next[key] = value
     }
@@ -161,7 +165,7 @@ function getStartWebConfigLookup(): {
   runtimeDir: string
   configPath?: string
 } {
-  const configPath = Deno.env.get('KNOCK_CONFIG_PATH')
+  const configPath = getEnv('KNOCK_CONFIG_PATH')
   if (configPath) {
     const resolvedConfigPath = resolve(configPath)
     return {
@@ -171,7 +175,7 @@ function getStartWebConfigLookup(): {
   }
 
   return {
-    runtimeDir: resolve(Deno.env.get('KNOCK_RUNTIME_DIR') ?? join(Deno.cwd(), 'runtime')),
+    runtimeDir: resolve(getEnv('KNOCK_RUNTIME_DIR') ?? join(cwd(), 'runtime')),
   }
 }
 
@@ -220,7 +224,7 @@ async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | un
   const configPath = await findStartWebConfigPath(lookup.runtimeDir, lookup.configPath)
   if (!configPath) return undefined
 
-  const raw = await Deno.readTextFile(configPath)
+  const raw = await readTextFile(configPath)
   const parsed = parseRawConfigDocument(raw)
 
   assertNoEnvExpansion(parsed.timezone, 'timezone')
@@ -247,7 +251,7 @@ async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | un
 
 async function ensureWebBuildExists(): Promise<void> {
   try {
-    await Deno.stat(join(Deno.cwd(), WEB_SERVER_ENTRY))
+    await statPath(join(cwd(), WEB_SERVER_ENTRY))
     return
   } catch (error) {
     if (!(error instanceof Deno.errors.NotFound)) {
@@ -255,14 +259,14 @@ async function ensureWebBuildExists(): Promise<void> {
     }
   }
 
-  const build = new Deno.Command(Deno.execPath(), {
+  const build = spawnSelf({
     args: ['run', '-A', '--node-modules-dir=none', 'npm:vite', 'build', '--configLoader', 'native'],
-    cwd: Deno.cwd(),
+    cwd: cwd(),
     env: buildWebChildEnv(),
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
-  }).spawn()
+  })
 
   const status = await build.status
   if (!status.success) {
@@ -271,7 +275,7 @@ async function ensureWebBuildExists(): Promise<void> {
 }
 
 async function loadFreshServerFetch(): Promise<(request: Request) => Response | Promise<Response>> {
-  const module = (await import(toFileUrl(resolve(Deno.cwd(), WEB_SERVER_ENTRY)).href)) as {
+  const module = (await import(toFileUrl(resolve(cwd(), WEB_SERVER_ENTRY)).href)) as {
     default?: { fetch?: (request: Request) => Response | Promise<Response> }
   }
   const fetchHandler = module.default?.fetch
@@ -282,7 +286,7 @@ async function loadFreshServerFetch(): Promise<(request: Request) => Response | 
 }
 
 async function assertWebRuntimeReady(): Promise<void> {
-  if (Deno.env.get(SKIP_WEB_RUNTIME_READY_CHECK_ENV) === '1') {
+  if (getEnv(SKIP_WEB_RUNTIME_READY_CHECK_ENV) === '1') {
     return
   }
 
@@ -419,10 +423,10 @@ export async function startWeb(options: StartWebOptions) {
   await ensureWebBuildExists()
   const fetchHandler = await loadFreshServerFetch()
   const abortController = new AbortController()
-  let server: ReturnType<typeof Deno.serve> | undefined
+  let server: ReturnType<typeof serve> | undefined
 
   try {
-    server = Deno.serve(
+    server = serve(
       {
         hostname: options.host,
         port: options.port,
