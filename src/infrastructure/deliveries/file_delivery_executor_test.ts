@@ -1,10 +1,11 @@
 import { assertEquals } from '@std/assert'
 import { createFileDeliveryExecutor } from './file_delivery_executor.ts'
+import { test } from '../../testing/test_api.ts'
 
 // risk-id: R09
 // layer: unit
 
-Deno.test('[unit] fileDeliveryExecutor: 应只消费 rendered plan 并透传 rotation', async () => {
+test('[unit] fileDeliveryExecutor: 应只消费 rendered plan 并透传 rotation', async () => {
   const calls: Array<Record<string, unknown>> = []
   const executor = createFileDeliveryExecutor({
     runtimeDir: '/tmp',

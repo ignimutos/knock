@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert'
 import { type SourceActionLogMeta, handler } from './clear.ts'
+import { test } from '../../../../src/testing/test_api.ts'
 
 async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
@@ -12,7 +13,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] R15 sources clear api: 应返回删除计数并记录日志元数据', async () => {
+test('[flow] R15 sources clear api: 应返回删除计数并记录日志元数据', async () => {
   const logs: SourceActionLogMeta[] = []
 
   const response = await handler(
@@ -51,7 +52,7 @@ Deno.test('[flow] R15 sources clear api: 应返回删除计数并记录日志元
   ])
 })
 
-Deno.test('[contract] sources clear api: 跨源写请求应返回 403', async () => {
+test('[contract] sources clear api: 跨源写请求应返回 403', async () => {
   const response = await handler(
     new Request('http://localhost/api/sources/clear', {
       method: 'POST',

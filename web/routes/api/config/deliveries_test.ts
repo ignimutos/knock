@@ -2,6 +2,7 @@ import { assertEquals } from '@std/assert'
 import { ConfigManagementError } from '../../../../src/interfaces/web/config_management_errors.ts'
 import { handler as deleteHandler } from './deliveries_delete.ts'
 import { handler } from './deliveries.ts'
+import { test } from '../../../../src/testing/test_api.ts'
 
 async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
@@ -14,7 +15,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] R03 config deliveries api: 应返回 workbench', async () => {
+test('[flow] R03 config deliveries api: 应返回 workbench', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/deliveries', {
       method: 'POST',
@@ -62,7 +63,7 @@ Deno.test('[flow] R03 config deliveries api: 应返回 workbench', async () => {
   assertEquals(payload.message, 'delivery local 配置已保存')
 })
 
-Deno.test('[contract] config deliveries api: 非法 JSON 应返回 400', async () => {
+test('[contract] config deliveries api: 非法 JSON 应返回 400', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/deliveries', {
       method: 'POST',
@@ -77,7 +78,7 @@ Deno.test('[contract] config deliveries api: 非法 JSON 应返回 400', async (
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[contract] config deliveries api: 业务错误应返回结构化错误体', async () => {
+test('[contract] config deliveries api: 业务错误应返回结构化错误体', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/deliveries', {
       method: 'POST',
@@ -103,7 +104,7 @@ Deno.test('[contract] config deliveries api: 业务错误应返回结构化错�
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[flow] R03 config deliveries delete api: 应返回 workbench', async () => {
+test('[flow] R03 config deliveries delete api: 应返回 workbench', async () => {
   const response = await deleteHandler(
     new Request('http://localhost/api/config/deliveries/delete', {
       method: 'POST',
@@ -137,7 +138,7 @@ Deno.test('[flow] R03 config deliveries delete api: 应返回 workbench', async 
   assertEquals(payload.message, 'delivery local 已删除')
 })
 
-Deno.test('[contract] config deliveries delete api: 业务错误应返回结构化错误体', async () => {
+test('[contract] config deliveries delete api: 业务错误应返回结构化错误体', async () => {
   const response = await deleteHandler(
     new Request('http://localhost/api/config/deliveries/delete', {
       method: 'POST',
@@ -165,7 +166,7 @@ Deno.test('[contract] config deliveries delete api: 业务错误应返回结构�
   assertEquals(payload.category, 'conflict')
 })
 
-Deno.test('[contract] config deliveries api: 跨源写请求应返回 403', async () => {
+test('[contract] config deliveries api: 跨源写请求应返回 403', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/deliveries', {
       method: 'POST',

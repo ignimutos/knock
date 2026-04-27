@@ -9,6 +9,7 @@ import { RunSourceItemPipeline } from './run_source_item_pipeline.ts'
 import { DeduplicationStage } from './stages/deduplication_stage.ts'
 import { FilterStage } from './stages/filter_stage.ts'
 import { RenderStage } from './stages/render_stage.ts'
+import { test } from '../testing/test_api.ts'
 
 // risk-id: R07
 // layer: contract
@@ -385,143 +386,134 @@ function createPipelineHarness(options: PipelineHarnessOptions = {}) {
   }
 }
 
-Deno.test(
-  '[flow] R07 runSourceItemPipeline: 双层 dedupe、rendered snapshot 与 attempt 失败归属应串成最小主链',
-  async () => {
-    const nowValues = [
-      '2026-04-13T11:00:02.000Z',
-      '2026-04-13T11:00:03.000Z',
-      '2026-04-13T11:00:04.000Z',
-      '2026-04-13T11:00:05.000Z',
-    ]
-    const harness = createPipelineHarness({
-      now: () => nowValues.shift() ?? '2026-04-13T11:00:05.000Z',
-      plan: createPlan(createBindings(createFileBinding('archive'), createPushBinding('telegram'))),
-      isDeliveryDuplicate: ({ deliveryId }) => Promise.resolve(deliveryId === 'archive'),
-      executors: {
-        push: {
-          execute: () => Promise.reject(new Error('telegram 500')),
-        },
-        file: {
-          execute: () => Promise.resolve(),
-        },
-        email: {
-          execute: () => Promise.resolve(),
-        },
+test('[flow] R07 runSourceItemPipeline: 双层 dedupe、rendered snapshot 与 attempt 失败归属应串成最小主链', async () => {
+  const nowValues = [
+    '2026-04-13T11:00:02.000Z',
+    '2026-04-13T11:00:03.000Z',
+    '2026-04-13T11:00:04.000Z',
+    '2026-04-13T11:00:05.000Z',
+  ]
+  const harness = createPipelineHarness({
+    now: () => nowValues.shift() ?? '2026-04-13T11:00:05.000Z',
+    plan: createPlan(createBindings(createFileBinding('archive'), createPushBinding('telegram'))),
+    isDeliveryDuplicate: ({ deliveryId }) => Promise.resolve(deliveryId === 'archive'),
+    executors: {
+      push: {
+        execute: () => Promise.reject(new Error('telegram 500')),
       },
-    })
+      file: {
+        execute: () => Promise.resolve(),
+      },
+      email: {
+        execute: () => Promise.resolve(),
+      },
+    },
+  })
 
-    const result = await harness.pipeline.run(createItem())
+  const result = await harness.pipeline.run(createItem())
 
-    assertEquals(harness.plannedAttempts.length, 1)
-    assertEquals(harness.plannedAttempts[0]?.deliveryId, 'telegram')
-    assertEquals(harness.plannedAttempts[0]?.renderedSnapshot, {
-      channel: 'push',
+  assertEquals(harness.plannedAttempts.length, 1)
+  assertEquals(harness.plannedAttempts[0]?.deliveryId, 'telegram')
+  assertEquals(harness.plannedAttempts[0]?.renderedSnapshot, {
+    channel: 'push',
+    payload: {
+      http: {
+        method: 'POST',
+        url: 'https://example.com/telegram',
+      },
+      requestType: 'body',
       payload: {
-        http: {
-          method: 'POST',
-          url: 'https://example.com/telegram',
-        },
-        requestType: 'body',
-        payload: {
-          text: 'Hello',
-        },
-        response: undefined,
+        text: 'Hello',
       },
-    } satisfies RenderedSnapshot)
-    assertEquals(harness.finishedAttempts, [
-      {
-        attemptId: 'run-1:item:entry-1:telegram',
-        result: {
-          status: 'failed',
-          reason: 'telegram 500',
-          startedAt: '2026-04-13T11:00:04.000Z',
-          finishedAt: '2026-04-13T11:00:05.000Z',
-        },
+      response: undefined,
+    },
+  } satisfies RenderedSnapshot)
+  assertEquals(harness.finishedAttempts, [
+    {
+      attemptId: 'run-1:item:entry-1:telegram',
+      result: {
+        status: 'failed',
+        reason: 'telegram 500',
+        startedAt: '2026-04-13T11:00:04.000Z',
+        finishedAt: '2026-04-13T11:00:05.000Z',
       },
-    ])
-    assertEquals(harness.itemStatuses, [
-      { itemId: 'item:entry-1', status: 'failed', skippedReason: undefined },
-    ])
-    assertEquals(result.counts, {
-      filteredCount: 0,
-      duplicateItemCount: 0,
-      deliveredCount: 0,
-      failedAttemptCount: 1,
-      skippedCount: 0,
-    })
-    assertEquals(result.lifecycleCounts, {
-      filteredCount: 0,
-      dedupedCount: 1,
-      pushedCount: 0,
-      failedCount: 1,
-    })
-  },
-)
+    },
+  ])
+  assertEquals(harness.itemStatuses, [
+    { itemId: 'item:entry-1', status: 'failed', skippedReason: undefined },
+  ])
+  assertEquals(result.counts, {
+    filteredCount: 0,
+    duplicateItemCount: 0,
+    deliveredCount: 0,
+    failedAttemptCount: 1,
+    skippedCount: 0,
+  })
+  assertEquals(result.lifecycleCounts, {
+    filteredCount: 0,
+    dedupedCount: 1,
+    pushedCount: 0,
+    failedCount: 1,
+  })
+})
 
-Deno.test(
-  '[contract] R07 runSourceItemPipeline: email delivery 应把 canonical rendered payload 贯通到 attempt plan',
-  async () => {
-    const harness = createPipelineHarness({
-      plan: createPlan(createBindings(createEmailBinding())),
-    })
+test('[contract] R07 runSourceItemPipeline: email delivery 应把 canonical rendered payload 贯通到 attempt plan', async () => {
+  const harness = createPipelineHarness({
+    plan: createPlan(createBindings(createEmailBinding())),
+  })
 
-    const result = await harness.pipeline.run(createItem())
+  const result = await harness.pipeline.run(createItem())
 
-    const expectedSnapshot = {
-      channel: 'email',
-      payload: {
-        smtp: {
-          host: 'smtp.example.com',
-          port: 587,
-          security: 'starttls',
-        },
-        message: {
-          from: 'bot@example.com',
-          to: ['ops@example.com'],
-          cc: undefined,
-          bcc: undefined,
-          replyTo: undefined,
-          subject: 'Hello',
-          text: 'Desc',
-          headers: undefined,
-        },
+  const expectedSnapshot = {
+    channel: 'email',
+    payload: {
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        security: 'starttls',
       },
-    } satisfies RenderedSnapshot
-
-    assertEquals(
-      harness.plannedAttempts.map((attempt) => attempt.renderedSnapshot),
-      [expectedSnapshot],
-    )
-    assertEquals(
-      harness.executedPlans.map((plan) => plan.renderedSnapshot),
-      [expectedSnapshot],
-    )
-    assertEquals(result.counts.deliveredCount, 1)
-  },
-)
-
-Deno.test(
-  '[contract] R06 runSourceItemPipeline: filter 命中时应把 item 标记为 filtered 且不给 skippedReason',
-  async () => {
-    const harness = createPipelineHarness({
-      plan: createPlan(createBindings(createFileBinding()), '{{ entry.title == "Hello" }}'),
-      shouldPassFilter: ({ item, filterTemplate }) => {
-        assertEquals(item.normalized.title, 'Hello')
-        assertEquals(filterTemplate, '{{ entry.title == "Hello" }}')
-        return Promise.resolve(false)
+      message: {
+        from: 'bot@example.com',
+        to: ['ops@example.com'],
+        cc: undefined,
+        bcc: undefined,
+        replyTo: undefined,
+        subject: 'Hello',
+        text: 'Desc',
+        headers: undefined,
       },
-    })
+    },
+  } satisfies RenderedSnapshot
 
-    await harness.pipeline.run(createItem())
+  assertEquals(
+    harness.plannedAttempts.map((attempt) => attempt.renderedSnapshot),
+    [expectedSnapshot],
+  )
+  assertEquals(
+    harness.executedPlans.map((plan) => plan.renderedSnapshot),
+    [expectedSnapshot],
+  )
+  assertEquals(result.counts.deliveredCount, 1)
+})
 
-    assertEquals(harness.itemStatuses, [
-      { itemId: 'item:entry-1', status: 'filtered', skippedReason: undefined },
-    ])
-  },
-)
+test('[contract] R06 runSourceItemPipeline: filter 命中时应把 item 标记为 filtered 且不给 skippedReason', async () => {
+  const harness = createPipelineHarness({
+    plan: createPlan(createBindings(createFileBinding()), '{{ entry.title == "Hello" }}'),
+    shouldPassFilter: ({ item, filterTemplate }) => {
+      assertEquals(item.normalized.title, 'Hello')
+      assertEquals(filterTemplate, '{{ entry.title == "Hello" }}')
+      return Promise.resolve(false)
+    },
+  })
 
-Deno.test('[flow] R06 runSourceItemPipeline: filter 命中时应短路 dedupe 与 delivery', async () => {
+  await harness.pipeline.run(createItem())
+
+  assertEquals(harness.itemStatuses, [
+    { itemId: 'item:entry-1', status: 'filtered', skippedReason: undefined },
+  ])
+})
+
+test('[flow] R06 runSourceItemPipeline: filter 命中时应短路 dedupe 与 delivery', async () => {
   const harness = createPipelineHarness({
     plan: createPlan(createBindings(createFileBinding()), '{{ entry.title == "Hello" }}'),
     shouldPassFilter: ({ item, filterTemplate }) => {
@@ -547,125 +539,116 @@ Deno.test('[flow] R06 runSourceItemPipeline: filter 命中时应短路 dedupe �
   })
 })
 
-Deno.test(
-  '[contract] R07 runSourceItemPipeline: owner-scoped item 日志应覆盖 filter/dedupe/dispatch',
-  async () => {
-    const logs: string[] = []
-    const logger = createLogger({
-      enabled: true,
-      level: 'info',
-      module: 'scheduler.source',
-      now: () => new Date('2026-04-13T11:50:00.000Z'),
-      writeStdout: (line: string) => logs.push(line),
-      writeWarn: (line: string) => logs.push(line),
-      writeStderr: (line: string) => logs.push(line),
-    })
+test('[contract] R07 runSourceItemPipeline: owner-scoped item 日志应覆盖 filter/dedupe/dispatch', async () => {
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'scheduler.source',
+    now: () => new Date('2026-04-13T11:50:00.000Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
 
-    const harness = createPipelineHarness({
-      logger,
-      plan: createPlan(createBindings(createFileBinding()), '{{ true }}'),
-      shouldPassFilter: ({ item }) => Promise.resolve(item.normalized.id !== 'entry-filtered'),
-      isDeliveryDuplicate: ({ fingerprint }) => Promise.resolve(fingerprint === 'entry-deduped'),
-    })
+  const harness = createPipelineHarness({
+    logger,
+    plan: createPlan(createBindings(createFileBinding()), '{{ true }}'),
+    shouldPassFilter: ({ item }) => Promise.resolve(item.normalized.id !== 'entry-filtered'),
+    isDeliveryDuplicate: ({ fingerprint }) => Promise.resolve(fingerprint === 'entry-deduped'),
+  })
 
-    await harness.pipeline.run(createItem('entry-filtered', 'Filtered'))
-    await harness.pipeline.run(createItem('entry-deduped', 'Deduped'))
-    await harness.pipeline.run(createItem('entry-delivered', 'Delivered'))
+  await harness.pipeline.run(createItem('entry-filtered', 'Filtered'))
+  await harness.pipeline.run(createItem('entry-deduped', 'Deduped'))
+  await harness.pipeline.run(createItem('entry-delivered', 'Delivered'))
 
-    const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
-    const filterLog = records.find((record) => {
-      const scope = (record.scope ?? {}) as Record<string, unknown>
-      const attributes = (record.attributes ?? {}) as Record<string, unknown>
-      return (
-        scope.name === 'pipeline.filter' &&
-        attributes['pipeline.operation'] === 'filter' &&
-        attributes['pipeline.outcome'] === 'filtered'
-      )
-    })
-    const dedupeLog = records.find((record) => {
-      const scope = (record.scope ?? {}) as Record<string, unknown>
-      const attributes = (record.attributes ?? {}) as Record<string, unknown>
-      return (
-        scope.name === 'delivery.store' &&
-        attributes['delivery.operation'] === 'is_delivered' &&
-        attributes['delivery.outcome'] === 'deduped'
-      )
-    })
-    const dispatchLog = records.find((record) => {
-      const scope = (record.scope ?? {}) as Record<string, unknown>
-      const attributes = (record.attributes ?? {}) as Record<string, unknown>
-      return (
-        scope.name === 'delivery.runtime.dispatch' &&
-        attributes['delivery.operation'] === 'dispatch' &&
-        attributes['delivery.outcome'] === 'success'
-      )
-    })
+  const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>)
+  const filterLog = records.find((record) => {
+    const scope = (record.scope ?? {}) as Record<string, unknown>
+    const attributes = (record.attributes ?? {}) as Record<string, unknown>
+    return (
+      scope.name === 'pipeline.filter' &&
+      attributes['pipeline.operation'] === 'filter' &&
+      attributes['pipeline.outcome'] === 'filtered'
+    )
+  })
+  const dedupeLog = records.find((record) => {
+    const scope = (record.scope ?? {}) as Record<string, unknown>
+    const attributes = (record.attributes ?? {}) as Record<string, unknown>
+    return (
+      scope.name === 'delivery.store' &&
+      attributes['delivery.operation'] === 'is_delivered' &&
+      attributes['delivery.outcome'] === 'deduped'
+    )
+  })
+  const dispatchLog = records.find((record) => {
+    const scope = (record.scope ?? {}) as Record<string, unknown>
+    const attributes = (record.attributes ?? {}) as Record<string, unknown>
+    return (
+      scope.name === 'delivery.runtime.dispatch' &&
+      attributes['delivery.operation'] === 'dispatch' &&
+      attributes['delivery.outcome'] === 'success'
+    )
+  })
 
-    assertEquals(Boolean(filterLog), true)
-    assertEquals(Boolean(dedupeLog), true)
-    assertEquals(Boolean(dispatchLog), true)
+  assertEquals(Boolean(filterLog), true)
+  assertEquals(Boolean(dedupeLog), true)
+  assertEquals(Boolean(dispatchLog), true)
 
-    const filterAttributes = (filterLog?.attributes ?? {}) as Record<string, unknown>
-    assertEquals(filterAttributes['source.id'], 'rust')
-    assertEquals(filterAttributes['source.run_id'], 'run-1')
-    assertEquals(filterAttributes['pipeline.item_id'], 'item:entry-filtered')
+  const filterAttributes = (filterLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(filterAttributes['source.id'], 'rust')
+  assertEquals(filterAttributes['source.run_id'], 'run-1')
+  assertEquals(filterAttributes['pipeline.item_id'], 'item:entry-filtered')
 
-    const dedupeAttributes = (dedupeLog?.attributes ?? {}) as Record<string, unknown>
-    assertEquals(dedupeAttributes['source.id'], 'rust')
-    assertEquals(dedupeAttributes['source.run_id'], 'run-1')
-    assertEquals(dedupeAttributes['pipeline.item_id'], 'item:entry-deduped')
-    assertEquals(dedupeAttributes['delivery.id'], 'archive')
+  const dedupeAttributes = (dedupeLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(dedupeAttributes['source.id'], 'rust')
+  assertEquals(dedupeAttributes['source.run_id'], 'run-1')
+  assertEquals(dedupeAttributes['pipeline.item_id'], 'item:entry-deduped')
+  assertEquals(dedupeAttributes['delivery.id'], 'archive')
 
-    const dispatchAttributes = (dispatchLog?.attributes ?? {}) as Record<string, unknown>
-    assertEquals(dispatchAttributes['delivery.id'], 'archive')
-    assertEquals(dispatchAttributes['pipeline.item_id'], 'item:entry-delivered')
-  },
-)
+  const dispatchAttributes = (dispatchLog?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(dispatchAttributes['delivery.id'], 'archive')
+  assertEquals(dispatchAttributes['pipeline.item_id'], 'item:entry-delivered')
+})
 
-Deno.test(
-  '[contract] R07 runSourceItemPipeline: item 为 new 但全部 delivery duplicate 时应落 skipped',
-  async () => {
-    const harness = createPipelineHarness({
-      plan: createPlan(createBindings(createFileBinding())),
-      isDeliveryDuplicate: () => Promise.resolve(true),
-    })
+test('[contract] R07 runSourceItemPipeline: item 为 new 但全部 delivery duplicate 时应落 skipped', async () => {
+  const harness = createPipelineHarness({
+    plan: createPlan(createBindings(createFileBinding())),
+    isDeliveryDuplicate: () => Promise.resolve(true),
+  })
 
-    const result = await harness.pipeline.run(createItem())
+  const result = await harness.pipeline.run(createItem())
 
-    assertEquals(harness.itemStatuses, [
-      {
-        itemId: 'item:entry-1',
-        status: 'skipped' as PipelineItem['status'],
-        skippedReason: 'all_deliveries_duplicate',
-      },
-    ])
-    assertEquals(result.counts.skippedCount, 1)
-    assertEquals(result.lifecycleCounts.dedupedCount, 1)
-  },
-)
+  assertEquals(harness.itemStatuses, [
+    {
+      itemId: 'item:entry-1',
+      status: 'skipped' as PipelineItem['status'],
+      skippedReason: 'all_deliveries_duplicate',
+    },
+  ])
+  assertEquals(result.counts.skippedCount, 1)
+  assertEquals(result.lifecycleCounts.dedupedCount, 1)
+})
 
-Deno.test(
-  '[contract] R07 runSourceItemPipeline: no bindings 时应落 skipped/no_deliveries',
-  async () => {
-    const harness = createPipelineHarness({
-      plan: createPlan([]),
-    })
+test('[contract] R07 runSourceItemPipeline: no bindings 时应落 skipped/no_deliveries', async () => {
+  const harness = createPipelineHarness({
+    plan: createPlan([]),
+  })
 
-    const result = await harness.pipeline.run(createItem())
+  const result = await harness.pipeline.run(createItem())
 
-    assertEquals(harness.plannedAttempts.length, 0)
-    assertEquals(harness.itemStatuses, [
-      {
-        itemId: 'item:entry-1',
-        status: 'skipped' as PipelineItem['status'],
-        skippedReason: 'no_deliveries',
-      },
-    ])
-    assertEquals(result.counts.skippedCount, 1)
-  },
-)
+  assertEquals(harness.plannedAttempts.length, 0)
+  assertEquals(harness.itemStatuses, [
+    {
+      itemId: 'item:entry-1',
+      status: 'skipped' as PipelineItem['status'],
+      skippedReason: 'no_deliveries',
+    },
+  ])
+  assertEquals(result.counts.skippedCount, 1)
+})
 
-Deno.test('[contract] R07 runSourceItemPipeline: delivered 后应注册 item fingerprint', async () => {
+test('[contract] R07 runSourceItemPipeline: delivered 后应注册 item fingerprint', async () => {
   const harness = createPipelineHarness({
     plan: createPlan(createBindings(createFileBinding())),
   })
@@ -690,7 +673,7 @@ Deno.test('[contract] R07 runSourceItemPipeline: delivered 后应注册 item fin
   assertEquals(result.counts.deliveredCount, 1)
 })
 
-Deno.test('[contract] R07 runSourceItemPipeline: summary item 也应接入 filter 主链', async () => {
+test('[contract] R07 runSourceItemPipeline: summary item 也应接入 filter 主链', async () => {
   let filterCalls = 0
   const harness = createPipelineHarness({
     plan: createSummaryPlan([]),
@@ -712,23 +695,20 @@ Deno.test('[contract] R07 runSourceItemPipeline: summary item 也应接入 filte
   assertEquals(result.counts.filteredCount, 1)
 })
 
-Deno.test(
-  '[contract] R07 runSourceItemPipeline: item duplicate 时不应进入 delivery 计划与发送',
-  async () => {
-    const harness = createPipelineHarness({
-      plan: createPlan(createBindings(createFileBinding())),
-      isItemDuplicate: () => Promise.resolve(true),
-    })
+test('[contract] R07 runSourceItemPipeline: item duplicate 时不应进入 delivery 计划与发送', async () => {
+  const harness = createPipelineHarness({
+    plan: createPlan(createBindings(createFileBinding())),
+    isItemDuplicate: () => Promise.resolve(true),
+  })
 
-    const result = await harness.pipeline.run(createItem())
+  const result = await harness.pipeline.run(createItem())
 
-    assertEquals(harness.getDeliveryDuplicateChecks(), 0)
-    assertEquals(harness.plannedAttempts.length, 0)
-    assertEquals(harness.finishedAttempts.length, 0)
-    assertEquals(harness.executedPlans.length, 0)
-    assertEquals(harness.itemStatuses, [
-      { itemId: 'item:entry-1', status: 'duplicate', skippedReason: undefined },
-    ])
-    assertEquals(result.counts.duplicateItemCount, 1)
-  },
-)
+  assertEquals(harness.getDeliveryDuplicateChecks(), 0)
+  assertEquals(harness.plannedAttempts.length, 0)
+  assertEquals(harness.finishedAttempts.length, 0)
+  assertEquals(harness.executedPlans.length, 0)
+  assertEquals(harness.itemStatuses, [
+    { itemId: 'item:entry-1', status: 'duplicate', skippedReason: undefined },
+  ])
+  assertEquals(result.counts.duplicateItemCount, 1)
+})

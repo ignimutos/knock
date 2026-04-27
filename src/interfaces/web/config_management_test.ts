@@ -5,6 +5,7 @@ import {
   upsertDeliveryConfig,
   updateGlobalConfig,
 } from './config_management.ts'
+import { test } from '../../testing/test_api.ts'
 
 async function withRuntimeDir(configYml: string, fn: (runtimeDir: string) => Promise<void>) {
   const runtimeDir = await Deno.makeTempDir()
@@ -27,7 +28,7 @@ const CONFIG_YML = `language: en-US\ntimezone: UTC\ntimestampFormat: yyyy-MM-dd 
 
 const SECRET_SENTINEL = '__KNOCK_SECRET_UNCHANGED__'
 
-Deno.test('[contract] config management: updateGlobalConfig 应写回 global 子树', async () => {
+test('[contract] config management: updateGlobalConfig 应写回 global 子树', async () => {
   await withRuntimeDir(CONFIG_YML, async (runtimeDir) => {
     const result = await updateGlobalConfig({
       language: 'zh-CN',
@@ -56,144 +57,126 @@ Deno.test('[contract] config management: updateGlobalConfig 应写回 global 子
   })
 })
 
-Deno.test(
-  '[contract] config management: updateGlobalConfig 结构化保存应保留合法未编辑键',
-  async () => {
-    await withRuntimeDir(
-      `language: en-US\ntimezone: UTC\ntimestampFormat: yyyy-MM-dd HH:mm:ss\nsqlite:\n  path: facts.db\n  busyTimeout: 5s\n  journalMode: WAL\n  retention:\n    maxAge: 7d\n    maxEntriesPerSource: 20\n    vacuum: off\nlogging:\n  level: info\n  sinks:\n    console:\n      type: console\n      format: pretty\n    file:\n      type: file\n      format: jsonl\n      path: logs/app.jsonl\n      rotation:\n        type: size\n        maxSize: 10m\n        maxFiles: 3\n`,
-      async (runtimeDir) => {
-        await updateGlobalConfig({
-          language: 'en-US',
-          timezone: 'Asia/Shanghai',
-          timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-          sqliteMode: 'structured',
-          sqlitePath: 'knock.db',
-          sqliteBusyTimeout: '5s',
-          sqliteJournalMode: 'WAL',
-          sqliteRetentionMaxAge: '7d',
-          sqliteRetentionMaxEntriesPerSource: 20,
-          sqliteRetentionVacuum: 'off',
-          loggingMode: 'structured',
-          loggingLevel: 'debug',
-          loggingConsoleEnabled: true,
-          loggingConsoleFormat: 'pretty',
-          loggingFileEnabled: true,
-          loggingFilePath: 'logs/app.jsonl',
-        })
-
-        const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
-          sqlite?: { path?: string; retention?: { maxEntriesPerSource?: number } }
-          logging?: {
-            level?: string
-            sinks?: { file?: { rotation?: { maxSize?: string; maxFiles?: number } } }
-          }
-        }
-        assertEquals(nextConfig.sqlite?.path, 'knock.db')
-        assertEquals(nextConfig.sqlite?.retention?.maxEntriesPerSource, 20)
-        assertEquals(nextConfig.logging?.level, 'debug')
-        assertEquals(nextConfig.logging?.sinks?.file?.rotation?.maxSize, '10m')
-        assertEquals(nextConfig.logging?.sinks?.file?.rotation?.maxFiles, 3)
-      },
-    )
-  },
-)
-
-Deno.test(
-  '[contract] config management: upsertDeliveryConfig 应写回 canonical delivery 子树',
-  async () => {
-    await withRuntimeDir(CONFIG_YML, async (runtimeDir) => {
-      const result = await upsertDeliveryConfig({
-        deliveryId: 'local',
-        enabled: false,
-        kind: 'file',
-        configMode: 'json',
-        configJson: '{"path":"outputs/archive.md","content":"{{ entry.link }}"}',
+test('[contract] config management: updateGlobalConfig 结构化保存应保留合法未编辑键', async () => {
+  await withRuntimeDir(
+    `language: en-US\ntimezone: UTC\ntimestampFormat: yyyy-MM-dd HH:mm:ss\nsqlite:\n  path: facts.db\n  busyTimeout: 5s\n  journalMode: WAL\n  retention:\n    maxAge: 7d\n    maxEntriesPerSource: 20\n    vacuum: off\nlogging:\n  level: info\n  sinks:\n    console:\n      type: console\n      format: pretty\n    file:\n      type: file\n      format: jsonl\n      path: logs/app.jsonl\n      rotation:\n        type: size\n        maxSize: 10m\n        maxFiles: 3\n`,
+    async (runtimeDir) => {
+      await updateGlobalConfig({
+        language: 'en-US',
+        timezone: 'Asia/Shanghai',
+        timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+        sqliteMode: 'structured',
+        sqlitePath: 'knock.db',
+        sqliteBusyTimeout: '5s',
+        sqliteJournalMode: 'WAL',
+        sqliteRetentionMaxAge: '7d',
+        sqliteRetentionMaxEntriesPerSource: 20,
+        sqliteRetentionVacuum: 'off',
+        loggingMode: 'structured',
+        loggingLevel: 'debug',
+        loggingConsoleEnabled: true,
+        loggingConsoleFormat: 'pretty',
+        loggingFileEnabled: true,
+        loggingFilePath: 'logs/app.jsonl',
       })
 
-      assertEquals(result.message, 'delivery local 配置已保存')
+      const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+        sqlite?: { path?: string; retention?: { maxEntriesPerSource?: number } }
+        logging?: {
+          level?: string
+          sinks?: { file?: { rotation?: { maxSize?: string; maxFiles?: number } } }
+        }
+      }
+      assertEquals(nextConfig.sqlite?.path, 'knock.db')
+      assertEquals(nextConfig.sqlite?.retention?.maxEntriesPerSource, 20)
+      assertEquals(nextConfig.logging?.level, 'debug')
+      assertEquals(nextConfig.logging?.sinks?.file?.rotation?.maxSize, '10m')
+      assertEquals(nextConfig.logging?.sinks?.file?.rotation?.maxFiles, 3)
+    },
+  )
+})
+
+test('[contract] config management: upsertDeliveryConfig 应写回 canonical delivery 子树', async () => {
+  await withRuntimeDir(CONFIG_YML, async (runtimeDir) => {
+    const result = await upsertDeliveryConfig({
+      deliveryId: 'local',
+      enabled: false,
+      kind: 'file',
+      configMode: 'json',
+      configJson: '{"path":"outputs/archive.md","content":"{{ entry.link }}"}',
+    })
+
+    assertEquals(result.message, 'delivery local 配置已保存')
+    const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+      deliveries?: Record<string, { enabled?: boolean; file?: { path?: string; content?: string } }>
+    }
+    assertEquals(nextConfig.deliveries?.local?.enabled, false)
+    assertEquals(nextConfig.deliveries?.local?.file?.path, 'outputs/archive.md')
+    assertEquals(nextConfig.deliveries?.local?.file?.content, '{{ entry.link }}')
+  })
+})
+
+test('[contract] config management: upsertDeliveryConfig 结构化保存应保留合法未编辑键', async () => {
+  await withRuntimeDir(
+    `deliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\n      rotation:\n        enabled: true\n        size: 10m\n        backups: 3\n`,
+    async (runtimeDir) => {
+      await upsertDeliveryConfig({
+        deliveryId: 'local',
+        enabled: true,
+        kind: 'file',
+        configMode: 'structured',
+        configJson: '',
+        filePath: 'outputs/archive.md',
+        fileContent: '{{ entry.link }}',
+      })
+
       const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<
           string,
-          { enabled?: boolean; file?: { path?: string; content?: string } }
+          {
+            file?: {
+              path?: string
+              content?: string
+              rotation?: { size?: string; backups?: number }
+            }
+          }
         >
       }
-      assertEquals(nextConfig.deliveries?.local?.enabled, false)
       assertEquals(nextConfig.deliveries?.local?.file?.path, 'outputs/archive.md')
       assertEquals(nextConfig.deliveries?.local?.file?.content, '{{ entry.link }}')
-    })
-  },
-)
+      assertEquals(nextConfig.deliveries?.local?.file?.rotation?.size, '10m')
+      assertEquals(nextConfig.deliveries?.local?.file?.rotation?.backups, 3)
+    },
+  )
+})
 
-Deno.test(
-  '[contract] config management: upsertDeliveryConfig 结构化保存应保留合法未编辑键',
-  async () => {
-    await withRuntimeDir(
-      `deliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\n      rotation:\n        enabled: true\n        size: 10m\n        backups: 3\n`,
-      async (runtimeDir) => {
-        await upsertDeliveryConfig({
-          deliveryId: 'local',
-          enabled: true,
-          kind: 'file',
-          configMode: 'structured',
-          configJson: '',
-          filePath: 'outputs/archive.md',
-          fileContent: '{{ entry.link }}',
-        })
+test('[contract] config management: deleteDeliveryConfig 应删除未被引用的 canonical delivery', async () => {
+  await withRuntimeDir(
+    `language: en-US\ndeliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\n`,
+    async (runtimeDir) => {
+      const result = await deleteDeliveryConfig({
+        deliveryId: 'local',
+      })
 
-        const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
-          deliveries?: Record<
-            string,
-            {
-              file?: {
-                path?: string
-                content?: string
-                rotation?: { size?: string; backups?: number }
-              }
-            }
-          >
-        }
-        assertEquals(nextConfig.deliveries?.local?.file?.path, 'outputs/archive.md')
-        assertEquals(nextConfig.deliveries?.local?.file?.content, '{{ entry.link }}')
-        assertEquals(nextConfig.deliveries?.local?.file?.rotation?.size, '10m')
-        assertEquals(nextConfig.deliveries?.local?.file?.rotation?.backups, 3)
-      },
-    )
-  },
-)
+      assertEquals(result.message, 'delivery local 已删除')
+      const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+        deliveries?: Record<string, unknown>
+      }
+      assertEquals(nextConfig.deliveries, undefined)
+    },
+  )
+})
 
-Deno.test(
-  '[contract] config management: deleteDeliveryConfig 应删除未被引用的 canonical delivery',
-  async () => {
-    await withRuntimeDir(
-      `language: en-US\ndeliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\n`,
-      async (runtimeDir) => {
-        const result = await deleteDeliveryConfig({
-          deliveryId: 'local',
-        })
+test('[contract] config management: deleteDeliveryConfig 应拒绝删除仍被 source 引用的 delivery', async () => {
+  await withRuntimeDir(CONFIG_YML, async () => {
+    const error = await assertRejects(() => deleteDeliveryConfig({ deliveryId: 'local' }), Error)
 
-        assertEquals(result.message, 'delivery local 已删除')
-        const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
-          deliveries?: Record<string, unknown>
-        }
-        assertEquals(nextConfig.deliveries, undefined)
-      },
-    )
-  },
-)
+    assertStringIncludes(error.message, '仍被 source 引用')
+    assertStringIncludes(error.message, 'rust')
+  })
+})
 
-Deno.test(
-  '[contract] config management: deleteDeliveryConfig 应拒绝删除仍被 source 引用的 delivery',
-  async () => {
-    await withRuntimeDir(CONFIG_YML, async () => {
-      const error = await assertRejects(() => deleteDeliveryConfig({ deliveryId: 'local' }), Error)
-
-      assertStringIncludes(error.message, '仍被 source 引用')
-      assertStringIncludes(error.message, 'rust')
-    })
-  },
-)
-
-Deno.test('[contract] config management: 结构化保存应保留未修改的 secret', async () => {
+test('[contract] config management: 结构化保存应保留未修改的 secret', async () => {
   await withRuntimeDir(
     `deliveries:\n  mailer:\n    enabled: true\n    email:\n      smtp:\n        host: smtp.example.com\n        port: 587\n        security: starttls\n        auth:\n          username: bot\n          password: real-secret\n      message:\n        from: noreply@example.com\n        to:\n          - ops@example.com\n        subject: hello\n        text: body\n`,
     async (runtimeDir) => {
@@ -222,7 +205,7 @@ Deno.test('[contract] config management: 结构化保存应保留未修改的 se
   )
 })
 
-Deno.test('[contract] config management: 应拒绝绝对 sqlite path', async () => {
+test('[contract] config management: 应拒绝绝对 sqlite path', async () => {
   await withRuntimeDir(CONFIG_YML, async () => {
     const error = await assertRejects(
       () =>
@@ -244,7 +227,7 @@ Deno.test('[contract] config management: 应拒绝绝对 sqlite path', async () 
   })
 })
 
-Deno.test('[contract] config management: 应拒绝逃逸 runtime 的 delivery file path', async () => {
+test('[contract] config management: 应拒绝逃逸 runtime 的 delivery file path', async () => {
   await withRuntimeDir(CONFIG_YML, async () => {
     const error = await assertRejects(
       () =>

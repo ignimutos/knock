@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes } from '@std/assert'
 import { renderToString } from 'preact-render-to-string'
 import type { ConfigWorkbenchOverview } from '../../src/web/config_workbench_overview.ts'
 import ConfigPage from './config.tsx'
+import { test } from '../../src/testing/test_api.ts'
 
 const workbench: ConfigWorkbenchOverview = {
   reader: {
@@ -107,7 +108,7 @@ const workbench: ConfigWorkbenchOverview = {
   ],
 }
 
-Deno.test('[contract] web pages: Config 页空字段应暴露默认值 placeholder', () => {
+test('[contract] web pages: Config 页空字段应暴露默认值 placeholder', () => {
   const html = renderToString(
     ConfigPage({
       workbench: {
@@ -134,7 +135,7 @@ Deno.test('[contract] web pages: Config 页空字段应暴露默认值 placehold
   assertStringIncludes(html, 'placeholder="{{ entry.title }}"')
 })
 
-Deno.test('[contract] web pages: Config 页不应输出 raw secret', () => {
+test('[contract] web pages: Config 页不应输出 raw secret', () => {
   const html = renderToString(
     ConfigPage({
       workbench: {

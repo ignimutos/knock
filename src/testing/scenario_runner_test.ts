@@ -1,7 +1,8 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { runScenario } from './scenario_runner.ts'
+import { test } from './test_api.ts'
 
-Deno.test('scenario-runner: 应按 arrange -> act -> assert 执行', async () => {
+test('scenario-runner: 应按 arrange -> act -> assert 执行', async () => {
   const trace: string[] = []
 
   const result = await runScenario({
@@ -23,7 +24,7 @@ Deno.test('scenario-runner: 应按 arrange -> act -> assert 执行', async () =>
   assertEquals(trace, ['arrange', 'act', 'assert'])
 })
 
-Deno.test('scenario-runner: cleanup 应在 act 失败后执行', async () => {
+test('scenario-runner: cleanup 应在 act 失败后执行', async () => {
   const trace: string[] = []
 
   await assertRejects(

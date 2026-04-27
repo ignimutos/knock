@@ -5,6 +5,7 @@ import { insertDeliveryAttempt } from './delivery_attempt_repository.ts'
 import { insertPipelineItem } from './item_repository.ts'
 import { createPruneFactsRepository } from './prune_facts_repository.ts'
 import { insertSourceRun } from './run_repository.ts'
+import { test } from '../../testing/test_api.ts'
 
 function countRows(db: ReturnType<typeof createInMemoryDb>, tableName: string): number {
   const row = db.$client.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as {
@@ -83,81 +84,78 @@ async function seedFinishedRun(
   })
 }
 
-Deno.test(
-  '[contract] pruneFactsRepository: 应删除超龄已完成 facts 与旧 deduplications',
-  async () => {
-    const db = createInMemoryDb()
-    const repository = createPruneFactsRepository(db)
+test('[contract] pruneFactsRepository: 应删除超龄已完成 facts 与旧 deduplications', async () => {
+  const db = createInMemoryDb()
+  const repository = createPruneFactsRepository(db)
 
-    await seedFinishedRun(db, {
-      runId: 'run-old',
-      sourceId: 'rust',
-      startedAt: '2026-04-01T12:00:00.000Z',
-      finishedAt: '2026-04-01T12:01:00.000Z',
-    })
-    await seedFinishedRun(db, {
-      runId: 'run-recent',
-      sourceId: 'rust',
-      startedAt: '2026-04-17T12:00:00.000Z',
-      finishedAt: '2026-04-17T12:01:00.000Z',
-    })
-    await insertSourceRun(db, {
-      runId: 'run-running',
-      sourceId: 'rust',
-      trigger: 'scheduled',
-      profile: 'production',
-      effectDomain: 'production',
-      status: 'running',
-      scheduledAt: '2026-04-01T13:00:00.000Z',
-      startedAt: '2026-04-01T13:00:00.000Z',
-      counts: {
-        fetchedCount: 0,
-        parsedCount: 0,
-        filteredCount: 0,
-        duplicateItemCount: 0,
-        deliveredCount: 0,
-        failedAttemptCount: 0,
-        skippedCount: 0,
-      },
-    })
+  await seedFinishedRun(db, {
+    runId: 'run-old',
+    sourceId: 'rust',
+    startedAt: '2026-04-01T12:00:00.000Z',
+    finishedAt: '2026-04-01T12:01:00.000Z',
+  })
+  await seedFinishedRun(db, {
+    runId: 'run-recent',
+    sourceId: 'rust',
+    startedAt: '2026-04-17T12:00:00.000Z',
+    finishedAt: '2026-04-17T12:01:00.000Z',
+  })
+  await insertSourceRun(db, {
+    runId: 'run-running',
+    sourceId: 'rust',
+    trigger: 'scheduled',
+    profile: 'production',
+    effectDomain: 'production',
+    status: 'running',
+    scheduledAt: '2026-04-01T13:00:00.000Z',
+    startedAt: '2026-04-01T13:00:00.000Z',
+    counts: {
+      fetchedCount: 0,
+      parsedCount: 0,
+      filteredCount: 0,
+      duplicateItemCount: 0,
+      deliveredCount: 0,
+      failedAttemptCount: 0,
+      skippedCount: 0,
+    },
+  })
 
-    await registerItemFingerprint(db, {
-      deduplicationKey: 'production:item:rust:old',
-      scope: 'item',
-      scopeId: 'rust',
-      effectDomain: 'production',
-      fingerprint: 'old',
-      recordedAt: '2026-04-01T12:00:00.000Z',
-    })
-    await registerItemFingerprint(db, {
-      deduplicationKey: 'production:item:rust:recent',
-      scope: 'item',
-      scopeId: 'rust',
-      effectDomain: 'production',
-      fingerprint: 'recent',
-      recordedAt: '2026-04-17T12:00:00.000Z',
-    })
+  await registerItemFingerprint(db, {
+    deduplicationKey: 'production:item:rust:old',
+    scope: 'item',
+    scopeId: 'rust',
+    effectDomain: 'production',
+    fingerprint: 'old',
+    recordedAt: '2026-04-01T12:00:00.000Z',
+  })
+  await registerItemFingerprint(db, {
+    deduplicationKey: 'production:item:rust:recent',
+    scope: 'item',
+    scopeId: 'rust',
+    effectDomain: 'production',
+    fingerprint: 'recent',
+    recordedAt: '2026-04-17T12:00:00.000Z',
+  })
 
-    const result = await repository.prune({
-      now: '2026-04-18T12:00:00.000Z',
-      maxAge: '7d',
-      maxEntriesPerSource: 100,
-    })
+  const result = await repository.prune({
+    now: '2026-04-18T12:00:00.000Z',
+    maxAge: '7d',
+    maxEntriesPerSource: 100,
+  })
 
-    assertEquals(result, {
-      deletedRuns: 1,
-      deletedItems: 1,
-      deletedAttempts: 1,
-      deletedDeduplications: 1,
-    })
-    assertEquals(listRunIds(db), ['run-recent', 'run-running'])
-    assertEquals(countRows(db, 'pipeline_items'), 1)
-    assertEquals(countRows(db, 'delivery_attempts'), 1)
-    assertEquals(countRows(db, 'deduplications'), 1)
-  },
-)
+  assertEquals(result, {
+    deletedRuns: 1,
+    deletedItems: 1,
+    deletedAttempts: 1,
+    deletedDeduplications: 1,
+  })
+  assertEquals(listRunIds(db), ['run-recent', 'run-running'])
+  assertEquals(countRows(db, 'pipeline_items'), 1)
+  assertEquals(countRows(db, 'delivery_attempts'), 1)
+  assertEquals(countRows(db, 'deduplications'), 1)
+})
 
-Deno.test('[contract] pruneFactsRepository: 应按 source 保留最新 N 个已完成 runs', async () => {
+test('[contract] pruneFactsRepository: 应按 source 保留最新 N 个已完成 runs', async () => {
   const db = createInMemoryDb()
   const repository = createPruneFactsRepository(db)
 

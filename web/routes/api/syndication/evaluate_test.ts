@@ -1,47 +1,45 @@
 import { assertEquals } from '@std/assert'
 import { type EvaluateLogMeta, handler } from './evaluate.ts'
+import { test } from '../../../../src/testing/test_api.ts'
 
 async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
-Deno.test(
-  '[flow] R19 syndication api: 应将请求 payload 原样转发给 evaluatePlayground',
-  async () => {
-    const calls: Array<{ request: unknown }> = []
+test('[flow] R19 syndication api: 应将请求 payload 原样转发给 evaluatePlayground', async () => {
+  const calls: Array<{ request: unknown }> = []
 
-    const requestPayload = {
-      url: 'https://example.com/feed.xml',
-      entry: { id: '{{ id }}' },
-    }
+  const requestPayload = {
+    url: 'https://example.com/feed.xml',
+    entry: { id: '{{ id }}' },
+  }
 
-    const response = await handler(
-      new Request('http://localhost/api/syndication/evaluate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(requestPayload),
-      }),
-      {
-        evaluatePlayground: (input) => {
-          calls.push(input)
-          return Promise.resolve({
-            warnings: [],
-            fetchMeta: { ok: true },
-            parser: 'rss',
-            rawContent: '<rss></rss>',
-            feed: {},
-            entries: [],
-          })
-        },
+  const response = await handler(
+    new Request('http://localhost/api/syndication/evaluate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(requestPayload),
+    }),
+    {
+      evaluatePlayground: (input) => {
+        calls.push(input)
+        return Promise.resolve({
+          warnings: [],
+          fetchMeta: { ok: true },
+          parser: 'rss',
+          rawContent: '<rss></rss>',
+          feed: {},
+          entries: [],
+        })
       },
-    )
+    },
+  )
 
-    assertEquals(response.status, 200)
-    assertEquals(calls, [{ request: requestPayload }])
-  },
-)
+  assertEquals(response.status, 200)
+  assertEquals(calls, [{ request: requestPayload }])
+})
 
-Deno.test('[flow] R19 syndication api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
+test('[flow] R19 syndication api: POST 应返回 JSON 结果并上报成功日志元数据', async () => {
   const logs: EvaluateLogMeta[] = []
 
   const response = await handler(
@@ -88,7 +86,7 @@ Deno.test('[flow] R19 syndication api: POST 应返回 JSON 结果并上报成功
   ])
 })
 
-Deno.test('[flow] R20 syndication api: 非法 JSON 应返回 400 与 validation 错误体', async () => {
+test('[flow] R20 syndication api: 非法 JSON 应返回 400 与 validation 错误体', async () => {
   const logs: EvaluateLogMeta[] = []
 
   const response = await handler(
@@ -114,39 +112,36 @@ Deno.test('[flow] R20 syndication api: 非法 JSON 应返回 400 与 validation 
   ])
 })
 
-Deno.test(
-  '[flow] R19 syndication api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据',
-  async () => {
-    const logs: EvaluateLogMeta[] = []
+test('[flow] R19 syndication api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据', async () => {
+  const logs: EvaluateLogMeta[] = []
 
-    const response = await handler(
-      new Request('http://localhost/api/syndication/evaluate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          url: 'https://example.com/feed.xml',
-          entry: { id: '{{ id }}' },
-        }),
+  const response = await handler(
+    new Request('http://localhost/api/syndication/evaluate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        url: 'https://example.com/feed.xml',
+        entry: { id: '{{ id }}' },
       }),
-      {
-        evaluatePlayground: () =>
-          Promise.reject(new Error('[source] 抓取失败 source=playground status=404')),
-        onLogMeta: (meta: EvaluateLogMeta) => logs.push(meta),
-      },
-    )
+    }),
+    {
+      evaluatePlayground: () =>
+        Promise.reject(new Error('[source] 抓取失败 source=playground status=404')),
+      onLogMeta: (meta: EvaluateLogMeta) => logs.push(meta),
+    },
+  )
 
-    assertEquals(response.status, 502)
-    const payload = await readJson(response)
-    assertEquals(payload.message, '抓取失败: HTTP 404')
-    assertEquals(payload.code, 'playground_fetch_failed')
-    assertEquals(payload.category, 'fetch')
-    assertEquals(logs, [
-      {
-        targetHost: 'example.com',
-        errorCode: 'playground_fetch_failed',
-        errorCategory: 'fetch',
-        errorMessage: '[source] 抓取失败 source=playground status=404',
-      },
-    ])
-  },
-)
+  assertEquals(response.status, 502)
+  const payload = await readJson(response)
+  assertEquals(payload.message, '抓取失败: HTTP 404')
+  assertEquals(payload.code, 'playground_fetch_failed')
+  assertEquals(payload.category, 'fetch')
+  assertEquals(logs, [
+    {
+      targetHost: 'example.com',
+      errorCode: 'playground_fetch_failed',
+      errorCategory: 'fetch',
+      errorMessage: '[source] 抓取失败 source=playground status=404',
+    },
+  ])
+})

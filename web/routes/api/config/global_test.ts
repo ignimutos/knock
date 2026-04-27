@@ -1,6 +1,7 @@
 import { assertEquals } from '@std/assert'
 import { ConfigManagementError } from '../../../../src/interfaces/web/config_management_errors.ts'
 import { handler } from './global.ts'
+import { test } from '../../../../src/testing/test_api.ts'
 
 async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
@@ -13,7 +14,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] R03 config global api: 应返回 workbench', async () => {
+test('[flow] R03 config global api: 应返回 workbench', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/global', {
       method: 'POST',
@@ -52,7 +53,7 @@ Deno.test('[flow] R03 config global api: 应返回 workbench', async () => {
   assertEquals(payload.message, 'global 配置已保存')
 })
 
-Deno.test('[contract] config global api: 非法 JSON 应返回 400', async () => {
+test('[contract] config global api: 非法 JSON 应返回 400', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/global', {
       method: 'POST',
@@ -67,7 +68,7 @@ Deno.test('[contract] config global api: 非法 JSON 应返回 400', async () =>
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[contract] config global api: 业务错误应返回结构化错误体', async () => {
+test('[contract] config global api: 业务错误应返回结构化错误体', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/global', {
       method: 'POST',
@@ -93,7 +94,7 @@ Deno.test('[contract] config global api: 业务错误应返回结构化错误体
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[contract] config global api: 跨源写请求应返回 403', async () => {
+test('[contract] config global api: 跨源写请求应返回 403', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/global', {
       method: 'POST',
@@ -111,7 +112,7 @@ Deno.test('[contract] config global api: 跨源写请求应返回 403', async ()
   assertEquals(payload.category, 'forbidden')
 })
 
-Deno.test('[contract] config global api: internal error 应返回通用文案', async () => {
+test('[contract] config global api: internal error 应返回通用文案', async () => {
   const response = await handler(
     new Request('http://localhost/api/config/global', {
       method: 'POST',

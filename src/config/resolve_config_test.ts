@@ -3,8 +3,9 @@ import { assertEquals, assertNotStrictEquals } from '@std/assert'
 import { resolveConfig } from './resolve_config.ts'
 import { validateConfig } from './validate_config.ts'
 import type { AppConfigInput } from './schema.ts'
+import { test } from '../testing/test_api.ts'
 
-Deno.test('[contract] resolveConfig: source.deliveries keyed map 顺序应保留到 resolved 层', () => {
+test('[contract] resolveConfig: source.deliveries keyed map 顺序应保留到 resolved 层', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -51,7 +52,7 @@ Deno.test('[contract] resolveConfig: source.deliveries keyed map 顺序应保留
   )
 })
 
-Deno.test('[contract] resolveConfig: file override 应只改 content', () => {
+test('[contract] resolveConfig: file override 应只改 content', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -85,7 +86,7 @@ Deno.test('[contract] resolveConfig: file override 应只改 content', () => {
   assertEquals(resolved.sources[0].deliveries[0].file?.content, 'custom')
 })
 
-Deno.test('[contract] resolveConfig: 应保留 console/file sink 配置', () => {
+test('[contract] resolveConfig: 应保留 console/file sink 配置', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     logging: {
@@ -131,7 +132,7 @@ Deno.test('[contract] resolveConfig: 应保留 console/file sink 配置', () => 
   })
 })
 
-Deno.test('[contract] resolveConfig: logging.level=fatal 应进入 resolved 层', () => {
+test('[contract] resolveConfig: logging.level=fatal 应进入 resolved 层', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     logging: {
@@ -143,7 +144,7 @@ Deno.test('[contract] resolveConfig: logging.level=fatal 应进入 resolved 层'
   assertEquals(resolved.logging.level, 'fatal')
 })
 
-Deno.test('[contract] resolveConfig: 默认值与路径解析仍应成立', () => {
+test('[contract] resolveConfig: 默认值与路径解析仍应成立', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -185,77 +186,74 @@ Deno.test('[contract] resolveConfig: 默认值与路径解析仍应成立', () =
   assertEquals(resolved.sources[0].deliveries[0].file?.rotation?.backups, 3)
 })
 
-Deno.test(
-  '[contract] resolveConfig: push.http transport 与 push.request 应进入 resolved 层',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-      deliveries: {
-        webhook: {
-          push: {
-            http: {
-              method: 'POST',
-              url: 'https://example.com/hook',
-              timeout: '10s',
-              proxy: 'http://proxy.internal:8080',
-              headers: {
-                Authorization: 'Bearer token',
-              },
-            },
-            request: {
-              type: 'body',
-              payload: {
-                text: '{{ entry.title }}',
-              },
-            },
-            response: {
-              predicate: '{{ ok }}',
-              message: '{{ body.error }}',
-            },
-          },
-        },
-      },
-      sources: {
-        rust: {
+test('[contract] resolveConfig: push.http transport 与 push.request 应进入 resolved 层', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      webhook: {
+        push: {
           http: {
-            url: 'https://example.com/feed.xml',
-            timeout: '5s',
-            proxy: 'socks5://127.0.0.1:1080',
+            method: 'POST',
+            url: 'https://example.com/hook',
+            timeout: '10s',
+            proxy: 'http://proxy.internal:8080',
             headers: {
-              'User-Agent': 'knock-test',
+              Authorization: 'Bearer token',
             },
           },
-          deliveries: {
-            webhook: {},
+          request: {
+            type: 'body',
+            payload: {
+              text: '{{ entry.title }}',
+            },
+          },
+          response: {
+            predicate: '{{ ok }}',
+            message: '{{ body.error }}',
           },
         },
       },
-    }
+    },
+    sources: {
+      rust: {
+        http: {
+          url: 'https://example.com/feed.xml',
+          timeout: '5s',
+          proxy: 'socks5://127.0.0.1:1080',
+          headers: {
+            'User-Agent': 'knock-test',
+          },
+        },
+        deliveries: {
+          webhook: {},
+        },
+      },
+    },
+  }
 
-    const resolved = resolveConfig(validateConfig(input))
+  const resolved = resolveConfig(validateConfig(input))
 
-    assertEquals(resolved.deliveries.length, 1)
-    assertEquals(resolved.deliveries[0].push?.http.timeout, '10s')
-    assertEquals(resolved.deliveries[0].push?.http.proxy, 'http://proxy.internal:8080')
-    assertEquals(resolved.deliveries[0].push?.http.headers?.Authorization, 'Bearer token')
-    assertEquals(resolved.deliveries[0].push?.http.method, 'POST')
-    assertEquals(resolved.deliveries[0].push?.http.url, 'https://example.com/hook')
-    assertEquals(resolved.deliveries[0].push?.request.type, 'body')
-    assertEquals(resolved.deliveries[0].push?.request.payload, {
-      text: '{{ entry.title }}',
-    })
-    assertEquals(resolved.deliveries[0].push?.response?.predicate, '{{ ok }}')
+  assertEquals(resolved.deliveries.length, 1)
+  assertEquals(resolved.deliveries[0].push?.http.timeout, '10s')
+  assertEquals(resolved.deliveries[0].push?.http.proxy, 'http://proxy.internal:8080')
+  assertEquals(resolved.deliveries[0].push?.http.headers?.Authorization, 'Bearer token')
+  assertEquals(resolved.deliveries[0].push?.http.method, 'POST')
+  assertEquals(resolved.deliveries[0].push?.http.url, 'https://example.com/hook')
+  assertEquals(resolved.deliveries[0].push?.request.type, 'body')
+  assertEquals(resolved.deliveries[0].push?.request.payload, {
+    text: '{{ entry.title }}',
+  })
+  assertEquals(resolved.deliveries[0].push?.response?.predicate, '{{ ok }}')
 
-    assertEquals(resolved.sources[0].http!.url, 'https://example.com/feed.xml')
-    assertEquals(resolved.sources[0].http!.timeout, '5s')
-    assertEquals(resolved.sources[0].http!.proxy, 'socks5://127.0.0.1:1080')
-    assertEquals(resolved.sources[0].http!.headers?.['User-Agent'], 'knock-test')
-    assertEquals(resolved.sources[0].deliveries[0].push?.http.url, 'https://example.com/hook')
-    assertEquals(resolved.sources[0].deliveries[0].push?.request.type, 'body')
-  },
-)
+  assertEquals(resolved.sources[0].http!.url, 'https://example.com/feed.xml')
+  assertEquals(resolved.sources[0].http!.timeout, '5s')
+  assertEquals(resolved.sources[0].http!.proxy, 'socks5://127.0.0.1:1080')
+  assertEquals(resolved.sources[0].http!.headers?.['User-Agent'], 'knock-test')
+  assertEquals(resolved.sources[0].deliveries[0].push?.http.url, 'https://example.com/hook')
+  assertEquals(resolved.sources[0].deliveries[0].push?.request.type, 'body')
+})
 
-Deno.test('[contract] resolveConfig: push override 应 deep merge payload 且数组整体替换', () => {
+test('[contract] resolveConfig: push override 应 deep merge payload 且数组整体替换', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -310,64 +308,61 @@ Deno.test('[contract] resolveConfig: push override 应 deep merge payload 且数
   })
 })
 
-Deno.test(
-  '[contract] resolveConfig: source.http 与 push.request block 应 clone，并保留 source.http.url',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-      deliveries: {
-        webhook: {
-          push: {
-            http: {
-              method: 'POST',
-              url: 'https://example.com/hook',
-              timeout: '10s',
-              proxy: 'http://proxy.internal:8080',
-              headers: {
-                Authorization: 'Bearer token',
-              },
-            },
-            request: {
-              type: 'body',
-              payload: {
-                text: '{{ entry.title }}',
-              },
-            },
-          },
-        },
-      },
-      sources: {
-        feed: {
+test('[contract] resolveConfig: source.http 与 push.request block 应 clone，并保留 source.http.url', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      webhook: {
+        push: {
           http: {
-            url: 'https://example.com/feed.xml',
-            timeout: '5s',
+            method: 'POST',
+            url: 'https://example.com/hook',
+            timeout: '10s',
+            proxy: 'http://proxy.internal:8080',
             headers: {
-              'User-Agent': 'knock-test',
+              Authorization: 'Bearer token',
             },
           },
-          deliveries: {
-            webhook: {},
+          request: {
+            type: 'body',
+            payload: {
+              text: '{{ entry.title }}',
+            },
           },
         },
       },
-    }
+    },
+    sources: {
+      feed: {
+        http: {
+          url: 'https://example.com/feed.xml',
+          timeout: '5s',
+          headers: {
+            'User-Agent': 'knock-test',
+          },
+        },
+        deliveries: {
+          webhook: {},
+        },
+      },
+    },
+  }
 
-    const resolved = resolveConfig(validateConfig(input))
-    const resolvedSource = resolved.sources[0]
-    const resolvedDelivery = resolved.deliveries[0]
-    const sourceDelivery = resolvedSource.deliveries[0]
+  const resolved = resolveConfig(validateConfig(input))
+  const resolvedSource = resolved.sources[0]
+  const resolvedDelivery = resolved.deliveries[0]
+  const sourceDelivery = resolvedSource.deliveries[0]
 
-    assertEquals(resolvedSource.http!.url, 'https://example.com/feed.xml')
-    assertEquals(resolvedSource.http!.timeout, '5s')
-    assertEquals(resolvedDelivery.push?.http.timeout, '10s')
-    assertEquals(sourceDelivery.push?.http.proxy, 'http://proxy.internal:8080')
-    assertNotStrictEquals(resolvedDelivery.push?.http, sourceDelivery.push?.http)
-    assertNotStrictEquals(resolvedDelivery.push?.http.headers, sourceDelivery.push?.http.headers)
-    assertNotStrictEquals(resolvedDelivery.push?.request, sourceDelivery.push?.request)
-  },
-)
+  assertEquals(resolvedSource.http!.url, 'https://example.com/feed.xml')
+  assertEquals(resolvedSource.http!.timeout, '5s')
+  assertEquals(resolvedDelivery.push?.http.timeout, '10s')
+  assertEquals(sourceDelivery.push?.http.proxy, 'http://proxy.internal:8080')
+  assertNotStrictEquals(resolvedDelivery.push?.http, sourceDelivery.push?.http)
+  assertNotStrictEquals(resolvedDelivery.push?.http.headers, sourceDelivery.push?.http.headers)
+  assertNotStrictEquals(resolvedDelivery.push?.request, sourceDelivery.push?.request)
+})
 
-Deno.test('[contract] resolveConfig: 缺省 deliveries 时应收口为空数组', () => {
+test('[contract] resolveConfig: 缺省 deliveries 时应收口为空数组', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
   }
@@ -376,7 +371,7 @@ Deno.test('[contract] resolveConfig: 缺省 deliveries 时应收口为空数组'
   assertEquals(resolved.deliveries, [])
 })
 
-Deno.test('[contract] resolveConfig: source.byparr 应进入 resolved 层并保持字段', () => {
+test('[contract] resolveConfig: source.byparr 应进入 resolved 层并保持字段', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sources: {
@@ -402,7 +397,7 @@ Deno.test('[contract] resolveConfig: source.byparr 应进入 resolved 层并保�
   assertEquals(resolved.sources[0].byparr?.proxy, 'http://user:pass@127.0.0.1:8080')
 })
 
-Deno.test('[contract] resolveConfig: summary source 应解析 summary shape 并清空抓取分支', () => {
+test('[contract] resolveConfig: summary source 应解析 summary shape 并清空抓取分支', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sources: {
@@ -446,34 +441,31 @@ Deno.test('[contract] resolveConfig: summary source 应解析 summary shape 并�
   assertEquals(summarySource?.xquery, undefined)
 })
 
-Deno.test(
-  '[contract] resolveConfig: 缺省全局块时应收口为空数组、默认日志配置与默认 sqlite 配置',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-    }
+test('[contract] resolveConfig: 缺省全局块时应收口为空数组、默认日志配置与默认 sqlite 配置', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+  }
 
-    const resolved = resolveConfig(validateConfig(input))
-    assertEquals(resolved.deliveries, [])
-    assertEquals(resolved.sources, [])
-    assertEquals(resolved.sqlite, {
-      path: '/tmp/runtime/knock.db',
-      busyTimeout: '5s',
-      journalMode: 'WAL',
-      retention: {
-        maxAge: '180d',
-        maxEntriesPerSource: 1000,
-        vacuum: 'off',
-      },
-    })
-    assertEquals(resolved.logging, {
-      level: 'info',
-      sinks: {},
-    })
-  },
-)
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.deliveries, [])
+  assertEquals(resolved.sources, [])
+  assertEquals(resolved.sqlite, {
+    path: '/tmp/runtime/knock.db',
+    busyTimeout: '5s',
+    journalMode: 'WAL',
+    retention: {
+      maxAge: '180d',
+      maxEntriesPerSource: 1000,
+      vacuum: 'off',
+    },
+  })
+  assertEquals(resolved.logging, {
+    level: 'info',
+    sinks: {},
+  })
+})
 
-Deno.test('[contract] resolveConfig: source 未配置 enabled 时默认启用', () => {
+test('[contract] resolveConfig: source 未配置 enabled 时默认启用', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sources: {
@@ -490,7 +482,7 @@ Deno.test('[contract] resolveConfig: source 未配置 enabled 时默认启用', 
   assertEquals(resolved.sources[0].enabled, true)
 })
 
-Deno.test('[contract] resolveConfig: source 未显式配置 parser 时默认补为 syndication', () => {
+test('[contract] resolveConfig: source 未显式配置 parser 时默认补为 syndication', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sources: {
@@ -508,7 +500,7 @@ Deno.test('[contract] resolveConfig: source 未显式配置 parser 时默认补�
   assertEquals(resolved.sources[0].xquery, undefined)
 })
 
-Deno.test('[contract] resolveConfig: source 应保留 schedule 配置', () => {
+test('[contract] resolveConfig: source 应保留 schedule 配置', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sources: {
@@ -526,7 +518,7 @@ Deno.test('[contract] resolveConfig: source 应保留 schedule 配置', () => {
   assertEquals(resolved.sources[0].schedule, '*/5 * * * *')
 })
 
-Deno.test('[contract] resolveConfig: source 显式 enabled=false 时应保留禁用状态', () => {
+test('[contract] resolveConfig: source 显式 enabled=false 时应保留禁用状态', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sources: {
@@ -544,7 +536,7 @@ Deno.test('[contract] resolveConfig: source 显式 enabled=false 时应保留禁
   assertEquals(resolved.sources[0].enabled, false)
 })
 
-Deno.test('[contract] resolveConfig: 未配置 language 时应补系统语言，失败时回退 zh-CN', () => {
+test('[contract] resolveConfig: 未配置 language 时应补系统语言，失败时回退 zh-CN', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
   }
@@ -553,7 +545,7 @@ Deno.test('[contract] resolveConfig: 未配置 language 时应补系统语言，
   assertEquals(resolved.language?.length ? true : false, true)
 })
 
-Deno.test('[contract] resolveConfig: 缺省时应补系统时区与默认时间格式', () => {
+test('[contract] resolveConfig: 缺省时应补系统时区与默认时间格式', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
   }
@@ -563,95 +555,89 @@ Deno.test('[contract] resolveConfig: 缺省时应补系统时区与默认时间�
   assertEquals(resolved.timestampFormat, 'yyyy-MM-dd HH:mm:ss')
 })
 
-Deno.test(
-  '[contract] resolveConfig: source.deliveries keyed map 应展开为声明顺序的 resolved delivery',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-      deliveries: {
-        archive: {
-          file: { path: 'a.md', content: '{{ entry.title }}' },
-        },
-        webhook: {
-          push: {
-            http: {
-              method: 'POST',
-              url: 'https://example.com/hook',
-            },
-          },
-        },
+test('[contract] resolveConfig: source.deliveries keyed map 应展开为声明顺序的 resolved delivery', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      archive: {
+        file: { path: 'a.md', content: '{{ entry.title }}' },
       },
-      sources: {
-        s1: {
+      webhook: {
+        push: {
           http: {
-            url: 'https://example.com/feed.xml',
-          },
-          deliveries: {
-            archive: {},
-            webhook: {},
+            method: 'POST',
+            url: 'https://example.com/hook',
           },
         },
       },
-    }
-
-    const resolved = resolveConfig(validateConfig(input))
-    assertEquals(resolved.deliveries.length, 2)
-    assertEquals(resolved.sources.length, 1)
-    assertEquals(resolved.sources[0].deliveries.length, 2)
-    assertEquals(resolved.sources[0].deliveries[0].id, 's1__archive')
-    assertEquals(resolved.sources[0].deliveries[0].file?.content, '{{ entry.title }}')
-    assertEquals(resolved.sources[0].deliveries[1].id, 's1__webhook')
-    assertEquals(resolved.sources[0].deliveries[1].push?.http.url, 'https://example.com/hook')
-  },
-)
-
-Deno.test(
-  '[contract] resolveConfig: delivery 显式 enabled=false 时应从 canonical 与 source resolved 列表剔除',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-      deliveries: {
-        archive: {
-          enabled: false,
-          file: {
-            path: 'a.md',
-            content: '{{ entry.title }}',
-          },
+    },
+    sources: {
+      s1: {
+        http: {
+          url: 'https://example.com/feed.xml',
         },
-        webhook: {
-          push: {
-            http: {
-              url: 'https://example.com/hook',
-            },
-          },
+        deliveries: {
+          archive: {},
+          webhook: {},
         },
       },
-      sources: {
-        s1: {
+    },
+  }
+
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.deliveries.length, 2)
+  assertEquals(resolved.sources.length, 1)
+  assertEquals(resolved.sources[0].deliveries.length, 2)
+  assertEquals(resolved.sources[0].deliveries[0].id, 's1__archive')
+  assertEquals(resolved.sources[0].deliveries[0].file?.content, '{{ entry.title }}')
+  assertEquals(resolved.sources[0].deliveries[1].id, 's1__webhook')
+  assertEquals(resolved.sources[0].deliveries[1].push?.http.url, 'https://example.com/hook')
+})
+
+test('[contract] resolveConfig: delivery 显式 enabled=false 时应从 canonical 与 source resolved 列表剔除', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    deliveries: {
+      archive: {
+        enabled: false,
+        file: {
+          path: 'a.md',
+          content: '{{ entry.title }}',
+        },
+      },
+      webhook: {
+        push: {
           http: {
-            url: 'https://example.com/feed.xml',
-          },
-          deliveries: {
-            archive: {},
-            webhook: {},
+            url: 'https://example.com/hook',
           },
         },
       },
-    }
+    },
+    sources: {
+      s1: {
+        http: {
+          url: 'https://example.com/feed.xml',
+        },
+        deliveries: {
+          archive: {},
+          webhook: {},
+        },
+      },
+    },
+  }
 
-    const resolved = resolveConfig(validateConfig(input))
-    assertEquals(
-      resolved.deliveries.map((delivery) => delivery.id),
-      ['webhook'],
-    )
-    assertEquals(
-      resolved.sources[0].deliveries.map((delivery) => delivery.deliveryId),
-      ['webhook'],
-    )
-  },
-)
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(
+    resolved.deliveries.map((delivery) => delivery.id),
+    ['webhook'],
+  )
+  assertEquals(
+    resolved.sources[0].deliveries.map((delivery) => delivery.deliveryId),
+    ['webhook'],
+  )
+})
 
-Deno.test('[contract] resolveConfig: delivery.file.rotation 未显式 enabled 时默认 false', () => {
+test('[contract] resolveConfig: delivery.file.rotation 未显式 enabled 时默认 false', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -675,7 +661,7 @@ Deno.test('[contract] resolveConfig: delivery.file.rotation 未显式 enabled �
   assertEquals(resolved.deliveries[0].file?.rotation?.backups, 3)
 })
 
-Deno.test('[contract] resolveConfig: delivery.file.path 绝对路径应保持原样', () => {
+test('[contract] resolveConfig: delivery.file.path 绝对路径应保持原样', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -692,22 +678,19 @@ Deno.test('[contract] resolveConfig: delivery.file.path 绝对路径应保持原
   assertEquals(resolved.deliveries[0].file?.path, '/var/lib/knock/archive.md')
 })
 
-Deno.test(
-  '[contract] resolveConfig: sqlite.path 相对路径应解析为基于 runtimeDir 的绝对路径',
-  () => {
-    const input: AppConfigInput = {
-      runtimeDir: '/tmp/runtime',
-      sqlite: {
-        path: 'data/custom.db',
-      },
-    }
+test('[contract] resolveConfig: sqlite.path 相对路径应解析为基于 runtimeDir 的绝对路径', () => {
+  const input: AppConfigInput = {
+    runtimeDir: '/tmp/runtime',
+    sqlite: {
+      path: 'data/custom.db',
+    },
+  }
 
-    const resolved = resolveConfig(validateConfig(input))
-    assertEquals(resolved.sqlite.path, '/tmp/runtime/data/custom.db')
-  },
-)
+  const resolved = resolveConfig(validateConfig(input))
+  assertEquals(resolved.sqlite.path, '/tmp/runtime/data/custom.db')
+})
 
-Deno.test('[contract] resolveConfig: email override 应 deep merge message 且数组整体替换', () => {
+test('[contract] resolveConfig: email override 应 deep merge message 且数组整体替换', () => {
   const input = {
     runtimeDir: '/tmp/runtime',
     deliveries: {
@@ -778,7 +761,7 @@ Deno.test('[contract] resolveConfig: email override 应 deep merge message 且�
   )
 })
 
-Deno.test('[contract] resolveConfig: sqlite.path 绝对路径应保持原样', () => {
+test('[contract] resolveConfig: sqlite.path 绝对路径应保持原样', () => {
   const input: AppConfigInput = {
     runtimeDir: '/tmp/runtime',
     sqlite: {
@@ -790,45 +773,42 @@ Deno.test('[contract] resolveConfig: sqlite.path 绝对路径应保持原样', (
   assertEquals(resolved.sqlite.path, '/var/lib/knock/custom.db')
 })
 
-Deno.test(
-  '[contract] resolveConfig: AI defaultModel 缺省时按 provider 与 models 声明顺序选第一个模型',
-  () => {
-    const resolved = resolveConfig(
-      validateConfig({
-        runtimeDir: '/tmp/runtime',
-        ai: {
-          providers: {
-            second: {
-              type: 'anthropic',
-              models: {
-                sonnet: {
-                  model: 'claude-3-7-sonnet-latest',
-                },
+test('[contract] resolveConfig: AI defaultModel 缺省时按 provider 与 models 声明顺序选第一个模型', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          second: {
+            type: 'anthropic',
+            models: {
+              sonnet: {
+                model: 'claude-3-7-sonnet-latest',
               },
             },
-            first: {
-              type: 'openai',
-              models: {
-                mini: {
-                  model: 'gpt-4o-mini',
-                },
-                full: {
-                  model: 'gpt-4o',
-                },
+          },
+          first: {
+            type: 'openai',
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+              },
+              full: {
+                model: 'gpt-4o',
               },
             },
           },
         },
-      } as AppConfigInput),
-    )
+      },
+    } as AppConfigInput),
+  )
 
-    assertEquals(resolved.ai?.defaultModel?.providerId, 'second')
-    assertEquals(resolved.ai?.defaultModel?.modelId, 'sonnet')
-    assertEquals(resolved.ai?.defaultModel?.ref, 'second/sonnet')
-  },
-)
+  assertEquals(resolved.ai?.defaultModel?.providerId, 'second')
+  assertEquals(resolved.ai?.defaultModel?.modelId, 'sonnet')
+  assertEquals(resolved.ai?.defaultModel?.ref, 'second/sonnet')
+})
 
-Deno.test('[contract] resolveConfig: 裸 modelRef 与 providerId/modelId 都应可解析', () => {
+test('[contract] resolveConfig: 裸 modelRef 与 providerId/modelId 都应可解析', () => {
   const resolved = resolveConfig(
     validateConfig({
       runtimeDir: '/tmp/runtime',
@@ -855,7 +835,7 @@ Deno.test('[contract] resolveConfig: 裸 modelRef 与 providerId/modelId 都应�
   assertEquals(resolved.ai?.modelRefs['openai_main/mini']?.ref, 'openai_main/mini')
 })
 
-Deno.test('[contract] resolveConfig: variant options 应与 model options 做浅合并', () => {
+test('[contract] resolveConfig: variant options 应与 model options 做浅合并', () => {
   const resolved = resolveConfig(
     validateConfig({
       runtimeDir: '/tmp/runtime',
@@ -894,39 +874,36 @@ Deno.test('[contract] resolveConfig: variant options 应与 model options 做浅
   })
 })
 
-Deno.test(
-  '[contract] resolveConfig: openai model options 应保留到 resolved 层供 runtime 消费',
-  () => {
-    const resolved = resolveConfig(
-      validateConfig({
-        runtimeDir: '/tmp/runtime',
-        ai: {
-          providers: {
-            openai_main: {
-              type: 'openai',
-              models: {
-                mini: {
-                  model: 'gpt-4o-mini',
-                  options: {
-                    reasoningEffort: 'low',
-                    json: true,
-                  },
+test('[contract] resolveConfig: openai model options 应保留到 resolved 层供 runtime 消费', () => {
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        providers: {
+          openai_main: {
+            type: 'openai',
+            models: {
+              mini: {
+                model: 'gpt-4o-mini',
+                options: {
+                  reasoningEffort: 'low',
+                  json: true,
                 },
               },
             },
           },
         },
-      } as unknown as AppConfigInput),
-    )
+      },
+    } as unknown as AppConfigInput),
+  )
 
-    assertEquals(resolved.ai?.providers[0].models[0].options, {
-      reasoningEffort: 'low',
-      json: true,
-    })
-  },
-)
+  assertEquals(resolved.ai?.providers[0].models[0].options, {
+    reasoningEffort: 'low',
+    json: true,
+  })
+})
 
-Deno.test('[contract] resolveConfig: 热门模型默认表未命中时应回退 provider 默认值', () => {
+test('[contract] resolveConfig: 热门模型默认表未命中时应回退 provider 默认值', () => {
   const resolved = resolveConfig(
     validateConfig({
       runtimeDir: '/tmp/runtime',
@@ -949,7 +926,7 @@ Deno.test('[contract] resolveConfig: 热门模型默认表未命中时应回退 
   assertEquals(resolved.ai?.providers[0].models[0].maxOutputTokens, 8192)
 })
 
-Deno.test('[contract] resolveConfig: provider 根层共同字段应进入 resolved，不会被静默忽略', () => {
+test('[contract] resolveConfig: provider 根层共同字段应进入 resolved，不会被静默忽略', () => {
   const resolved = resolveConfig(
     validateConfig({
       runtimeDir: '/tmp/runtime',

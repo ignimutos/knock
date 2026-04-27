@@ -1,8 +1,9 @@
 import { assertEquals } from '@std/assert'
 import type { DeliveryAttemptPlan } from '../../application/ports/delivery_executor.ts'
 import { createCaptureDeliveryExecutor } from './capture_delivery_executor.ts'
+import { test } from '../../testing/test_api.ts'
 
-Deno.test('[contract] captureDeliveryExecutor: 应记录 attempt 而不触发外部副作用', async () => {
+test('[contract] captureDeliveryExecutor: 应记录 attempt 而不触发外部副作用', async () => {
   const captured: DeliveryAttemptPlan[] = []
   const executor = createCaptureDeliveryExecutor({
     onCaptured: (plan) => captured.push(plan),

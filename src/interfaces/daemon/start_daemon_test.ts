@@ -3,6 +3,7 @@ import { join } from '@std/path'
 import { withOwnedRuntime } from '../../test_runtime.ts'
 import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
 import { startDaemon } from './start_daemon.ts'
+import { test } from '../../testing/test_api.ts'
 
 function parseRecord(line: string): Record<string, unknown> | null {
   try {
@@ -12,7 +13,7 @@ function parseRecord(line: string): Record<string, unknown> | null {
   }
 }
 
-Deno.test('[flow] R15 startDaemon: 应通过 RunDueSourcesUseCase 驱动 source runs', async () => {
+test('[flow] R15 startDaemon: 应通过 RunDueSourcesUseCase 驱动 source runs', async () => {
   const calls: string[] = []
 
   const result = await startDaemon({
@@ -28,7 +29,7 @@ Deno.test('[flow] R15 startDaemon: 应通过 RunDueSourcesUseCase 驱动 source 
   assertEquals(result.mode, 'daemon')
 })
 
-Deno.test('[contract] daemon logger: emitted attributes 不应包含 app.runtime_dir', async () => {
+test('[contract] daemon logger: emitted attributes 不应包含 app.runtime_dir', async () => {
   const output: string[] = []
   const consoleProxy = console as unknown as {
     log: (...args: unknown[]) => void

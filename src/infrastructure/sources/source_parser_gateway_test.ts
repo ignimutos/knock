@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { createLogger } from '../../core/logger.ts'
 import { SourceParserGateway } from './source_parser_gateway.ts'
+import { test } from '../../testing/test_api.ts'
 
 // risk-id: R14
 // layer: contract
@@ -24,58 +25,55 @@ function findParseLog(
   })
 }
 
-Deno.test(
-  '[contract] sourceParserGateway: 应以 RunPlan.source.parser 为准，不得静默回落到其他 parser',
-  async () => {
-    const gateway = new SourceParserGateway({
-      resolveSourceConfig: () => ({
-        id: 'rust',
-        enabled: true,
-        name: 'Rust',
-        http: {
-          url: 'https://example.com/feed.xml',
-        },
-        syndication: {
-          feed: {},
-          entry: {},
-        },
-        deliveries: [],
-      }),
-      timeOptions: {
-        timezone: 'UTC',
-        timestampFormat: 'iso',
+test('[contract] sourceParserGateway: 应以 RunPlan.source.parser 为准，不得静默回落到其他 parser', async () => {
+  const gateway = new SourceParserGateway({
+    resolveSourceConfig: () => ({
+      id: 'rust',
+      enabled: true,
+      name: 'Rust',
+      http: {
+        url: 'https://example.com/feed.xml',
       },
-      language: 'en-US',
-    })
+      syndication: {
+        feed: {},
+        entry: {},
+      },
+      deliveries: [],
+    }),
+    timeOptions: {
+      timezone: 'UTC',
+      timestampFormat: 'iso',
+    },
+    language: 'en-US',
+  })
 
-    await assertRejects(() =>
-      gateway.parse(
-        {
-          runId: 'run-1',
-          source: {
-            kind: 'fetch',
-            sourceId: 'rust',
-            fetcher: 'http',
-            parser: 'xquery',
-          },
-          profile: 'production',
-          effectDomain: 'production',
-          trigger: 'scheduled',
-          scheduledAt: '2026-04-13T10:00:00.000Z',
-          bindings: [],
-        },
-        {
+  await assertRejects(() =>
+    gateway.parse(
+      {
+        runId: 'run-1',
+        source: {
           kind: 'fetch',
-          collectedAt: '2026-04-13T10:00:00.000Z',
-          rawText: '<rss version="2.0"><channel><title>Rust</title></channel></rss>',
-          payloadSummary: { hash: 'hash-1' },
+          sourceId: 'rust',
+          fetcher: 'http',
+          parser: 'xquery',
         },
-      ),
-    )
-  },
-)
+        profile: 'production',
+        effectDomain: 'production',
+        trigger: 'scheduled',
+        scheduledAt: '2026-04-13T10:00:00.000Z',
+        bindings: [],
+      },
+      {
+        kind: 'fetch',
+        collectedAt: '2026-04-13T10:00:00.000Z',
+        rawText: '<rss version="2.0"><channel><title>Rust</title></channel></rss>',
+        payloadSummary: { hash: 'hash-1' },
+      },
+    ),
+  )
+})
 
-Deno.test('[flow] R14 sourceParserGateway: xquery 结果应归一化为统一 feed/item 字段', async () => {
+test('[flow] R14 sourceParserGateway: xquery 结果应归一化为统一 feed/item 字段', async () => {
   const logs: string[] = []
   const gateway = new SourceParserGateway({
     resolveSourceConfig: () => ({
@@ -160,7 +158,7 @@ Deno.test('[flow] R14 sourceParserGateway: xquery 结果应归一化为统一 fe
   assertEquals(attributes['source.item_count'], 1)
 })
 
-Deno.test('[contract] sourceParserGateway: 解析失败应记录失败日志与标准错误字段', async () => {
+test('[contract] sourceParserGateway: 解析失败应记录失败日志与标准错误字段', async () => {
   const logs: string[] = []
   const gateway = new SourceParserGateway({
     resolveSourceConfig: () => ({
@@ -227,86 +225,83 @@ Deno.test('[contract] sourceParserGateway: 解析失败应记录失败日志与�
   assertEquals(typeof attributes['exception.message'], 'string')
 })
 
-Deno.test(
-  '[contract] sourceParserGateway: 解析失败日志应使用稳定错误消息且不泄漏输入片段',
-  async () => {
-    const logs: string[] = []
-    const leakedFragment = 'SECRET_SOURCE_PAYLOAD_FRAGMENT'
-    const gateway = new SourceParserGateway({
-      resolveSourceConfig: () => ({
-        id: 'daily',
-        enabled: true,
-        name: 'Daily',
-        summary: {
-          sources: ['rust'],
-        },
-        deliveries: [],
-      }),
-      summaryQueryService: {
-        getSummaryCheckpoint: () => Promise.resolve('2026-04-13T09:00:00.000Z'),
-        getSummaryInputs: () => {
-          throw new Error(`summary parse failed: ${leakedFragment}`)
-        },
+test('[contract] sourceParserGateway: 解析失败日志应使用稳定错误消息且不泄漏输入片段', async () => {
+  const logs: string[] = []
+  const leakedFragment = 'SECRET_SOURCE_PAYLOAD_FRAGMENT'
+  const gateway = new SourceParserGateway({
+    resolveSourceConfig: () => ({
+      id: 'daily',
+      enabled: true,
+      name: 'Daily',
+      summary: {
+        sources: ['rust'],
       },
-      contentRuntime: {
-        renderContent: (template: string) => Promise.resolve(template),
-        buildContext: () => ({}),
-        shouldPassFilter: () => true,
-        renderPayload: () => Promise.resolve(''),
-      } as unknown as import('../../core/content_runtime.ts').ContentRuntime,
-      timeOptions: {
-        timezone: 'UTC',
-        timestampFormat: 'iso',
+      deliveries: [],
+    }),
+    summaryQueryService: {
+      getSummaryCheckpoint: () => Promise.resolve('2026-04-13T09:00:00.000Z'),
+      getSummaryInputs: () => {
+        throw new Error(`summary parse failed: ${leakedFragment}`)
       },
-      language: 'en-US',
-      logger: createLogger({
-        enabled: true,
-        level: 'info',
-        module: 'source.parse',
-        now: () => new Date('2026-03-24T21:45:12.345Z'),
-        writeStdout: (line: string) => logs.push(line),
-        writeWarn: (line: string) => logs.push(line),
-        writeStderr: (line: string) => logs.push(line),
-      }),
-    })
+    },
+    contentRuntime: {
+      renderContent: (template: string) => Promise.resolve(template),
+      buildContext: () => ({}),
+      shouldPassFilter: () => true,
+      renderPayload: () => Promise.resolve(''),
+    } as unknown as import('../../core/content_runtime.ts').ContentRuntime,
+    timeOptions: {
+      timezone: 'UTC',
+      timestampFormat: 'iso',
+    },
+    language: 'en-US',
+    logger: createLogger({
+      enabled: true,
+      level: 'info',
+      module: 'source.parse',
+      now: () => new Date('2026-03-24T21:45:12.345Z'),
+      writeStdout: (line: string) => logs.push(line),
+      writeWarn: (line: string) => logs.push(line),
+      writeStderr: (line: string) => logs.push(line),
+    }),
+  })
 
-    await assertRejects(() =>
-      gateway.parse(
-        {
-          runId: 'run-5',
-          source: {
-            kind: 'summary',
-            sourceId: 'daily',
-            upstreamSourceIds: ['rust'],
-          },
-          profile: 'preview',
-          effectDomain: 'preview',
-          trigger: 'preview',
-          scheduledAt: '2026-04-13T10:00:00.000Z',
-          bindings: [],
-        },
-        {
+  await assertRejects(() =>
+    gateway.parse(
+      {
+        runId: 'run-5',
+        source: {
           kind: 'summary',
-          collectedAt: '2026-04-13T10:00:00.000Z',
-          payloadSummary: { hash: 'hash-summary-fail' },
-          collectedJson: {},
+          sourceId: 'daily',
+          upstreamSourceIds: ['rust'],
         },
-      ),
-    )
+        profile: 'preview',
+        effectDomain: 'preview',
+        trigger: 'preview',
+        scheduledAt: '2026-04-13T10:00:00.000Z',
+        bindings: [],
+      },
+      {
+        kind: 'summary',
+        collectedAt: '2026-04-13T10:00:00.000Z',
+        payloadSummary: { hash: 'hash-summary-fail' },
+        collectedJson: {},
+      },
+    ),
+  )
 
-    const record = findParseLog(parseLogs(logs), 'failure')
-    const attributes = (record?.attributes ?? {}) as Record<string, unknown>
-    assertEquals(Boolean(record), true)
-    assertEquals(attributes['source.operation'], 'parse_payload')
-    assertEquals(attributes['source.outcome'], 'failure')
-    assertEquals(attributes['source.id'], 'daily')
-    assertEquals(typeof attributes['exception.type'], 'string')
-    assertEquals(attributes['exception.message'], 'source parser failed')
-    assertEquals(JSON.stringify(record).includes(leakedFragment), false)
-  },
-)
+  const record = findParseLog(parseLogs(logs), 'failure')
+  const attributes = (record?.attributes ?? {}) as Record<string, unknown>
+  assertEquals(Boolean(record), true)
+  assertEquals(attributes['source.operation'], 'parse_payload')
+  assertEquals(attributes['source.outcome'], 'failure')
+  assertEquals(attributes['source.id'], 'daily')
+  assertEquals(typeof attributes['exception.type'], 'string')
+  assertEquals(attributes['exception.message'], 'source parser failed')
+  assertEquals(JSON.stringify(record).includes(leakedFragment), false)
+})
 
-Deno.test('[contract] sourceParserGateway: xquery 字符串 map 结果中的额外键应被裁掉', async () => {
+test('[contract] sourceParserGateway: xquery 字符串 map 结果中的额外键应被裁掉', async () => {
   const gateway = new SourceParserGateway({
     resolveSourceConfig: () => ({
       id: 'rust',
@@ -355,66 +350,63 @@ Deno.test('[contract] sourceParserGateway: xquery 字符串 map 结果中的额�
   assertEquals('extra' in parsed.items[0]!, false)
 })
 
-Deno.test(
-  '[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.upstreamSourceIds 为准',
-  async () => {
-    let seenSourceIds: string[] | undefined
+test('[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.upstreamSourceIds 为准', async () => {
+  let seenSourceIds: string[] | undefined
 
-    const gateway = new SourceParserGateway({
-      resolveSourceConfig: () => ({
-        id: 'daily',
-        enabled: true,
-        name: 'Daily',
-        summary: {
-          sources: ['wrong-source'],
-        },
-        deliveries: [],
-      }),
-      summaryQueryService: {
-        getSummaryCheckpoint: () => Promise.resolve('2026-04-13T09:00:00.000Z'),
-        getSummaryInputs: (sourceIds) => {
-          seenSourceIds = sourceIds
-          return Promise.resolve({
-            rust: { name: 'Rust', feed: {}, entries: [] },
-            deno: { name: 'Deno', feed: {}, entries: [] },
-          })
-        },
+  const gateway = new SourceParserGateway({
+    resolveSourceConfig: () => ({
+      id: 'daily',
+      enabled: true,
+      name: 'Daily',
+      summary: {
+        sources: ['wrong-source'],
       },
-      contentRuntime: {
-        renderContent: (template: string) => Promise.resolve(template),
-        buildContext: () => ({}),
-        shouldPassFilter: () => true,
-        renderPayload: () => Promise.resolve(''),
-      } as unknown as import('../../core/content_runtime.ts').ContentRuntime,
-      timeOptions: {
-        timezone: 'UTC',
-        timestampFormat: 'iso',
+      deliveries: [],
+    }),
+    summaryQueryService: {
+      getSummaryCheckpoint: () => Promise.resolve('2026-04-13T09:00:00.000Z'),
+      getSummaryInputs: (sourceIds) => {
+        seenSourceIds = sourceIds
+        return Promise.resolve({
+          rust: { name: 'Rust', feed: {}, entries: [] },
+          deno: { name: 'Deno', feed: {}, entries: [] },
+        })
       },
-      language: 'en-US',
-    })
+    },
+    contentRuntime: {
+      renderContent: (template: string) => Promise.resolve(template),
+      buildContext: () => ({}),
+      shouldPassFilter: () => true,
+      renderPayload: () => Promise.resolve(''),
+    } as unknown as import('../../core/content_runtime.ts').ContentRuntime,
+    timeOptions: {
+      timezone: 'UTC',
+      timestampFormat: 'iso',
+    },
+    language: 'en-US',
+  })
 
-    await gateway.parse(
-      {
-        runId: 'run-summary',
-        source: {
-          kind: 'summary',
-          sourceId: 'daily',
-          upstreamSourceIds: ['rust', 'deno'],
-        },
-        profile: 'preview',
-        effectDomain: 'preview',
-        trigger: 'preview',
-        scheduledAt: '2026-04-13T10:00:00.000Z',
-        bindings: [],
-      },
-      {
+  await gateway.parse(
+    {
+      runId: 'run-summary',
+      source: {
         kind: 'summary',
-        collectedAt: '2026-04-13T10:00:00.000Z',
-        payloadSummary: { hash: 'hash-summary' },
-        collectedJson: {},
+        sourceId: 'daily',
+        upstreamSourceIds: ['rust', 'deno'],
       },
-    )
+      profile: 'preview',
+      effectDomain: 'preview',
+      trigger: 'preview',
+      scheduledAt: '2026-04-13T10:00:00.000Z',
+      bindings: [],
+    },
+    {
+      kind: 'summary',
+      collectedAt: '2026-04-13T10:00:00.000Z',
+      payloadSummary: { hash: 'hash-summary' },
+      collectedJson: {},
+    },
+  )
 
-    assertEquals(seenSourceIds, ['rust', 'deno'])
-  },
-)
+  assertEquals(seenSourceIds, ['rust', 'deno'])
+})

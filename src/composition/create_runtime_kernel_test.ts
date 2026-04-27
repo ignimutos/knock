@@ -4,6 +4,7 @@ import { createInMemoryDb } from '../db/client.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import type { RunSourceResult } from '../application/run_source_use_case.ts'
 import { createRuntimePipeline, createRuntimeKernel } from './create_runtime_kernel.ts'
+import { test } from '../testing/test_api.ts'
 
 function countRows(db: ReturnType<typeof createInMemoryDb>, tableName: string): number {
   const row = db.$client.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as {
@@ -67,59 +68,53 @@ function createTestConfig(runtimeDir: string): AppConfigResolved {
   }
 }
 
-Deno.test(
-  '[contract] runtime kernel: scheduled 模式 listDueSources 仅返回 enabled+scheduled source',
-  async () => {
-    const runtimeDir = '/tmp/knock-runtime-kernel-list-due-sources-scheduled'
-    const config = createTestConfig(runtimeDir)
-    const kernel = createRuntimeKernel({
-      config,
-      definitions: compileDefinitionsFromResolvedConfig(config),
-      now: () => '2026-04-18T10:00:00.000Z',
-      runSourceUseCase: {
-        execute: () => Promise.resolve({} as RunSourceResult),
-      },
-    })
+test('[contract] runtime kernel: scheduled 模式 listDueSources 仅返回 enabled+scheduled source', async () => {
+  const runtimeDir = '/tmp/knock-runtime-kernel-list-due-sources-scheduled'
+  const config = createTestConfig(runtimeDir)
+  const kernel = createRuntimeKernel({
+    config,
+    definitions: compileDefinitionsFromResolvedConfig(config),
+    now: () => '2026-04-18T10:00:00.000Z',
+    runSourceUseCase: {
+      execute: () => Promise.resolve({} as RunSourceResult),
+    },
+  })
 
-    const items = await kernel.sourceQueryService.listDueSources(
-      '2026-04-18T10:00:00.000Z',
-      'scheduled',
-    )
+  const items = await kernel.sourceQueryService.listDueSources(
+    '2026-04-18T10:00:00.000Z',
+    'scheduled',
+  )
 
-    assertEquals(
-      items.map((item) => item.source.sourceId),
-      ['enabled'],
-    )
-  },
-)
+  assertEquals(
+    items.map((item) => item.source.sourceId),
+    ['enabled'],
+  )
+})
 
-Deno.test(
-  '[contract] runtime kernel: immediate 模式 listDueSources 返回全部 enabled source（不看 schedule 匹配）',
-  async () => {
-    const runtimeDir = '/tmp/knock-runtime-kernel-list-due-sources-immediate'
-    const config = createTestConfig(runtimeDir)
-    const kernel = createRuntimeKernel({
-      config,
-      definitions: compileDefinitionsFromResolvedConfig(config),
-      now: () => '2026-04-18T10:00:00.000Z',
-      runSourceUseCase: {
-        execute: () => Promise.resolve({} as RunSourceResult),
-      },
-    })
+test('[contract] runtime kernel: immediate 模式 listDueSources 返回全部 enabled source（不看 schedule 匹配）', async () => {
+  const runtimeDir = '/tmp/knock-runtime-kernel-list-due-sources-immediate'
+  const config = createTestConfig(runtimeDir)
+  const kernel = createRuntimeKernel({
+    config,
+    definitions: compileDefinitionsFromResolvedConfig(config),
+    now: () => '2026-04-18T10:00:00.000Z',
+    runSourceUseCase: {
+      execute: () => Promise.resolve({} as RunSourceResult),
+    },
+  })
 
-    const items = await kernel.sourceQueryService.listDueSources(
-      '2026-04-18T10:00:01.000Z',
-      'immediate',
-    )
+  const items = await kernel.sourceQueryService.listDueSources(
+    '2026-04-18T10:00:01.000Z',
+    'immediate',
+  )
 
-    assertEquals(
-      items.map((item) => item.source.sourceId),
-      ['enabled', 'no-schedule'],
-    )
-  },
-)
+  assertEquals(
+    items.map((item) => item.source.sourceId),
+    ['enabled', 'no-schedule'],
+  )
+})
 
-Deno.test('[contract] runtime kernel: runDueSourcesUseCase 应支持 sourceId 显式执行', async () => {
+test('[contract] runtime kernel: runDueSourcesUseCase 应支持 sourceId 显式执行', async () => {
   const runtimeDir = '/tmp/knock-runtime-kernel-run-due'
   const calls: string[] = []
   const config = createTestConfig(runtimeDir)
@@ -144,7 +139,7 @@ Deno.test('[contract] runtime kernel: runDueSourcesUseCase 应支持 sourceId �
   assertEquals(calls, ['enabled:immediate:2026-04-18T11:05:00.000Z'])
 })
 
-Deno.test('[contract] runtime kernel: preview policy 应关闭 facts 与 dedupe 持久化', async () => {
+test('[contract] runtime kernel: preview policy 应关闭 facts 与 dedupe 持久化', async () => {
   const factsDb = createInMemoryDb()
   const pipeline = createRuntimePipeline({
     factsDb,

@@ -2,6 +2,7 @@ import { assertEquals } from '@std/assert'
 import { createLogger } from '../../core/logger.ts'
 import type { DeliveryAttemptPlan } from '../ports/delivery_executor.ts'
 import { DeliveryStage } from './delivery_stage.ts'
+import { test } from '../../testing/test_api.ts'
 
 // risk-id: R07
 // layer: unit
@@ -24,7 +25,7 @@ function createPlan(): DeliveryAttemptPlan {
   }
 }
 
-Deno.test('[unit] deliveryStage: 成功结果应生成 attempt 终态时间', async () => {
+test('[unit] deliveryStage: 成功结果应生成 attempt 终态时间', async () => {
   const seenPlans: DeliveryAttemptPlan[] = []
   const stage = new DeliveryStage({
     now: (() => {
@@ -47,7 +48,7 @@ Deno.test('[unit] deliveryStage: 成功结果应生成 attempt 终态时间', as
   assertEquals(result.finishedAt, '2026-04-13T10:20:02.000Z')
 })
 
-Deno.test('[unit] deliveryStage: 失败细节应主归属 attempt', async () => {
+test('[unit] deliveryStage: 失败细节应主归属 attempt', async () => {
   const stage = new DeliveryStage({
     now: (() => {
       const values = ['2026-04-13T10:21:01.000Z', '2026-04-13T10:21:02.000Z']
@@ -66,47 +67,44 @@ Deno.test('[unit] deliveryStage: 失败细节应主归属 attempt', async () => 
   assertEquals(result.finishedAt, '2026-04-13T10:21:02.000Z')
 })
 
-Deno.test(
-  '[unit] deliveryStage: success 日志应落 delivery.runtime.dispatch 且仅含调度键',
-  async () => {
-    const stdout: string[] = []
-    const logger = createLogger({
-      enabled: true,
-      level: 'info',
-      module: 'delivery.runtime.dispatch',
-      now: () => new Date('2026-04-13T10:22:00.000Z'),
-      writeStdout: (line: string) => stdout.push(line),
-      writeWarn: () => {},
-      writeStderr: () => {},
-    })
+test('[unit] deliveryStage: success 日志应落 delivery.runtime.dispatch 且仅含调度键', async () => {
+  const stdout: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'delivery.runtime.dispatch',
+    now: () => new Date('2026-04-13T10:22:00.000Z'),
+    writeStdout: (line: string) => stdout.push(line),
+    writeWarn: () => {},
+    writeStderr: () => {},
+  })
 
-    const deps = {
-      now: (() => {
-        const values = ['2026-04-13T10:22:01.000Z', '2026-04-13T10:22:02.000Z']
-        return () => values.shift() ?? '2026-04-13T10:22:02.000Z'
-      })(),
-      executor: {
-        execute: () => Promise.resolve(),
-      },
-      logger,
-    }
+  const deps = {
+    now: (() => {
+      const values = ['2026-04-13T10:22:01.000Z', '2026-04-13T10:22:02.000Z']
+      return () => values.shift() ?? '2026-04-13T10:22:02.000Z'
+    })(),
+    executor: {
+      execute: () => Promise.resolve(),
+    },
+    logger,
+  }
 
-    await new DeliveryStage(deps).run(createPlan())
+  await new DeliveryStage(deps).run(createPlan())
 
-    assertEquals(stdout.length, 1)
-    const record = JSON.parse(stdout[0]!) as Record<string, unknown>
-    const scope = (record.scope ?? {}) as Record<string, unknown>
-    const attributes = (record.attributes ?? {}) as Record<string, unknown>
-    assertEquals(scope.name, 'delivery.runtime.dispatch')
-    assertEquals(attributes['delivery.operation'], 'dispatch')
-    assertEquals(attributes['delivery.outcome'], 'success')
-    assertEquals(attributes['delivery.id'], 'telegram')
-    assertEquals(attributes['pipeline.item_id'], 'item-1')
-    assertEquals(attributes['payload'], undefined)
-  },
-)
+  assertEquals(stdout.length, 1)
+  const record = JSON.parse(stdout[0]!) as Record<string, unknown>
+  const scope = (record.scope ?? {}) as Record<string, unknown>
+  const attributes = (record.attributes ?? {}) as Record<string, unknown>
+  assertEquals(scope.name, 'delivery.runtime.dispatch')
+  assertEquals(attributes['delivery.operation'], 'dispatch')
+  assertEquals(attributes['delivery.outcome'], 'success')
+  assertEquals(attributes['delivery.id'], 'telegram')
+  assertEquals(attributes['pipeline.item_id'], 'item-1')
+  assertEquals(attributes['payload'], undefined)
+})
 
-Deno.test('[unit] deliveryStage: failure 日志应包含标准错误字段并保持 payload-free', async () => {
+test('[unit] deliveryStage: failure 日志应包含标准错误字段并保持 payload-free', async () => {
   const stderr: string[] = []
   const logger = createLogger({
     enabled: true,
@@ -145,7 +143,7 @@ Deno.test('[unit] deliveryStage: failure 日志应包含标准错误字段并保
   assertEquals(attributes['payload'], undefined)
 })
 
-Deno.test('[unit] deliveryStage: failure 日志应使用稳定安全异常摘要且不泄漏敏感片段', async () => {
+test('[unit] deliveryStage: failure 日志应使用稳定安全异常摘要且不泄漏敏感片段', async () => {
   const stderr: string[] = []
   const logger = createLogger({
     enabled: true,

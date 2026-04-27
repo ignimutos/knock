@@ -1,7 +1,8 @@
 import { assertEquals } from '@std/assert'
 import { createSourceFixture } from './fixture_factory.ts'
+import { test } from './test_api.ts'
 
-Deno.test('fixture-factory: 默认 source fixture 可直接用于测试', () => {
+test('fixture-factory: 默认 source fixture 可直接用于测试', () => {
   const fixture = createSourceFixture()
 
   assertEquals(fixture.id, 'source-default')
@@ -11,7 +12,7 @@ Deno.test('fixture-factory: 默认 source fixture 可直接用于测试', () => 
   assertEquals(fixture.deliveries, {})
 })
 
-Deno.test('fixture-factory: 支持 overrides 覆写默认字段', () => {
+test('fixture-factory: 支持 overrides 覆写默认字段', () => {
   const fixture = createSourceFixture({
     id: 'source-rust',
     enabled: false,

@@ -11,6 +11,7 @@ import {
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { createProductionRuntime } from '../composition/create_production_runtime.ts'
 import { executePreviewSource } from './web/preview_runtime.ts'
+import { test } from '../testing/test_api.ts'
 
 type RuntimeExecution = {
   source: SourceDefinition
@@ -65,13 +66,11 @@ function sortExecutions(executions: RuntimeExecution[]): RuntimeExecution[] {
   )
 }
 
-Deno.test(
-  '[contract] runtime definitions: daemon 与 preview 应看到一致的 SourceDefinition 与 DeliveryBinding',
-  async () => {
-    await withOwnedRuntime(async ({ runtimeDir }) => {
-      await Deno.writeTextFile(
-        join(runtimeDir, 'config.yml'),
-        `
+test('[contract] runtime definitions: daemon 与 preview 应看到一致的 SourceDefinition 与 DeliveryBinding', async () => {
+  await withOwnedRuntime(async ({ runtimeDir }) => {
+    await Deno.writeTextFile(
+      join(runtimeDir, 'config.yml'),
+      `
 language: zh-CN
 timezone: UTC
 timestampFormat: yyyy-MM-dd HH:mm:ss
@@ -125,179 +124,178 @@ sources:
       webhook: {}
       mailer: {}
 `,
-      )
+    )
 
-      const config = await loadConfig({ runtimeDir })
-      const rustSource = config.sources.find((source) => source.id === 'rust')
-      const digestSource = config.sources.find((source) => source.id === 'digest')
-      if (!rustSource || !digestSource) {
-        throw new Error('测试配置缺少 rust 或 digest source')
+    const config = await loadConfig({ runtimeDir })
+    const rustSource = config.sources.find((source) => source.id === 'rust')
+    const digestSource = config.sources.find((source) => source.id === 'digest')
+    if (!rustSource || !digestSource) {
+      throw new Error('测试配置缺少 rust 或 digest source')
+    }
+
+    const previewCalls: RuntimeExecution[] = []
+    const daemonCalls: RuntimeExecution[] = []
+    const originalExecute = RunSourceUseCase.prototype.execute
+
+    try {
+      let currentCollector = previewCalls
+      RunSourceUseCase.prototype.execute = function (
+        input: RunSourceRequest,
+      ): Promise<RunSourceResult> {
+        currentCollector.push(captureExecution(input))
+        return Promise.resolve(createStubResult(input))
       }
 
-      const previewCalls: RuntimeExecution[] = []
-      const daemonCalls: RuntimeExecution[] = []
-      const originalExecute = RunSourceUseCase.prototype.execute
+      await executePreviewSource({
+        config,
+        source: rustSource,
+      })
+      await executePreviewSource({
+        config,
+        source: digestSource,
+      })
 
+      currentCollector = daemonCalls
+      const daemon = createProductionRuntime({
+        config,
+        keepAlive: false,
+      })
       try {
-        let currentCollector = previewCalls
-        RunSourceUseCase.prototype.execute = function (
-          input: RunSourceRequest,
-        ): Promise<RunSourceResult> {
-          currentCollector.push(captureExecution(input))
-          return Promise.resolve(createStubResult(input))
-        }
-
-        await executePreviewSource({
-          config,
-          source: rustSource,
-        })
-        await executePreviewSource({
-          config,
-          source: digestSource,
-        })
-
-        currentCollector = daemonCalls
-        const daemon = createProductionRuntime({
-          config,
-          keepAlive: false,
-        })
-        try {
-          await daemon.runImmediate()
-        } finally {
-          daemon.stop()
-        }
+        await daemon.runImmediate()
       } finally {
-        RunSourceUseCase.prototype.execute = originalExecute
+        daemon.stop()
       }
+    } finally {
+      RunSourceUseCase.prototype.execute = originalExecute
+    }
 
-      assertEquals(sortExecutions(previewCalls), sortExecutions(daemonCalls))
-      assertEquals(sortExecutions(previewCalls), [
-        {
-          source: {
-            kind: 'summary',
+    assertEquals(sortExecutions(previewCalls), sortExecutions(daemonCalls))
+    assertEquals(sortExecutions(previewCalls), [
+      {
+        source: {
+          kind: 'summary',
+          sourceId: 'digest',
+          upstreamSourceIds: ['rust'],
+        },
+        bindings: [
+          {
             sourceId: 'digest',
-            upstreamSourceIds: ['rust'],
-          },
-          bindings: [
-            {
-              sourceId: 'digest',
+            deliveryId: 'archive',
+            definition: {
+              kind: 'file',
               deliveryId: 'archive',
-              definition: {
-                kind: 'file',
-                deliveryId: 'archive',
-                path: join(runtimeDir, 'outputs/archive.md'),
-                contentTemplate: '{{ entry.title }}',
-                rotation: undefined,
-              },
+              path: join(runtimeDir, 'outputs/archive.md'),
+              contentTemplate: '{{ entry.title }}',
+              rotation: undefined,
             },
-            {
-              sourceId: 'digest',
+          },
+          {
+            sourceId: 'digest',
+            deliveryId: 'webhook',
+            definition: {
+              kind: 'push',
               deliveryId: 'webhook',
-              definition: {
-                kind: 'push',
-                deliveryId: 'webhook',
-                http: {
-                  method: 'POST',
-                  url: 'https://example.com/hook',
-                  headers: undefined,
-                },
-                requestType: 'body',
-                payloadTemplate: {
-                  text: '{{ entry.title }}',
-                },
-                response: undefined,
+              http: {
+                method: 'POST',
+                url: 'https://example.com/hook',
+                headers: undefined,
               },
+              requestType: 'body',
+              payloadTemplate: {
+                text: '{{ entry.title }}',
+              },
+              response: undefined,
             },
-            {
-              sourceId: 'digest',
+          },
+          {
+            sourceId: 'digest',
+            deliveryId: 'mailer',
+            definition: {
+              kind: 'email',
               deliveryId: 'mailer',
-              definition: {
-                kind: 'email',
-                deliveryId: 'mailer',
-                smtp: {
-                  host: 'smtp.example.com',
-                  port: 587,
-                  security: 'starttls',
-                  auth: undefined,
-                },
-                messageTemplate: {
-                  from: 'bot@example.com',
-                  to: ['ops@example.com'],
-                  cc: undefined,
-                  bcc: undefined,
-                  replyTo: undefined,
-                  subject: '[{{ source.title }}] {{ entry.title }}',
-                  text: '{{ entry.description }}',
-                  headers: undefined,
-                },
+              smtp: {
+                host: 'smtp.example.com',
+                port: 587,
+                security: 'starttls',
+                auth: undefined,
+              },
+              messageTemplate: {
+                from: 'bot@example.com',
+                to: ['ops@example.com'],
+                cc: undefined,
+                bcc: undefined,
+                replyTo: undefined,
+                subject: '[{{ source.title }}] {{ entry.title }}',
+                text: '{{ entry.description }}',
+                headers: undefined,
               },
             },
-          ],
+          },
+        ],
+      },
+      {
+        source: {
+          kind: 'fetch',
+          sourceId: 'rust',
+          fetcher: 'http',
+          parser: 'syndication',
         },
-        {
-          source: {
-            kind: 'fetch',
+        bindings: [
+          {
             sourceId: 'rust',
-            fetcher: 'http',
-            parser: 'syndication',
-          },
-          bindings: [
-            {
-              sourceId: 'rust',
+            deliveryId: 'archive',
+            definition: {
+              kind: 'file',
               deliveryId: 'archive',
-              definition: {
-                kind: 'file',
-                deliveryId: 'archive',
-                path: join(runtimeDir, 'outputs/archive.md'),
-                contentTemplate: '{{ entry.title }}',
-                rotation: undefined,
-              },
+              path: join(runtimeDir, 'outputs/archive.md'),
+              contentTemplate: '{{ entry.title }}',
+              rotation: undefined,
             },
-            {
-              sourceId: 'rust',
+          },
+          {
+            sourceId: 'rust',
+            deliveryId: 'webhook',
+            definition: {
+              kind: 'push',
               deliveryId: 'webhook',
-              definition: {
-                kind: 'push',
-                deliveryId: 'webhook',
-                http: {
-                  method: 'POST',
-                  url: 'https://example.com/hook',
-                  headers: undefined,
-                },
-                requestType: 'body',
-                payloadTemplate: {
-                  text: '{{ entry.title }}',
-                },
-                response: undefined,
+              http: {
+                method: 'POST',
+                url: 'https://example.com/hook',
+                headers: undefined,
               },
+              requestType: 'body',
+              payloadTemplate: {
+                text: '{{ entry.title }}',
+              },
+              response: undefined,
             },
-            {
-              sourceId: 'rust',
+          },
+          {
+            sourceId: 'rust',
+            deliveryId: 'mailer',
+            definition: {
+              kind: 'email',
               deliveryId: 'mailer',
-              definition: {
-                kind: 'email',
-                deliveryId: 'mailer',
-                smtp: {
-                  host: 'smtp.example.com',
-                  port: 587,
-                  security: 'starttls',
-                  auth: undefined,
-                },
-                messageTemplate: {
-                  from: 'bot@example.com',
-                  to: ['ops@example.com'],
-                  cc: undefined,
-                  bcc: undefined,
-                  replyTo: undefined,
-                  subject: '[{{ source.title }}] {{ entry.title }}',
-                  text: '{{ entry.description }}',
-                  headers: undefined,
-                },
+              smtp: {
+                host: 'smtp.example.com',
+                port: 587,
+                security: 'starttls',
+                auth: undefined,
+              },
+              messageTemplate: {
+                from: 'bot@example.com',
+                to: ['ops@example.com'],
+                cc: undefined,
+                bcc: undefined,
+                replyTo: undefined,
+                subject: '[{{ source.title }}] {{ entry.title }}',
+                text: '{{ entry.description }}',
+                headers: undefined,
               },
             },
-          ],
-        },
-      ])
-    })
-  },
-)
+          },
+        ],
+      },
+    ])
+  })
+})

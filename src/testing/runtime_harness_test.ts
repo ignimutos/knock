@@ -2,8 +2,9 @@ import { assertEquals } from '@std/assert'
 import { exists } from '@std/fs'
 import { join } from '@std/path'
 import { withRuntimeHarness } from './runtime_harness.ts'
+import { test } from './test_api.ts'
 
-Deno.test('runtime-harness: 应自动 prepare 与 cleanup', async () => {
+test('runtime-harness: 应自动 prepare 与 cleanup', async () => {
   let runtimeDirFromRun = ''
 
   await withRuntimeHarness(async ({ runtimeDir }) => {
@@ -16,7 +17,7 @@ Deno.test('runtime-harness: 应自动 prepare 与 cleanup', async () => {
   assertEquals(await exists(runtimeDirFromRun), false)
 })
 
-Deno.test('runtime-harness: 兼容传入 runtimeDir 的旧调用形式', async () => {
+test('runtime-harness: 兼容传入 runtimeDir 的旧调用形式', async () => {
   const runtimeDir = join(Deno.cwd(), '.tmp', 'runtime-harness-compat')
   const stalePath = join(runtimeDir, 'stale.txt')
 

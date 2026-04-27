@@ -1,3 +1,5 @@
+import { test as nodeTest } from 'node:test'
+
 export interface RepoTestOptions {
   layer?: 'unit' | 'contract' | 'flow'
 }
@@ -12,5 +14,5 @@ export function test(
   fn: () => Promise<void> | void,
   options: RepoTestOptions = {},
 ): void {
-  Deno.test(normalizeLayeredName(name, options.layer), fn)
+  nodeTest(normalizeLayeredName(name, options.layer), fn)
 }

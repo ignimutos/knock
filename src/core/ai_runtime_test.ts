@@ -5,6 +5,7 @@ import { validateConfig } from '../config/validate_config.ts'
 import type { AppConfigInput } from '../config/schema.ts'
 import { createAiRuntime } from './ai_runtime.ts'
 import { createLogger } from './logger.ts'
+import { test } from '../testing/test_api.ts'
 
 function createResolvedAiConfig(context = 8192) {
   return resolveConfig(
@@ -76,7 +77,7 @@ function createJsonLogger(lines: string[], module = 'core.ai.runtime') {
   })
 }
 
-Deno.test('[contract] aiRuntime: translate 0 参数走默认模型与默认 language', async () => {
+test('[contract] aiRuntime: translate 0 参数走默认模型与默认 language', async () => {
   const calls: Array<Record<string, unknown>> = []
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(),
@@ -97,37 +98,34 @@ Deno.test('[contract] aiRuntime: translate 0 参数走默认模型与默认 lang
   assertEquals(calls[0].providerOptions, { openai: { reasoningEffort: 'low' } })
 })
 
-Deno.test(
-  '[contract] aiRuntime: translate 应解析 modelRef 与 variant 并下发白名单 providerOptions',
-  async () => {
-    const calls: Array<Record<string, unknown>> = []
-    const runtime = createAiRuntime({
-      ai: createResolvedAiConfig(),
-      defaultLanguage: 'zh-CN',
-      generateText: (input) => {
-        calls.push(input as unknown as Record<string, unknown>)
-        return Promise.resolve({ text: '创意译文' })
-      },
-    })
+test('[contract] aiRuntime: translate 应解析 modelRef 与 variant 并下发白名单 providerOptions', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: '创意译文' })
+    },
+  })
 
-    const out = await runtime.translate(runtime.createEntryRuntime('s1', 'e1'), 'hello world', {
-      model: 'openai_main/default',
-      variant: 'creative',
-      language: 'en',
-    })
+  const out = await runtime.translate(runtime.createEntryRuntime('s1', 'e1'), 'hello world', {
+    model: 'openai_main/default',
+    variant: 'creative',
+    language: 'en',
+  })
 
-    assertEquals(out, '创意译文')
-    assertEquals(calls.length, 1)
-    assertEquals(calls[0].temperature, 0.8)
-    assertEquals(calls[0].maxOutputTokens, 300)
-    assertEquals(calls[0].providerOptions, {
-      openai: { reasoningEffort: 'medium', responseFormat: { type: 'json_object' } },
-    })
-    assertEquals(String(calls[0].system).includes('en'), true)
-  },
-)
+  assertEquals(out, '创意译文')
+  assertEquals(calls.length, 1)
+  assertEquals(calls[0].temperature, 0.8)
+  assertEquals(calls[0].maxOutputTokens, 300)
+  assertEquals(calls[0].providerOptions, {
+    openai: { reasoningEffort: 'medium', responseFormat: { type: 'json_object' } },
+  })
+  assertEquals(String(calls[0].system).includes('en'), true)
+})
 
-Deno.test('[contract] aiRuntime: entry 级缓存应复用 in-flight 与成功结果', async () => {
+test('[contract] aiRuntime: entry 级缓存应复用 in-flight 与成功结果', async () => {
   let callCount = 0
   let resolveCall: ((value: { text: string }) => void) | undefined
   const runtime = createAiRuntime({
@@ -156,7 +154,7 @@ Deno.test('[contract] aiRuntime: entry 级缓存应复用 in-flight 与成功结
   assertEquals(callCount, 1)
 })
 
-Deno.test('[contract] aiRuntime: 失败结果也应在 entry 级缓存中复用并继续抛错', async () => {
+test('[contract] aiRuntime: 失败结果也应在 entry 级缓存中复用并继续抛错', async () => {
   let callCount = 0
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(),
@@ -173,7 +171,7 @@ Deno.test('[contract] aiRuntime: 失败结果也应在 entry 级缓存中复用�
   assertEquals(callCount, 1)
 })
 
-Deno.test('[contract] aiRuntime: translate 超长时按段调用并只让每段输出当前 chunk', async () => {
+test('[contract] aiRuntime: translate 超长时按段调用并只让每段输出当前 chunk', async () => {
   const prompts: string[] = []
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(1500),
@@ -203,7 +201,7 @@ Deno.test('[contract] aiRuntime: translate 超长时按段调用并只让每段�
   )
 })
 
-Deno.test('[contract] aiRuntime: summarize 默认保持原文主语言并使用默认 200 字约束', async () => {
+test('[contract] aiRuntime: summarize 默认保持原文主语言并使用默认 200 字约束', async () => {
   const calls: Array<Record<string, unknown>> = []
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(),
@@ -222,32 +220,29 @@ Deno.test('[contract] aiRuntime: summarize 默认保持原文主语言并使用�
   assertStringIncludes(String(calls[0].system), '最终摘要限制在 200 字以内')
 })
 
-Deno.test(
-  '[contract] aiRuntime: summarize 显式 language 时直接生成目标语言摘要并应用 length',
-  async () => {
-    const calls: Array<Record<string, unknown>> = []
-    const runtime = createAiRuntime({
-      ai: createResolvedAiConfig(),
-      defaultLanguage: 'zh-CN',
-      generateText: (input) => {
-        calls.push(input as unknown as Record<string, unknown>)
-        return Promise.resolve({ text: 'summary' })
-      },
-    })
+test('[contract] aiRuntime: summarize 显式 language 时直接生成目标语言摘要并应用 length', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: 'summary' })
+    },
+  })
 
-    const out = await runtime.summarize(runtime.createEntryRuntime('s1', 'e1'), 'hello world', {
-      language: 'ja',
-      length: 80,
-    })
+  const out = await runtime.summarize(runtime.createEntryRuntime('s1', 'e1'), 'hello world', {
+    language: 'ja',
+    length: 80,
+  })
 
-    assertEquals(out, 'summary')
-    assertEquals(calls.length, 1)
-    assertStringIncludes(String(calls[0].system), '直接输出 ja 摘要')
-    assertStringIncludes(String(calls[0].system), '最终摘要限制在 80 字以内')
-  },
-)
+  assertEquals(out, 'summary')
+  assertEquals(calls.length, 1)
+  assertStringIncludes(String(calls[0].system), '直接输出 ja 摘要')
+  assertStringIncludes(String(calls[0].system), '最终摘要限制在 80 字以内')
+})
 
-Deno.test('[contract] aiRuntime: summarize 超长时应先分段摘要再做 reduce', async () => {
+test('[contract] aiRuntime: summarize 超长时应先分段摘要再做 reduce', async () => {
   const stages: Array<{ system: string; prompt: string; maxOutputTokens?: unknown }> = []
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(1500),
@@ -280,92 +275,86 @@ Deno.test('[contract] aiRuntime: summarize 超长时应先分段摘要再做 red
   assertStringIncludes(reduceStage?.system ?? '', '最终摘要限制在 200 字以内')
 })
 
-Deno.test(
-  '[contract] aiRuntime: summarize reduce 输入超长时仍应保留所有 chunk 摘要并分层 reduce',
-  async () => {
-    const prompts: string[] = []
-    let reduceCallCount = 0
-    const runtime = createAiRuntime({
-      ai: createResolvedAiConfig(2200),
-      defaultLanguage: 'zh-CN',
-      generateText: (input) => {
-        const prompt = String(input.prompt)
-        prompts.push(prompt)
-        const isReduce = prompt.includes('<CHUNK_SUMMARIES>')
-        if (!isReduce) {
-          const match = prompt.match(/<CHUNK index="(\d+)"/)
-          return Promise.resolve({ text: `chunk-${match?.[1] ?? 'x'}-${'S'.repeat(1200)}` })
-        }
-        reduceCallCount += 1
-        return Promise.resolve({
-          text:
-            prompt.includes('mid-') || prompt.includes('final-summary')
-              ? 'final-summary'
-              : `mid-${reduceCallCount}-${'R'.repeat(1200)}`,
-        })
-      },
-    })
+test('[contract] aiRuntime: summarize reduce 输入超长时仍应保留所有 chunk 摘要并分层 reduce', async () => {
+  const prompts: string[] = []
+  let reduceCallCount = 0
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(2200),
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      const prompt = String(input.prompt)
+      prompts.push(prompt)
+      const isReduce = prompt.includes('<CHUNK_SUMMARIES>')
+      if (!isReduce) {
+        const match = prompt.match(/<CHUNK index="(\d+)"/)
+        return Promise.resolve({ text: `chunk-${match?.[1] ?? 'x'}-${'S'.repeat(1200)}` })
+      }
+      reduceCallCount += 1
+      return Promise.resolve({
+        text:
+          prompt.includes('mid-') || prompt.includes('final-summary')
+            ? 'final-summary'
+            : `mid-${reduceCallCount}-${'R'.repeat(1200)}`,
+      })
+    },
+  })
 
-    const text = ['A'.repeat(2400), 'B'.repeat(2400), 'C'.repeat(2400)].join('\n\n')
-    const out = await runtime.summarize(runtime.createEntryRuntime('s1', 'e1'), text)
+  const text = ['A'.repeat(2400), 'B'.repeat(2400), 'C'.repeat(2400)].join('\n\n')
+  const out = await runtime.summarize(runtime.createEntryRuntime('s1', 'e1'), text)
 
-    assertEquals(out, 'final-summary')
-    const reducePrompts = prompts.filter((prompt) => prompt.includes('<CHUNK_SUMMARIES>'))
-    assertEquals(reducePrompts.length > 1, true)
-    const firstLevelReduce = reducePrompts.slice(0, -1).join('\n')
-    assertEquals(firstLevelReduce.includes('chunk-1-'), true)
-    assertEquals(firstLevelReduce.includes('chunk-2-'), true)
-    assertEquals(firstLevelReduce.includes('chunk-3-'), true)
-    const higherLevelReduce = reducePrompts.slice(1).join('\n')
-    assertEquals(
-      higherLevelReduce.includes('mid-') || higherLevelReduce.includes('final-summary'),
-      true,
-    )
-  },
-)
+  assertEquals(out, 'final-summary')
+  const reducePrompts = prompts.filter((prompt) => prompt.includes('<CHUNK_SUMMARIES>'))
+  assertEquals(reducePrompts.length > 1, true)
+  const firstLevelReduce = reducePrompts.slice(0, -1).join('\n')
+  assertEquals(firstLevelReduce.includes('chunk-1-'), true)
+  assertEquals(firstLevelReduce.includes('chunk-2-'), true)
+  assertEquals(firstLevelReduce.includes('chunk-3-'), true)
+  const higherLevelReduce = reducePrompts.slice(1).join('\n')
+  assertEquals(
+    higherLevelReduce.includes('mid-') || higherLevelReduce.includes('final-summary'),
+    true,
+  )
+})
 
-Deno.test(
-  '[contract] aiRuntime: translate 0 参数应消费 resolved config 默认 language',
-  async () => {
-    const calls: Array<Record<string, unknown>> = []
-    const resolved = resolveConfig(
-      validateConfig({
-        runtimeDir: '/tmp/runtime',
-        ai: {
-          defaultModel: 'openai_main/default',
-          providers: {
-            openai_main: {
-              type: 'openai',
-              apiKey: 'test-key',
-              models: {
-                default: {
-                  model: 'gpt-4o-mini',
-                  context: 8192,
-                  maxOutputTokens: 400,
-                },
+test('[contract] aiRuntime: translate 0 参数应消费 resolved config 默认 language', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const resolved = resolveConfig(
+    validateConfig({
+      runtimeDir: '/tmp/runtime',
+      ai: {
+        defaultModel: 'openai_main/default',
+        providers: {
+          openai_main: {
+            type: 'openai',
+            apiKey: 'test-key',
+            models: {
+              default: {
+                model: 'gpt-4o-mini',
+                context: 8192,
+                maxOutputTokens: 400,
               },
             },
           },
         },
-      } as AppConfigInput),
-    )
-    const runtime = createAiRuntime({
-      ai: resolved.ai,
-      defaultLanguage: resolved.language,
-      generateText: (input) => {
-        calls.push(input as unknown as Record<string, unknown>)
-        return Promise.resolve({ text: '默认译文' })
       },
-    })
+    } as AppConfigInput),
+  )
+  const runtime = createAiRuntime({
+    ai: resolved.ai,
+    defaultLanguage: resolved.language,
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: '默认译文' })
+    },
+  })
 
-    const out = await runtime.translate(runtime.createEntryRuntime('s1', 'e1'), 'hello world')
+  const out = await runtime.translate(runtime.createEntryRuntime('s1', 'e1'), 'hello world')
 
-    assertEquals(out, '默认译文')
-    assertEquals(String(calls[0].system).includes(resolved.language!), true)
-  },
-)
+  assertEquals(out, '默认译文')
+  assertEquals(String(calls[0].system).includes(resolved.language!), true)
+})
 
-Deno.test('[contract] aiRuntime: 缺少默认 language 时 translate 应直接报错', async () => {
+test('[contract] aiRuntime: 缺少默认 language 时 translate 应直接报错', async () => {
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(),
     generateText: () => Promise.resolve({ text: 'should-not-run' }),
@@ -378,77 +367,74 @@ Deno.test('[contract] aiRuntime: 缺少默认 language 时 translate 应直接�
   )
 })
 
-Deno.test(
-  '[contract] aiRuntime: AI 调用完成与缓存命中应继承注入 logger module 并不泄露正文',
-  async () => {
-    const lines: string[] = []
-    const runtime = createAiRuntime({
-      ai: createResolvedAiConfig(),
-      defaultLanguage: 'zh-CN',
-      logger: createJsonLogger(lines, 'test.ai.runtime'),
-      now: (() => {
-        const values = [1000, 1020]
-        let index = 0
-        return () => values[index++] ?? values[values.length - 1]
-      })(),
-      generateText: () => Promise.resolve({ text: '译文结果' }),
-    })
+test('[contract] aiRuntime: AI 调用完成与缓存命中应继承注入 logger module 并不泄露正文', async () => {
+  const lines: string[] = []
+  const runtime = createAiRuntime({
+    ai: createResolvedAiConfig(),
+    defaultLanguage: 'zh-CN',
+    logger: createJsonLogger(lines, 'test.ai.runtime'),
+    now: (() => {
+      const values = [1000, 1020]
+      let index = 0
+      return () => values[index++] ?? values[values.length - 1]
+    })(),
+    generateText: () => Promise.resolve({ text: '译文结果' }),
+  })
 
-    const entryRuntime = runtime.createEntryRuntime('source-a', 'entry-a')
-    const first = await runtime.translate(entryRuntime, 'very secret body')
-    const second = await runtime.translate(entryRuntime, 'very secret body')
+  const entryRuntime = runtime.createEntryRuntime('source-a', 'entry-a')
+  const first = await runtime.translate(entryRuntime, 'very secret body')
+  const second = await runtime.translate(entryRuntime, 'very secret body')
 
-    assertEquals(first, '译文结果')
-    assertEquals(second, '译文结果')
-    assertEquals(lines.length, 2)
+  assertEquals(first, '译文结果')
+  assertEquals(second, '译文结果')
+  assertEquals(lines.length, 2)
 
-    const successRecord = parseRecord(lines[0])
-    const successAttributes = getAttributes(successRecord)
-    assertEquals(successRecord.body, 'AI 调用完成')
-    assertEquals(getScopeName(successRecord), 'test.ai.runtime')
-    assertEquals(successAttributes['template.ai.operation'], 'generate')
-    assertEquals(successAttributes['template.ai.outcome'], 'success')
-    assertEquals(successAttributes['source.id'], 'source-a')
-    assertEquals(successAttributes['pipeline.item_id'], 'entry-a')
-    assertEquals(successAttributes['template.ai.duration_ms'], 20)
-    assertEquals(successAttributes['template.ai.input_length'], 16)
-    assertEquals(successAttributes['template.ai.output_length'], 4)
-    assertEquals(successAttributes['template.ai.truncated'], false)
-    assertEquals(successAttributes['template.ai.provider'], 'openai')
-    assertEquals(successAttributes['template.ai.model'], 'gpt-4o-mini')
-    assertEquals(successAttributes['template.ai.model_ref'], 'openai_main/default')
-    assertEquals(successAttributes['template.ai.prompt_id'], 'ai_translate')
-    assertEquals(successAttributes['template.ai.stage'], 'translate.single')
-    assertEquals(successAttributes['template.ai.cache'], false)
-    assertEquals(successAttributes['template.ai.chunk'], false)
-    assertEquals('ai.provider' in successAttributes, false)
-    assertEquals('operation' in successAttributes, false)
-    assertEquals(String(JSON.stringify(successRecord)).includes('secret'), false)
+  const successRecord = parseRecord(lines[0])
+  const successAttributes = getAttributes(successRecord)
+  assertEquals(successRecord.body, 'AI 调用完成')
+  assertEquals(getScopeName(successRecord), 'test.ai.runtime')
+  assertEquals(successAttributes['template.ai.operation'], 'generate')
+  assertEquals(successAttributes['template.ai.outcome'], 'success')
+  assertEquals(successAttributes['source.id'], 'source-a')
+  assertEquals(successAttributes['pipeline.item_id'], 'entry-a')
+  assertEquals(successAttributes['template.ai.duration_ms'], 20)
+  assertEquals(successAttributes['template.ai.input_length'], 16)
+  assertEquals(successAttributes['template.ai.output_length'], 4)
+  assertEquals(successAttributes['template.ai.truncated'], false)
+  assertEquals(successAttributes['template.ai.provider'], 'openai')
+  assertEquals(successAttributes['template.ai.model'], 'gpt-4o-mini')
+  assertEquals(successAttributes['template.ai.model_ref'], 'openai_main/default')
+  assertEquals(successAttributes['template.ai.prompt_id'], 'ai_translate')
+  assertEquals(successAttributes['template.ai.stage'], 'translate.single')
+  assertEquals(successAttributes['template.ai.cache'], false)
+  assertEquals(successAttributes['template.ai.chunk'], false)
+  assertEquals('ai.provider' in successAttributes, false)
+  assertEquals('operation' in successAttributes, false)
+  assertEquals(String(JSON.stringify(successRecord)).includes('secret'), false)
 
-    const cacheHitRecord = parseRecord(lines[1])
-    const cacheHitAttributes = getAttributes(cacheHitRecord)
-    assertEquals(cacheHitRecord.body, 'AI 缓存命中')
-    assertEquals(getScopeName(cacheHitRecord), 'test.ai.runtime')
-    assertEquals(cacheHitAttributes['template.ai.operation'], 'generate')
-    assertEquals(cacheHitAttributes['template.ai.outcome'], 'cache_hit')
-    assertEquals(cacheHitAttributes['source.id'], 'source-a')
-    assertEquals(cacheHitAttributes['pipeline.item_id'], 'entry-a')
-    assertEquals(cacheHitAttributes['template.ai.input_length'], 16)
-    assertEquals(cacheHitAttributes['template.ai.truncated'], false)
-    assertEquals(cacheHitAttributes['template.ai.provider'], 'openai')
-    assertEquals(cacheHitAttributes['template.ai.model'], 'gpt-4o-mini')
-    assertEquals(cacheHitAttributes['template.ai.model_ref'], 'openai_main/default')
-    assertEquals(cacheHitAttributes['template.ai.prompt_id'], 'ai_translate')
-    assertEquals(cacheHitAttributes['template.ai.stage'], 'translate.single')
-    assertEquals(cacheHitAttributes['template.ai.cache'], true)
-    assertEquals(cacheHitAttributes['template.ai.chunk'], false)
-    assertEquals('ai.provider' in cacheHitAttributes, false)
-    assertEquals('operation' in cacheHitAttributes, false)
-    assertEquals(String(JSON.stringify(cacheHitRecord)).includes('secret'), false)
-  },
-)
+  const cacheHitRecord = parseRecord(lines[1])
+  const cacheHitAttributes = getAttributes(cacheHitRecord)
+  assertEquals(cacheHitRecord.body, 'AI 缓存命中')
+  assertEquals(getScopeName(cacheHitRecord), 'test.ai.runtime')
+  assertEquals(cacheHitAttributes['template.ai.operation'], 'generate')
+  assertEquals(cacheHitAttributes['template.ai.outcome'], 'cache_hit')
+  assertEquals(cacheHitAttributes['source.id'], 'source-a')
+  assertEquals(cacheHitAttributes['pipeline.item_id'], 'entry-a')
+  assertEquals(cacheHitAttributes['template.ai.input_length'], 16)
+  assertEquals(cacheHitAttributes['template.ai.truncated'], false)
+  assertEquals(cacheHitAttributes['template.ai.provider'], 'openai')
+  assertEquals(cacheHitAttributes['template.ai.model'], 'gpt-4o-mini')
+  assertEquals(cacheHitAttributes['template.ai.model_ref'], 'openai_main/default')
+  assertEquals(cacheHitAttributes['template.ai.prompt_id'], 'ai_translate')
+  assertEquals(cacheHitAttributes['template.ai.stage'], 'translate.single')
+  assertEquals(cacheHitAttributes['template.ai.cache'], true)
+  assertEquals(cacheHitAttributes['template.ai.chunk'], false)
+  assertEquals('ai.provider' in cacheHitAttributes, false)
+  assertEquals('operation' in cacheHitAttributes, false)
+  assertEquals(String(JSON.stringify(cacheHitRecord)).includes('secret'), false)
+})
 
-Deno.test('[contract] aiRuntime: AI 失败应写入固定摘要且继承注入 logger module', async () => {
+test('[contract] aiRuntime: AI 失败应写入固定摘要且继承注入 logger module', async () => {
   const lines: string[] = []
   const runtime = createAiRuntime({
     ai: createResolvedAiConfig(),
@@ -498,7 +484,7 @@ Deno.test('[contract] aiRuntime: AI 失败应写入固定摘要且继承注入 l
   assertEquals(String(JSON.stringify(record)).includes('provider returned'), false)
 })
 
-Deno.test('[contract] aiRuntime: AI 401 失败应记录安全诊断字段而不泄露原始 body', async () => {
+test('[contract] aiRuntime: AI 401 失败应记录安全诊断字段而不泄露原始 body', async () => {
   const lines: string[] = []
   const error = Object.assign(new Error('Unauthorized'), {
     name: 'AI_APICallError',

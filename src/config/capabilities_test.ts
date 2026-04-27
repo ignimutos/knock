@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert'
 import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilities.ts'
+import { test } from '../testing/test_api.ts'
 
 // 风险映射: R03 R04
 // 关键字段白名单测试：以下任一条件成立的输入字段必须登记到 capabilities.ts
@@ -8,7 +9,7 @@ import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilit
 // 3. 需要 render 后校验
 // 4. 直接影响外部请求/投递边界
 
-Deno.test('[contract] capabilities: 已声明路径应能命中对应 capability', () => {
+test('[contract] capabilities: 已声明路径应能命中对应 capability', () => {
   assertEquals(getConfigFieldCapability('deliveries.webhook.push.http.url')?.allowLiquid, false)
   assertEquals(
     getConfigFieldCapability('deliveries.webhook.push.request.payload.text')?.allowLiquid,
@@ -24,7 +25,7 @@ Deno.test('[contract] capabilities: 已声明路径应能命中对应 capability
   assertEquals(getConfigFieldCapability('sources.digest.summary.entry.id')?.allowLiquid, true)
 })
 
-Deno.test('[contract] capabilities: 关键用户输入字段应有能力声明', () => {
+test('[contract] capabilities: 关键用户输入字段应有能力声明', () => {
   const requiredPaths = [
     'deliveries.*.file.content',
     'deliveries.*.push.http.url',

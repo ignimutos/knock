@@ -1,8 +1,9 @@
 import { assertEquals } from '@std/assert'
 import type { PruneFactsInput } from './ports/prune_facts_repository.ts'
 import { PruneFactsUseCase } from './prune_facts_use_case.ts'
+import { test } from '../testing/test_api.ts'
 
-Deno.test('[contract] pruneFactsUseCase: 应转发 retention 参数到 repository', async () => {
+test('[contract] pruneFactsUseCase: 应转发 retention 参数到 repository', async () => {
   const calls: PruneFactsInput[] = []
   const useCase = new PruneFactsUseCase({
     now: () => '2026-04-18T12:45:00.000Z',

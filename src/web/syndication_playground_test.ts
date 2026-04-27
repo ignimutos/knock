@@ -4,8 +4,9 @@ import {
   evaluateSyndicationPlayground,
   parseSyndicationPlaygroundRequest,
 } from './syndication_playground.ts'
+import { test } from '../testing/test_api.ts'
 
-Deno.test('[contract] syndication_playground: 空 mapping 时应保留 runtime 默认行为', () => {
+test('[contract] syndication_playground: 空 mapping 时应保留 runtime 默认行为', () => {
   const parsed = parseSyndicationPlaygroundRequest({
     runtime: 'native',
     url: 'https://example.com/feed.xml',
@@ -18,7 +19,7 @@ Deno.test('[contract] syndication_playground: 空 mapping 时应保留 runtime �
   assertEquals(parsed.source.syndication, {})
 })
 
-Deno.test('[contract] syndication_playground: byparr 模式请求应转换为 byparr source', () => {
+test('[contract] syndication_playground: byparr 模式请求应转换为 byparr source', () => {
   const parsed = parseSyndicationPlaygroundRequest({
     runtime: 'byparr',
     url: 'https://example.com/feed.xml',
@@ -30,73 +31,65 @@ Deno.test('[contract] syndication_playground: byparr 模式请求应转换为 by
   assertEquals(parsed.source.syndication?.entry, { id: '{{ id }}' })
 })
 
-Deno.test(
-  '[flow] R18 syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
-  async () => {
-    const result = await evaluateSyndicationPlayground({
-      request: {
-        url: 'https://example.com/feed.xml',
-        feed: { title: '{{ title }}' },
-        entry: { id: '{{ id }}', content: '{{ content }}' },
-      },
-      previewExecutor: ({ source }) => {
-        assertEquals(source.http?.url, 'https://example.com/feed.xml')
-        assertEquals(source.syndication?.feed, { title: '{{ title }}' })
-        assertEquals(source.syndication?.entry, { id: '{{ id }}', content: '{{ content }}' })
-        return Promise.resolve({
-          warnings: [],
-          fetchMeta: { ok: true, payloadBytes: 11, fetchDurationMs: 12, parseDurationMs: 5 },
-          parser: 'rss',
-          rawContent: '<rss></rss>',
-          feed: { title: 'Feed' },
-          entries: [{ mapped: { id: '1', content: 'Body' } }],
-        })
-      },
-    })
+test('[flow] R18 syndication_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent', async () => {
+  const result = await evaluateSyndicationPlayground({
+    request: {
+      url: 'https://example.com/feed.xml',
+      feed: { title: '{{ title }}' },
+      entry: { id: '{{ id }}', content: '{{ content }}' },
+    },
+    previewExecutor: ({ source }) => {
+      assertEquals(source.http?.url, 'https://example.com/feed.xml')
+      assertEquals(source.syndication?.feed, { title: '{{ title }}' })
+      assertEquals(source.syndication?.entry, { id: '{{ id }}', content: '{{ content }}' })
+      return Promise.resolve({
+        warnings: [],
+        fetchMeta: { ok: true, payloadBytes: 11, fetchDurationMs: 12, parseDurationMs: 5 },
+        parser: 'rss',
+        rawContent: '<rss></rss>',
+        feed: { title: 'Feed' },
+        entries: [{ mapped: { id: '1', content: 'Body' } }],
+      })
+    },
+  })
 
-    assertEquals(result.parser, 'rss')
-    assertEquals(result.rawContent, '<rss></rss>')
-    assertEquals(result.feed, { title: 'Feed' })
-    assertEquals(result.entries, [{ mapped: { id: '1', content: 'Body' } }])
-    assertEquals(result.fetchMeta.ok, true)
-  },
-)
+  assertEquals(result.parser, 'rss')
+  assertEquals(result.rawContent, '<rss></rss>')
+  assertEquals(result.feed, { title: 'Feed' })
+  assertEquals(result.entries, [{ mapped: { id: '1', content: 'Body' } }])
+  assertEquals(result.fetchMeta.ok, true)
+})
 
-Deno.test(
-  '[contract] syndication_playground: 应合并 parsed warnings 与 executor warnings',
-  async () => {
-    const result = await evaluateSyndicationPlayground({
-      request: {
-        url: 'https://example.com/feed.xml',
-        entry: { id: '{{ id }}' },
-      },
-      previewExecutor: () =>
-        Promise.resolve({
-          warnings: ['executor warning'],
-          fetchMeta: { ok: true },
-          parser: 'rss',
-          rawContent: '<rss></rss>',
-          feed: {},
-          entries: [],
-        }),
-    })
+test('[contract] syndication_playground: 应合并 parsed warnings 与 executor warnings', async () => {
+  const result = await evaluateSyndicationPlayground({
+    request: {
+      url: 'https://example.com/feed.xml',
+      entry: { id: '{{ id }}' },
+    },
+    previewExecutor: () =>
+      Promise.resolve({
+        warnings: ['executor warning'],
+        fetchMeta: { ok: true },
+        parser: 'rss',
+        rawContent: '<rss></rss>',
+        feed: {},
+        entries: [],
+      }),
+  })
 
-    assertEquals(result.warnings, ['executor warning'])
-  },
-)
+  assertEquals(result.warnings, ['executor warning'])
+})
 
-Deno.test(
-  '[contract] syndication_playground: 非 previewExecutor 路径不应重复 parsed warnings',
-  async () => {
-    const result = await evaluateSyndicationPlayground({
-      request: {
-        url: 'https://example.com/feed.xml',
-        entry: { id: '{{ id }}' },
-      },
-      fetcher: () =>
-        Promise.resolve(
-          new Response(
-            `<?xml version="1.0" encoding="UTF-8"?>
+test('[contract] syndication_playground: 非 previewExecutor 路径不应重复 parsed warnings', async () => {
+  const result = await evaluateSyndicationPlayground({
+    request: {
+      url: 'https://example.com/feed.xml',
+      entry: { id: '{{ id }}' },
+    },
+    fetcher: () =>
+      Promise.resolve(
+        new Response(
+          `<?xml version="1.0" encoding="UTF-8"?>
              <rss version="2.0">
                <channel>
                  <title>Feed</title>
@@ -108,59 +101,55 @@ Deno.test(
                  </item>
                </channel>
              </rss>`,
-          ),
         ),
-    })
+      ),
+  })
 
-    assertEquals(result.warnings, [])
-  },
-)
+  assertEquals(result.warnings, [])
+})
 
-Deno.test(
-  '[contract] syndication_playground: 默认 logging shape 应与正式 resolved config 一致',
-  async () => {
-    const result = await evaluateSyndicationPlayground({
-      request: {
-        url: 'https://example.com/feed.xml',
-        entry: { id: '{{ id }}' },
-      },
-      previewExecutor: ((input: unknown) => {
-        const { config, source } = input as {
-          config?: {
-            logging: {
-              level: string
-              sinks: { console?: { type: string; format: string } }
-            }
+test('[contract] syndication_playground: 默认 logging shape 应与正式 resolved config 一致', async () => {
+  const result = await evaluateSyndicationPlayground({
+    request: {
+      url: 'https://example.com/feed.xml',
+      entry: { id: '{{ id }}' },
+    },
+    previewExecutor: ((input: unknown) => {
+      const { config, source } = input as {
+        config?: {
+          logging: {
+            level: string
+            sinks: { console?: { type: string; format: string } }
           }
-          source: { http?: { url?: string } }
         }
+        source: { http?: { url?: string } }
+      }
 
-        assertEquals(source.http?.url, 'https://example.com/feed.xml')
-        assertEquals(config?.logging, {
-          level: 'info',
-          sinks: {
-            console: {
-              type: 'console',
-              format: 'jsonl',
-            },
+      assertEquals(source.http?.url, 'https://example.com/feed.xml')
+      assertEquals(config?.logging, {
+        level: 'info',
+        sinks: {
+          console: {
+            type: 'console',
+            format: 'jsonl',
           },
-        })
-        return Promise.resolve({
-          warnings: [],
-          fetchMeta: { ok: true },
-          parser: 'rss',
-          rawContent: '<rss></rss>',
-          feed: {},
-          entries: [],
-        })
-      }) as never,
-    })
+        },
+      })
+      return Promise.resolve({
+        warnings: [],
+        fetchMeta: { ok: true },
+        parser: 'rss',
+        rawContent: '<rss></rss>',
+        feed: {},
+        entries: [],
+      })
+    }) as never,
+  })
 
-    assertEquals(result.parser, 'rss')
-  },
-)
+  assertEquals(result.parser, 'rss')
+})
 
-Deno.test('[contract] syndication_playground: 应拒绝 localhost 地址', () => {
+test('[contract] syndication_playground: 应拒绝 localhost 地址', () => {
   assertThrows(
     () =>
       parseSyndicationPlaygroundRequest({
@@ -172,7 +161,7 @@ Deno.test('[contract] syndication_playground: 应拒绝 localhost 地址', () =>
   )
 })
 
-Deno.test('[contract] syndication_playground: classify 应将抓取失败映射为 fetch', () => {
+test('[contract] syndication_playground: classify 应将抓取失败映射为 fetch', () => {
   const classified = classifySyndicationPlaygroundError(
     new Error('[source] 抓取失败 source=playground status=404'),
   )
@@ -183,20 +172,17 @@ Deno.test('[contract] syndication_playground: classify 应将抓取失败映射�
   assertEquals(classified.message, '抓取失败: HTTP 404')
 })
 
-Deno.test(
-  '[contract] syndication_playground: evaluate 遇到非 2xx 响应时应保留底层抓取错误',
-  async () => {
-    await assertRejects(
-      () =>
-        evaluateSyndicationPlayground({
-          request: {
-            url: 'https://example.com/feed.xml',
-            entry: { id: '{{ id }}' },
-          },
-          fetcher: () => Promise.resolve(new Response('not found', { status: 404 })),
-        }),
-      Error,
-      '[source] 抓取失败 source=playground status=404',
-    )
-  },
-)
+test('[contract] syndication_playground: evaluate 遇到非 2xx 响应时应保留底层抓取错误', async () => {
+  await assertRejects(
+    () =>
+      evaluateSyndicationPlayground({
+        request: {
+          url: 'https://example.com/feed.xml',
+          entry: { id: '{{ id }}' },
+        },
+        fetcher: () => Promise.resolve(new Response('not found', { status: 404 })),
+      }),
+    Error,
+    '[source] 抓取失败 source=playground status=404',
+  )
+})

@@ -1,11 +1,12 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { createLogger } from '../core/logger.ts'
 import { createEmailDelivery } from './email.ts'
+import { test } from '../testing/test_api.ts'
 
 // risk-id: R07
 // layer: contract
 
-Deno.test('[contract] emailDelivery: 应把 SMTP 配置与消息转发给 transporter', async () => {
+test('[contract] emailDelivery: 应把 SMTP 配置与消息转发给 transporter', async () => {
   const calls: unknown[] = []
   const delivery = createEmailDelivery({
     createTransport: (options: unknown) => ({
@@ -71,7 +72,7 @@ Deno.test('[contract] emailDelivery: 应把 SMTP 配置与消息转发给 transp
   ])
 })
 
-Deno.test('[flow] R07 emailDelivery: transporter 失败时应记录失败日志并抛错', async () => {
+test('[flow] R07 emailDelivery: transporter 失败时应记录失败日志并抛错', async () => {
   const logs: Array<Record<string, unknown>> = []
   const logger = createLogger({
     enabled: true,

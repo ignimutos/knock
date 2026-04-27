@@ -8,6 +8,7 @@ import {
   setSourceRunFeedSnapshot,
 } from '../infrastructure/sqlite/run_repository.ts'
 import { buildReaderOverview, loadReaderOverview } from './reader_overview.ts'
+import { test } from '../testing/test_api.ts'
 
 function createConfig(): AppConfigResolved {
   return {
@@ -78,7 +79,7 @@ function createSuccessRun(): SourceRun {
   }
 }
 
-Deno.test('[contract] reader overview: 应按 source 返回最近快照并清理敏感 URL', async () => {
+test('[contract] reader overview: 应按 source 返回最近快照并清理敏感 URL', async () => {
   const db = createInMemoryDb()
   await insertSourceRun(db, createSuccessRun())
   await setSourceRunFeedSnapshot(db, 'run-1', {
@@ -164,27 +165,24 @@ Deno.test('[contract] reader overview: 应按 source 返回最近快照并清理
   assertEquals(daily.entries.length, 0)
 })
 
-Deno.test(
-  '[contract] reader overview: Reader 加载配置时应保留未定义 env 占位符而不是报错',
-  async () => {
-    const runtimeDir = await Deno.makeTempDir()
-    try {
-      await Deno.writeTextFile(
-        `${runtimeDir}/config.yml`,
-        `sqlite:\n  path: db/knock.db\nlogging:\n  level: info\ndeliveries:\n  telegram:\n    enabled: false\n    push:\n      http:\n        url: https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/sendMessage\n      request:\n        type: body\n        payload:\n          chat_id: \${TELEGRAM_CHAT_ID}\nsources:\n  rust:\n    http:\n      url: https://example.com/feed.xml\n    deliveries:\n      telegram: {}\n`,
-      )
+test('[contract] reader overview: Reader 加载配置时应保留未定义 env 占位符而不是报错', async () => {
+  const runtimeDir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(
+      `${runtimeDir}/config.yml`,
+      `sqlite:\n  path: db/knock.db\nlogging:\n  level: info\ndeliveries:\n  telegram:\n    enabled: false\n    push:\n      http:\n        url: https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/sendMessage\n      request:\n        type: body\n        payload:\n          chat_id: \${TELEGRAM_CHAT_ID}\nsources:\n  rust:\n    http:\n      url: https://example.com/feed.xml\n    deliveries:\n      telegram: {}\n`,
+    )
 
-      Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
-      Deno.env.delete('TELEGRAM_BOT_TOKEN')
-      Deno.env.delete('TELEGRAM_CHAT_ID')
+    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
+    Deno.env.delete('TELEGRAM_BOT_TOKEN')
+    Deno.env.delete('TELEGRAM_CHAT_ID')
 
-      const overview = await loadReaderOverview()
-      assertEquals(overview.issue, undefined)
-      assertEquals(overview.sources.length, 1)
-      assertEquals(overview.sources[0]?.id, 'rust')
-    } finally {
-      Deno.env.delete('KNOCK_RUNTIME_DIR')
-      await Deno.remove(runtimeDir, { recursive: true })
-    }
-  },
-)
+    const overview = await loadReaderOverview()
+    assertEquals(overview.issue, undefined)
+    assertEquals(overview.sources.length, 1)
+    assertEquals(overview.sources[0]?.id, 'rust')
+  } finally {
+    Deno.env.delete('KNOCK_RUNTIME_DIR')
+    await Deno.remove(runtimeDir, { recursive: true })
+  }
+})

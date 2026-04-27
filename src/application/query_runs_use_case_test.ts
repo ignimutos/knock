@@ -1,8 +1,9 @@
 import { assertEquals } from '@std/assert'
 import type { SourceRunView } from './ports/source_run_query_service.ts'
 import { QueryRunsUseCase } from './query_runs_use_case.ts'
+import { test } from '../testing/test_api.ts'
 
-Deno.test('[contract] queryRunsUseCase: 应返回 run + items + attempts 的最小视图', async () => {
+test('[contract] queryRunsUseCase: 应返回 run + items + attempts 的最小视图', async () => {
   const expected: SourceRunView = {
     run: {
       runId: 'run-1',
@@ -38,7 +39,7 @@ Deno.test('[contract] queryRunsUseCase: 应返回 run + items + attempts 的最�
   assertEquals(view, expected)
 })
 
-Deno.test('[contract] queryRunsUseCase: 未命中 run 时应返回 undefined', async () => {
+test('[contract] queryRunsUseCase: 未命中 run 时应返回 undefined', async () => {
   const useCase = new QueryRunsUseCase({
     sourceRunQueryService: {
       getRun: () => Promise.resolve(undefined),

@@ -1,6 +1,7 @@
 import { assertEquals } from '@std/assert'
 import { SourceManagementError } from '../../../../src/interfaces/web/source_management.ts'
 import { type SourceActionLogMeta, handler } from './update.ts'
+import { test } from '../../../../src/testing/test_api.ts'
 
 async function readJson(response: Response) {
   return (await response.json()) as Record<string, unknown>
@@ -13,7 +14,7 @@ function sameOriginHeaders(origin: string = 'http://localhost') {
   }
 }
 
-Deno.test('[flow] R15 sources update api: 应转发 payload 并返回 overview', async () => {
+test('[flow] R15 sources update api: 应转发 payload 并返回 overview', async () => {
   const logs: SourceActionLogMeta[] = []
 
   const response = await handler(
@@ -59,7 +60,7 @@ Deno.test('[flow] R15 sources update api: 应转发 payload 并返回 overview',
   ])
 })
 
-Deno.test('[contract] sources update api: 非法 JSON 应返回 400', async () => {
+test('[contract] sources update api: 非法 JSON 应返回 400', async () => {
   const response = await handler(
     new Request('http://localhost/api/sources/update', {
       method: 'POST',
@@ -74,7 +75,7 @@ Deno.test('[contract] sources update api: 非法 JSON 应返回 400', async () =
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[contract] sources update api: 编译期配置错误应返回 400 validation', async () => {
+test('[contract] sources update api: 编译期配置错误应返回 400 validation', async () => {
   const response = await handler(
     new Request('http://localhost/api/sources/update', {
       method: 'POST',
@@ -100,7 +101,7 @@ Deno.test('[contract] sources update api: 编译期配置错误应返回 400 val
   assertEquals(payload.category, 'validation')
 })
 
-Deno.test('[contract] sources update api: 跨源写请求应返回 403', async () => {
+test('[contract] sources update api: 跨源写请求应返回 403', async () => {
   const logs: SourceActionLogMeta[] = []
 
   const response = await handler(

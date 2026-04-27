@@ -1,8 +1,9 @@
 import { assertEquals } from '@std/assert'
 import { createLogger } from './logger.ts'
 import { createScheduler } from './scheduler.ts'
+import { test } from '../testing/test_api.ts'
 
-Deno.test('[contract] R05 scheduler: 同一 source 不允许重入', async () => {
+test('[contract] R05 scheduler: 同一 source 不允许重入', async () => {
   let running = 0
   let maxRunning = 0
 
@@ -25,7 +26,7 @@ Deno.test('[contract] R05 scheduler: 同一 source 不允许重入', async () =>
   assertEquals(results.filter((result) => result.started).length, 1)
 })
 
-Deno.test('[contract] R05 scheduler: 首次执行结束后允许同一 source 再次执行', async () => {
+test('[contract] R05 scheduler: 首次执行结束后允许同一 source 再次执行', async () => {
   const scheduler = createScheduler()
   let runCount = 0
 
@@ -42,7 +43,7 @@ Deno.test('[contract] R05 scheduler: 首次执行结束后允许同一 source �
   assertEquals(runCount, 2)
 })
 
-Deno.test('[contract] R05 scheduler: 重入跳过时应记录结构化日志', async () => {
+test('[contract] R05 scheduler: 重入跳过时应记录结构化日志', async () => {
   const logs: string[] = []
   const logger = createLogger({
     enabled: true,

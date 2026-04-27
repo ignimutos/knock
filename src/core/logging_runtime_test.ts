@@ -4,8 +4,9 @@ import { dirname, join } from '@std/path'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './logging_runtime.ts'
 import { createLogger } from './logger.ts'
+import { test } from '../testing/test_api.ts'
 
-Deno.test('[contract] R11 logging_runtime: 不配置 sinks 时不应输出', async () => {
+test('[contract] R11 logging_runtime: 不配置 sinks 时不应输出', async () => {
   const stdout: string[] = []
 
   await configureLoggingRuntime({
@@ -26,7 +27,7 @@ Deno.test('[contract] R11 logging_runtime: 不配置 sinks 时不应输出', asy
   assertEquals(stdout, [])
 })
 
-Deno.test('[contract] R11 logging_runtime: 只配置 file sink 时应只写 jsonl 文件', async () => {
+test('[contract] R11 logging_runtime: 只配置 file sink 时应只写 jsonl 文件', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
     const logPath = join(runtimeDir, 'logs', 'app.jsonl')
     await ensureDir(dirname(logPath))
@@ -69,7 +70,7 @@ Deno.test('[contract] R11 logging_runtime: 只配置 file sink 时应只写 json
   })
 })
 
-Deno.test('[contract] R11 logging_runtime: size rotation 应委托 rotating file sink', async () => {
+test('[contract] R11 logging_runtime: size rotation 应委托 rotating file sink', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
     const logPath = join(runtimeDir, 'logs', 'rotating.jsonl')
     await configureLoggingRuntime({
@@ -112,7 +113,7 @@ Deno.test('[contract] R11 logging_runtime: size rotation 应委托 rotating file
   })
 })
 
-Deno.test('[contract] R11 logging_runtime: shutdown 应 flush file sink 尾日志', async () => {
+test('[contract] R11 logging_runtime: shutdown 应 flush file sink 尾日志', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
     const logPath = join(runtimeDir, 'logs', 'flush.jsonl')
     await configureLoggingRuntime({
@@ -143,41 +144,38 @@ Deno.test('[contract] R11 logging_runtime: shutdown 应 flush file sink 尾日�
   })
 })
 
-Deno.test(
-  '[contract] R11 logging_runtime: trace 级别应输出 trace 记录到 console sink',
-  async () => {
-    const stdout: string[] = []
+test('[contract] R11 logging_runtime: trace 级别应输出 trace 记录到 console sink', async () => {
+  const stdout: string[] = []
 
-    await configureLoggingRuntime({
-      logging: {
-        level: 'trace',
-        sinks: {
-          console: {
-            type: 'console',
-            format: 'jsonl',
-          },
+  await configureLoggingRuntime({
+    logging: {
+      level: 'trace',
+      sinks: {
+        console: {
+          type: 'console',
+          format: 'jsonl',
         },
       },
-      runtimeDir: '/tmp/runtime',
-      timezone: 'UTC',
-      timestampFormat: 'yyyy-MM-dd HH:mm:ss',
-      consoleWriters: {
-        stdout: (line: string) => stdout.push(line),
-        stderr: (line: string) => stdout.push(line),
-        warn: (line: string) => stdout.push(line),
-      },
-    })
+    },
+    runtimeDir: '/tmp/runtime',
+    timezone: 'UTC',
+    timestampFormat: 'yyyy-MM-dd HH:mm:ss',
+    consoleWriters: {
+      stdout: (line: string) => stdout.push(line),
+      stderr: (line: string) => stdout.push(line),
+      warn: (line: string) => stdout.push(line),
+    },
+  })
 
-    createLogger({ enabled: true, level: 'trace', module: 'app.startup' }).trace('trace visible')
-    await shutdownLoggingRuntime()
+  createLogger({ enabled: true, level: 'trace', module: 'app.startup' }).trace('trace visible')
+  await shutdownLoggingRuntime()
 
-    assertEquals(stdout.length, 1)
-    assertStringIncludes(stdout[0] ?? '', '"severityText":"TRACE"')
-    assertStringIncludes(stdout[0] ?? '', 'trace visible')
-  },
-)
+  assertEquals(stdout.length, 1)
+  assertStringIncludes(stdout[0] ?? '', '"severityText":"TRACE"')
+  assertStringIncludes(stdout[0] ?? '', 'trace visible')
+})
 
-Deno.test('[contract] R11 logging_runtime: 不应输出 logtape meta startup 提示', async () => {
+test('[contract] R11 logging_runtime: 不应输出 logtape meta startup 提示', async () => {
   const stdout: string[] = []
 
   await configureLoggingRuntime({
