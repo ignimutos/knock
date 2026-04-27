@@ -1,7 +1,6 @@
 import { Liquid, TokenKind } from 'liquidjs'
 import MarkdownIt from 'markdown-it'
 import sanitizeHtml from 'sanitize-html'
-import { convert as convertTelegramMarkdownV2 } from 'telegram-markdown-v2'
 import TurndownService from 'turndown/lib/turndown.cjs.js'
 import type { AiRuntime } from './ai_runtime.ts'
 import { getAiEntryRuntime } from './ai_runtime.ts'
@@ -621,15 +620,105 @@ function renderTelegramHtml(value: unknown, logger?: Logger): string {
   }
 }
 
+function escapeTelegramMarkdownV2Text(value: string): string {
+  return value.replace(/[*_\[\]()~`>#+\-=|{}.!]/g, '\\$&')
+}
+
+function convertTelegramMarkdownV2Markup(text: string): string {
+  const protectedSegments: string[] = []
+  const protect = (value: string): string => {
+    const token = `__TGMDV2_${protectedSegments.length}__`
+    protectedSegments.push(value)
+    return token
+  }
+
+  let changed = false
+  let result = text
+
+  result = result.replace(/```[^\n]*\n([\s\S]*?)```/g, (_match, code: string) => {
+    changed = true
+    const normalizedCode = code.replace(/\n$/, '')
+    return protect('```\n' + normalizedCode + '\n```')
+  })
+  result = result.replace(/`([^`]+)`/g, (_match, code: string) => {
+    changed = true
+    return protect(`\`${code}\``)
+  })
+  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match: string) => {
+    changed = true
+    return protect(match)
+  })
+  result = result.replace(
+    /<span class="tg-spoiler">([\s\S]*?)<\/span>/g,
+    (_match, content: string) => {
+      changed = true
+      return `\\|\\|${content}\\|\\|`
+    },
+  )
+  result = result.replace(/<u>([\s\S]*?)<\/u>/g, (_match, content: string) => {
+    changed = true
+    return protect(`*${content}*`)
+  })
+  result = result.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_match, alt: string) => {
+    changed = true
+    return alt
+  })
+  result = result.replace(/^# (.+)$/gm, (_match, content: string) => {
+    changed = true
+    return protect(`*${content}*`)
+  })
+  result = result.replace(/^\- (.+)$/gm, (_match, content: string) => {
+    changed = true
+    return `•   ${content}`
+  })
+  result = result.replace(/^(\d+)\. (.+)$/gm, (_match, index: string, content: string) => {
+    changed = true
+    return `${index}\\.  ${content}`
+  })
+  result = result.replace(/\*\*([^*]+)\*\*/g, (_match, content: string) => {
+    changed = true
+    return protect(`*${content}*`)
+  })
+  result = result.replace(/__([^_]+)__/g, (_match, content: string) => {
+    changed = true
+    return protect(`*${content}*`)
+  })
+  result = result.replace(
+    /(^|[^*])\*([^*]+)\*(?!\*)/g,
+    (_match, prefix: string, content: string) => {
+      changed = true
+      return `${prefix}_${content}_`
+    },
+  )
+  result = result.replace(/~~([^~]+)~~/g, (_match, content: string) => {
+    changed = true
+    return `~${content}~`
+  })
+  result = result.replace(/\|\|([^|]+)\|\|/g, (_match, content: string) => {
+    changed = true
+    return `\\|\\|${content}\\|\\|`
+  })
+  result = result.replace(/^> /gm, () => {
+    changed = true
+    return '\\> '
+  })
+
+  if (!changed) {
+    return escapeTelegramMarkdownV2Text(text)
+  }
+
+  return result.replace(
+    /__TGMDV2_(\d+)__/g,
+    (_match, index: string) => protectedSegments[Number(index)] ?? '',
+  )
+}
+
 function convertToTelegramMarkdownV2(value: unknown): string {
   const text = toLiquidString(value)
   try {
-    return convertTelegramMarkdownV2(text, 'escape').trim()
+    return convertTelegramMarkdownV2Markup(text).trim()
   } catch {
-    return convertTelegramMarkdownV2(
-      text.replace(/[*_\[\]()~`>#+\-=|{}.!]/g, '\\$&'),
-      'keep',
-    ).trim()
+    return escapeTelegramMarkdownV2Text(text).trim()
   }
 }
 
