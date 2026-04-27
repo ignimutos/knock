@@ -1,9 +1,9 @@
 import fontoxpath from 'fontoxpath'
 import { JSDOM } from 'jsdom'
-import { DOMParser } from 'slimdom'
 import type { XqueryMappingConfig } from '../config/schema.ts'
 
 const { evaluateXPathToString, evaluateXPathToNodes, evaluateXPathToMap } = fontoxpath
+const xmlParserWindow = new JSDOM('').window
 
 export interface ParsedXqueryEntity {
   mapped: Record<string, string>
@@ -21,7 +21,7 @@ function createDocument(content: string): Document {
   if (lowered.startsWith('<!doctype html') || lowered.startsWith('<html')) {
     return new JSDOM(content).window.document as unknown as Document
   }
-  return new DOMParser().parseFromString(content, 'text/xml') as unknown as Document
+  return new xmlParserWindow.DOMParser().parseFromString(content, 'text/xml') as unknown as Document
 }
 
 function evaluateToString(
