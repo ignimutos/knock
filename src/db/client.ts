@@ -1,24 +1,21 @@
 import { dirname } from '@std/path'
-import { drizzle } from 'drizzle-orm/node-sqlite'
-import { migrate } from 'drizzle-orm/node-sqlite/migrator'
-import type { NodeSQLiteDatabase } from 'drizzle-orm/node-sqlite'
 import { DatabaseSync } from 'node:sqlite'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { SqliteConfigResolved } from '../config/types.ts'
 import type { Logger } from '../core/logger.ts'
-import * as factsSchema from '../infrastructure/sqlite/schema.ts'
-import * as schema from './schema.ts'
+import { initializeSqliteFactsSchema } from '../infrastructure/sqlite/schema.ts'
+import { initializeSqliteRuntimeSchema } from './schema.ts'
 
 export interface CreateDbClientOptions {
   sqlite: SqliteConfigResolved
   logger?: Logger
 }
 
-export type DbClient = NodeSQLiteDatabase<typeof schema> & {
+export interface DbClient {
   $client: DatabaseSync
 }
 
-export type FactsDbClient = NodeSQLiteDatabase<typeof factsSchema> & {
+export interface FactsDbClient {
   $client: DatabaseSync
 }
 
@@ -78,10 +75,7 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
   const client = new DatabaseSync(databasePath)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
-  const db = drizzle({ client, schema }) as DbClient
-  migrate(db, {
-    migrationsFolder: new URL('./migrations', import.meta.url).pathname,
-  })
+  initializeSqliteRuntimeSchema(client)
 
   logger?.info('sqlite 初始化完成', {
     module: 'db.sqlite',
@@ -90,7 +84,7 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
     'db.path': databasePath,
   })
 
-  return db
+  return { $client: client }
 }
 
 export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClient {
@@ -109,8 +103,7 @@ export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClie
   const client = new DatabaseSync(databasePath)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
-  factsSchema.initializeSqliteFactsSchema(client)
-  const db = drizzle({ client, schema: factsSchema }) as FactsDbClient
+  initializeSqliteFactsSchema(client)
 
   logger?.info('sqlite facts 初始化完成', {
     module: 'db.sqlite',
@@ -119,11 +112,11 @@ export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClie
     'db.path': databasePath,
   })
 
-  return db
+  return { $client: client }
 }
 
 export function createInMemoryDb(): FactsDbClient {
   const client = new DatabaseSync(':memory:')
-  factsSchema.initializeSqliteFactsSchema(client)
-  return drizzle({ client, schema: factsSchema }) as FactsDbClient
+  initializeSqliteFactsSchema(client)
+  return { $client: client }
 }

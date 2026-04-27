@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm'
 import type { ItemRepository as ApplicationItemRepository } from '../../application/ports/item_repository.ts'
 import type {
   PipelineItem,
@@ -6,20 +5,31 @@ import type {
   PipelineItemStatus,
 } from '../../domain/pipeline_item.ts'
 import type { FactsDbClient } from '../../db/client.ts'
-import { pipelineItems } from './schema.ts'
 
 export function insertPipelineItem(db: FactsDbClient, item: PipelineItem): Promise<void> {
-  db.insert(pipelineItems)
-    .values({
-      itemId: item.itemId,
-      sourceRunId: item.sourceRunId,
-      sourceId: item.sourceId,
-      effectDomain: item.effectDomain,
-      normalizedJson: JSON.stringify(item.normalized),
-      status: item.status,
-      skippedReason: item.skippedReason ?? null,
-    })
-    .run()
+  db.$client
+    .prepare(
+      `
+        INSERT INTO pipeline_items (
+          item_id,
+          source_run_id,
+          source_id,
+          effect_domain,
+          normalized_json,
+          status,
+          skipped_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      item.itemId,
+      item.sourceRunId,
+      item.sourceId,
+      item.effectDomain,
+      JSON.stringify(item.normalized),
+      item.status,
+      item.skippedReason ?? null,
+    )
 
   return Promise.resolve()
 }
@@ -30,10 +40,15 @@ export function updatePipelineItemStatus(
   status: PipelineItemStatus,
   skippedReason?: PipelineItemSkippedReason,
 ): Promise<void> {
-  db.update(pipelineItems)
-    .set({ status, skippedReason: skippedReason ?? null })
-    .where(eq(pipelineItems.itemId, itemId))
-    .run()
+  db.$client
+    .prepare(
+      `
+        UPDATE pipeline_items
+        SET status = ?, skipped_reason = ?
+        WHERE item_id = ?
+      `,
+    )
+    .run(status, skippedReason ?? null, itemId)
   return Promise.resolve()
 }
 

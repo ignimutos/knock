@@ -1,45 +1,73 @@
-import { eq } from 'drizzle-orm'
 import type { UnifiedFeedFields } from '../../config/types.ts'
 import type { RunRepository as ApplicationRunRepository } from '../../application/ports/run_repository.ts'
 import type { SourceRun } from '../../domain/source_run.ts'
 import type { FactsDbClient } from '../../db/client.ts'
-import { sourceRuns } from './schema.ts'
 
 export function insertSourceRun(db: FactsDbClient, run: SourceRun): Promise<void> {
-  db.insert(sourceRuns)
-    .values({
-      runId: run.runId,
-      sourceId: run.sourceId,
-      trigger: run.trigger,
-      profile: run.profile,
-      effectDomain: run.effectDomain,
-      status: run.status,
-      scheduledAt: run.scheduledAt,
-      startedAt: run.startedAt,
-      finishedAt: run.finishedAt,
-      countsJson: JSON.stringify(run.counts),
-      feedJson: null,
-    })
-    .run()
+  db.$client
+    .prepare(
+      `
+        INSERT INTO source_runs (
+          run_id,
+          source_id,
+          trigger,
+          profile,
+          effect_domain,
+          status,
+          scheduled_at,
+          started_at,
+          finished_at,
+          counts_json,
+          feed_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      run.runId,
+      run.sourceId,
+      run.trigger,
+      run.profile,
+      run.effectDomain,
+      run.status,
+      run.scheduledAt,
+      run.startedAt,
+      run.finishedAt ?? null,
+      JSON.stringify(run.counts),
+      null,
+    )
 
   return Promise.resolve()
 }
 
 export function updateSourceRun(db: FactsDbClient, run: SourceRun): Promise<void> {
-  db.update(sourceRuns)
-    .set({
-      sourceId: run.sourceId,
-      trigger: run.trigger,
-      profile: run.profile,
-      effectDomain: run.effectDomain,
-      status: run.status,
-      scheduledAt: run.scheduledAt,
-      startedAt: run.startedAt,
-      finishedAt: run.finishedAt,
-      countsJson: JSON.stringify(run.counts),
-    })
-    .where(eq(sourceRuns.runId, run.runId))
-    .run()
+  db.$client
+    .prepare(
+      `
+        UPDATE source_runs
+        SET source_id = ?,
+            trigger = ?,
+            profile = ?,
+            effect_domain = ?,
+            status = ?,
+            scheduled_at = ?,
+            started_at = ?,
+            finished_at = ?,
+            counts_json = ?
+        WHERE run_id = ?
+      `,
+    )
+    .run(
+      run.sourceId,
+      run.trigger,
+      run.profile,
+      run.effectDomain,
+      run.status,
+      run.scheduledAt,
+      run.startedAt,
+      run.finishedAt ?? null,
+      JSON.stringify(run.counts),
+      run.runId,
+    )
 
   return Promise.resolve()
 }
@@ -49,12 +77,15 @@ export function setSourceRunFeedSnapshot(
   runId: string,
   feed: UnifiedFeedFields,
 ): Promise<void> {
-  db.update(sourceRuns)
-    .set({
-      feedJson: JSON.stringify(feed),
-    })
-    .where(eq(sourceRuns.runId, runId))
-    .run()
+  db.$client
+    .prepare(
+      `
+        UPDATE source_runs
+        SET feed_json = ?
+        WHERE run_id = ?
+      `,
+    )
+    .run(JSON.stringify(feed), runId)
 
   return Promise.resolve()
 }

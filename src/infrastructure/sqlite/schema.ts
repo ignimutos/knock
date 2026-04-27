@@ -1,110 +1,41 @@
-import { foreignKey, index, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
 import type { DatabaseSync } from 'node:sqlite'
 
-export const sourceRuns = sqliteTable(
-  'source_runs',
-  {
-    runId: text('run_id').primaryKey(),
-    sourceId: text('source_id').notNull(),
-    trigger: text('trigger').notNull(),
-    profile: text('profile').notNull(),
-    effectDomain: text('effect_domain').notNull(),
-    status: text('status').notNull(),
-    scheduledAt: text('scheduled_at').notNull(),
-    startedAt: text('started_at').notNull(),
-    finishedAt: text('finished_at'),
-    countsJson: text('counts_json').notNull(),
-    feedJson: text('feed_json'),
-  },
-  (table) => [
-    index('idx_source_runs_source_started_at').on(table.sourceId, table.startedAt),
-    unique('uq_source_runs_run_domain').on(table.runId, table.effectDomain),
-  ],
-)
+export const SOURCE_RUN_STATUSES = [
+  'planned',
+  'running',
+  'success',
+  'partial',
+  'failed',
+  'skipped',
+  'interrupted',
+] as const
 
-export const pipelineItems = sqliteTable(
-  'pipeline_items',
-  {
-    itemId: text('item_id').primaryKey(),
-    sourceRunId: text('source_run_id').notNull(),
-    sourceId: text('source_id').notNull(),
-    effectDomain: text('effect_domain').notNull(),
-    normalizedJson: text('normalized_json').notNull(),
-    status: text('status').notNull(),
-    skippedReason: text('skipped_reason'),
-  },
-  (table) => [
-    index('idx_pipeline_items_run_id').on(table.sourceRunId),
-    foreignKey({
-      columns: [table.sourceRunId, table.effectDomain],
-      foreignColumns: [sourceRuns.runId, sourceRuns.effectDomain],
-    }),
-    unique('uq_pipeline_items_run_item').on(table.sourceRunId, table.itemId),
-    unique('uq_pipeline_items_item_domain').on(table.itemId, table.effectDomain),
-    unique('uq_pipeline_items_run_item_domain').on(
-      table.sourceRunId,
-      table.itemId,
-      table.effectDomain,
-    ),
-  ],
-)
+export const PIPELINE_ITEM_STATUSES = [
+  'ready',
+  'filtered',
+  'duplicate',
+  'skipped',
+  'delivered',
+  'failed',
+] as const
 
-export const deliveryAttempts = sqliteTable(
-  'delivery_attempts',
-  {
-    attemptId: text('attempt_id').primaryKey(),
-    itemId: text('item_id').notNull(),
-    sourceRunId: text('source_run_id').notNull(),
-    deliveryId: text('delivery_id').notNull(),
-    channel: text('channel').notNull(),
-    effectDomain: text('effect_domain').notNull(),
-    attemptNumber: integer('attempt_number').notNull(),
-    status: text('status').notNull(),
-    reason: text('reason'),
-    renderedSnapshotJson: text('rendered_snapshot_json'),
-    plannedAt: text('planned_at').notNull(),
-    startedAt: text('started_at'),
-    finishedAt: text('finished_at'),
-  },
-  (table) => [
-    index('idx_delivery_attempts_run_id').on(table.sourceRunId),
-    index('idx_delivery_attempts_item_id').on(table.itemId),
-    foreignKey({
-      columns: [table.sourceRunId, table.effectDomain],
-      foreignColumns: [sourceRuns.runId, sourceRuns.effectDomain],
-    }),
-    foreignKey({
-      columns: [table.itemId, table.effectDomain],
-      foreignColumns: [pipelineItems.itemId, pipelineItems.effectDomain],
-    }),
-    foreignKey({
-      columns: [table.sourceRunId, table.itemId, table.effectDomain],
-      foreignColumns: [pipelineItems.sourceRunId, pipelineItems.itemId, pipelineItems.effectDomain],
-    }),
-  ],
-)
+export const PIPELINE_ITEM_SKIPPED_REASONS = ['all_deliveries_duplicate', 'no_deliveries'] as const
 
-export const deduplications = sqliteTable(
-  'deduplications',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    deduplicationKey: text('deduplication_key').notNull(),
-    scope: text('scope').notNull(),
-    scopeId: text('scope_id').notNull(),
-    effectDomain: text('effect_domain').notNull(),
-    fingerprint: text('fingerprint').notNull(),
-    recordedAt: text('recorded_at').notNull(),
-  },
-  (table) => [
-    unique().on(table.deduplicationKey),
-    index('idx_deduplications_lookup').on(
-      table.effectDomain,
-      table.scope,
-      table.scopeId,
-      table.fingerprint,
-    ),
-  ],
-)
+export const DELIVERY_CHANNELS = ['file', 'push', 'email'] as const
+
+export const DELIVERY_ATTEMPT_STATUSES = [
+  'planned',
+  'running',
+  'delivered',
+  'failed',
+  'skipped',
+  'interrupted',
+] as const
+
+export const EFFECT_DOMAINS = ['production', 'preview'] as const
+export const RUN_TRIGGERS = ['scheduled', 'immediate', 'manual', 'preview'] as const
+export const RUN_PROFILES = ['production', 'preview'] as const
+export const DEDUPLICATION_SCOPES = ['item', 'delivery'] as const
 
 const SQLITE_FACTS_SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS source_runs (

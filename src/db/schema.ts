@@ -1,46 +1,59 @@
-import { createSelectSchema } from 'drizzle-orm/zod'
-import { index, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
+import type { DatabaseSync } from 'node:sqlite'
 
-export const deliveries = sqliteTable(
-  'deliveries',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    sourceId: text('source_id').notNull(),
-    itemId: text('item_id').notNull(),
-    targetId: text('target_id').notNull(),
-    status: text('status').notNull(),
-    createdAt: text('created_at').notNull(),
-  },
-  (table) => [unique().on(table.sourceId, table.itemId, table.targetId)],
-)
+const LEGACY_SQLITE_MIGRATION_HASH = '20260328192000_init'
+const LEGACY_SQLITE_MIGRATION_CREATED_AT = Date.parse('2026-03-28T19:20:00.000Z')
 
-export const feeds = sqliteTable('feeds', {
-  sourceId: text('source_id').primaryKey(),
-  parser: text('parser').notNull(),
-  payloadText: text('payload_text').notNull(),
-  payloadHash: text('payload_hash').notNull(),
-  feedText: text('feed_text').notNull(),
-  fetchedAt: text('fetched_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-})
+const SQLITE_RUNTIME_SCHEMA_SQL = [
+  `CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash TEXT NOT NULL,
+    created_at NUMERIC NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(source_id, item_id, target_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS feeds (
+    source_id TEXT PRIMARY KEY,
+    parser TEXT NOT NULL,
+    payload_text TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    feed_text TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    entry_text TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(source_id, entry_id)
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_entries_source_last_seen_at ON entries(source_id, last_seen_at)',
+] as const
 
-export const entries = sqliteTable(
-  'entries',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    sourceId: text('source_id').notNull(),
-    entryId: text('entry_id').notNull(),
-    entryText: text('entry_text').notNull(),
-    firstSeenAt: text('first_seen_at').notNull(),
-    lastSeenAt: text('last_seen_at').notNull(),
-    updatedAt: text('updated_at').notNull(),
-  },
-  (table) => [
-    unique().on(table.sourceId, table.entryId),
-    index('idx_entries_source_last_seen_at').on(table.sourceId, table.lastSeenAt),
-  ],
-)
+export function initializeSqliteRuntimeSchema(client: DatabaseSync): void {
+  for (const statement of SQLITE_RUNTIME_SCHEMA_SQL) {
+    client.exec(statement)
+  }
 
-export const deliveryRowSchema = createSelectSchema(deliveries)
-export const feedRowSchema = createSelectSchema(feeds)
-export const entryRowSchema = createSelectSchema(entries)
+  const existingMigration = client
+    .prepare('SELECT 1 AS ok FROM __drizzle_migrations WHERE hash = ? LIMIT 1')
+    .get(LEGACY_SQLITE_MIGRATION_HASH)
+
+  if (existingMigration) {
+    return
+  }
+
+  client
+    .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+    .run(LEGACY_SQLITE_MIGRATION_HASH, LEGACY_SQLITE_MIGRATION_CREATED_AT)
+}

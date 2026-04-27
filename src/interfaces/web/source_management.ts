@@ -1,22 +1,20 @@
 import { join, toFileUrl } from '@std/path'
-import { and, eq } from 'drizzle-orm'
 import type { SourceDeliveryOverride } from '../../config/types.ts'
 import {
   loadConfigRuntimeContext,
   writeConfigRuntimeContext,
 } from '../../config/runtime_config_context.ts'
 import {
-  applySourceConfigDocumentUpdate,
-  SourceConfigDocumentUpdateError,
-} from '../../config/update_source_document.ts'
-import {
   parseSourceConfigUpdate,
   SourceManagementContractError,
 } from './source_management_contract.ts'
+import {
+  applySourceConfigDocumentUpdate,
+  SourceConfigDocumentUpdateError,
+} from '../../config/update_source_document.ts'
 import { loadSourceActionContext, SourceActionContextError } from './source_management_context.ts'
 import { throwConflict, throwNotFound, throwValidation } from './source_management_errors.ts'
 import { createFactsDbClient, runInTransaction } from '../../db/client.ts'
-import { sourceRuns } from '../../infrastructure/sqlite/schema.ts'
 import { buildCurrentReaderOverview, type ReaderOverview } from '../../web/reader_overview.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
 
@@ -156,17 +154,18 @@ export async function clearSourceHistory(input: unknown): Promise<{
   const factsDb = createFactsDbClient({ sqlite: context.loaded.config.sqlite })
   try {
     const effectDomain = 'production'
-    const running = factsDb
-      .select({ runId: sourceRuns.runId })
-      .from(sourceRuns)
-      .where(
-        and(
-          eq(sourceRuns.sourceId, context.request.sourceId),
-          eq(sourceRuns.effectDomain, effectDomain),
-          eq(sourceRuns.status, 'running'),
-        ),
+    const running = factsDb.$client
+      .prepare(
+        `
+          SELECT run_id AS runId
+          FROM source_runs
+          WHERE source_id = ?
+            AND effect_domain = ?
+            AND status = 'running'
+          LIMIT 1
+        `,
       )
-      .get()
+      .get(context.request.sourceId, effectDomain)
     if (running) {
       throwConflict(`source ${context.request.sourceId} 正在运行，不能清空历史`)
     }

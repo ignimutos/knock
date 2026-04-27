@@ -1,8 +1,6 @@
-import { and, eq } from 'drizzle-orm'
 import type { DeduplicationRepository as ApplicationDeduplicationRepository } from '../../application/ports/deduplication_repository.ts'
 import type { EffectDomain } from '../../domain/run_profile.ts'
 import type { FactsDbClient } from '../../db/client.ts'
-import { deduplications } from './schema.ts'
 
 export type DeduplicationScope = 'item' | 'delivery'
 
@@ -26,19 +24,26 @@ export interface DeduplicationRepository {
 export function createDeduplicationRepository(db: FactsDbClient): DeduplicationRepository {
   return {
     isDuplicate(input: DeduplicationFingerprint): Promise<boolean> {
-      const row = db
-        .select({ id: deduplications.id })
-        .from(deduplications)
-        .where(
-          and(
-            eq(deduplications.deduplicationKey, input.deduplicationKey),
-            eq(deduplications.scope, input.scope),
-            eq(deduplications.scopeId, input.scopeId),
-            eq(deduplications.effectDomain, input.effectDomain),
-            eq(deduplications.fingerprint, input.fingerprint),
-          ),
+      const row = db.$client
+        .prepare(
+          `
+            SELECT id
+            FROM deduplications
+            WHERE deduplication_key = ?
+              AND scope = ?
+              AND scope_id = ?
+              AND effect_domain = ?
+              AND fingerprint = ?
+            LIMIT 1
+          `,
         )
-        .get()
+        .get(
+          input.deduplicationKey,
+          input.scope,
+          input.scopeId,
+          input.effectDomain,
+          input.fingerprint,
+        )
 
       return Promise.resolve(row !== undefined)
     },
@@ -53,19 +58,28 @@ export function registerItemFingerprint(
   db: FactsDbClient,
   input: DeduplicationRecord,
 ): Promise<void> {
-  db.insert(deduplications)
-    .values({
-      deduplicationKey: input.deduplicationKey,
-      scope: input.scope,
-      scopeId: input.scopeId,
-      effectDomain: input.effectDomain,
-      fingerprint: input.fingerprint,
-      recordedAt: input.recordedAt,
-    })
-    .onConflictDoNothing({
-      target: deduplications.deduplicationKey,
-    })
-    .run()
+  db.$client
+    .prepare(
+      `
+        INSERT INTO deduplications (
+          deduplication_key,
+          scope,
+          scope_id,
+          effect_domain,
+          fingerprint,
+          recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(deduplication_key) DO NOTHING
+      `,
+    )
+    .run(
+      input.deduplicationKey,
+      input.scope,
+      input.scopeId,
+      input.effectDomain,
+      input.fingerprint,
+      input.recordedAt,
+    )
 
   return Promise.resolve()
 }
