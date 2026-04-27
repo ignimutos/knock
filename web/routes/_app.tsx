@@ -1,4 +1,4 @@
-import type { PageProps } from 'fresh'
+import type { ComponentChildren } from 'preact'
 
 const themeBootstrapScript = `(() => {
   const STORAGE_KEY = 'knock.theme.mode'
@@ -106,7 +106,7 @@ const themeBootstrapScript = `(() => {
   }
 })()`
 
-export default function App(props: PageProps) {
+export default function AppDocument(props: { children: ComponentChildren; title?: string }) {
   return (
     <html
       lang="zh-CN"
@@ -123,7 +123,7 @@ export default function App(props: PageProps) {
           name="color-scheme"
           content="light dark"
         />
-        <title>Knock Web</title>
+        <title>{props.title ?? 'Knock Web'}</title>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <style
           dangerouslySetInnerHTML={{
@@ -1222,9 +1222,7 @@ html[data-theme="dark"] .field label {
           }}
         />
       </head>
-      <body>
-        <props.Component />
-      </body>
+      <body>{props.children}</body>
     </html>
   )
 }

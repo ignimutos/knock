@@ -23,7 +23,7 @@ COPY deno.lock ./
 COPY docker/deno.compile.json ./docker/deno.compile.json
 COPY src ./src
 COPY web ./web
-COPY --from=web-build /app/_fresh ./_fresh
+COPY --from=web-build /app/.web-dist ./.web-dist
 
 RUN deno compile \
     --config /app/docker/deno.compile.json \
@@ -53,7 +53,7 @@ COPY --from=runtime-assets /etc/ssl/certs /etc/ssl/certs
 COPY --from=runtime-assets /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=runtime-assets --chown=10001:10001 /runtime /app/runtime
 COPY --from=build --chown=10001:10001 /app/knock ./knock
-COPY --from=build --chown=10001:10001 /app/_fresh ./_fresh
+COPY --from=build --chown=10001:10001 /app/.web-dist ./.web-dist
 
 USER 10001:10001
 

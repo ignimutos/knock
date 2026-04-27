@@ -1,24 +1,31 @@
-import { defineConfig } from "vite";
-import { fresh } from "@fresh/plugin-vite";
+import { defineConfig } from 'vite'
 
 export default defineConfig({
-  plugins: [
-    fresh({
-      serverEntry: "./web/main.ts",
-      clientEntry: "./web/client.ts",
-      routeDir: "./web/routes",
-      islandsDir: "./web/islands",
-    }),
-  ],
+  publicDir: false,
+  esbuild: {
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
+  },
+  build: {
+    outDir: '.web-dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      input: './web/client.tsx',
+      output: {
+        entryFileNames: 'assets/client.js',
+        inlineDynamicImports: true,
+      },
+    },
+  },
   server: {
     watch: {
       ignored: [
-        "**/runtime/**",
-        "**/*.tmp.*",
-        "**/*.timestamp-*.mjs",
-        "**/*.db-wal",
-        "**/*.db-shm",
+        '**/runtime/**',
+        '**/*.tmp.*',
+        '**/*.timestamp-*.mjs',
+        '**/*.db-wal',
+        '**/*.db-shm',
       ],
     },
   },
-});
+})

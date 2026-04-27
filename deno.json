@@ -1,12 +1,12 @@
 {
   "tasks": {
-    "deps:prefetch": "deno cache --node-modules-dir=none src/main.ts src/container_entrypoint.ts web/main.ts vite.config.ts npm:vite",
+    "deps:prefetch": "deno cache --node-modules-dir=none src/main.ts src/container_entrypoint.ts web/main.tsx web/client.tsx vite.config.ts npm:vite",
     "build:web": "deno run -A --node-modules-dir=none npm:vite build --configLoader native",
     "start": "deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run --allow-sys src/main.ts",
     "web": "deno task start --mode web",
     "daemon": "deno task start --mode daemon",
     "dev": "deno task start",
-    "check": "scripts/run-paths.sh deno check -- src/main.ts src/container_entrypoint.ts web/main.ts web/routes/**/*.tsx web/islands/**/*.tsx --",
+    "check": "scripts/run-paths.sh deno check -- src/main.ts src/container_entrypoint.ts web/main.tsx web/client.tsx web/routes/**/*.tsx web/islands/**/*.tsx --",
     "fmt": "scripts/run-paths.sh deno run -A npm:prettier --write -- . --",
     "fmt:check": "scripts/run-paths.sh deno run -A npm:prettier --check -- . --",
     "lint": "scripts/run-paths.sh deno lint --fix --",
@@ -34,8 +34,6 @@
     "@logtape/logtape": "jsr:@logtape/logtape@^2.0.5",
     "@logtape/redaction": "jsr:@logtape/redaction@^2.0.5",
     "@logtape/file": "jsr:@logtape/file@^2.0.5",
-    "fresh": "jsr:@fresh/core@^2.3.0",
-    "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.0.8",
     "preact": "npm:preact@^10.29.1",
     "@preact/signals": "npm:@preact/signals@^2.9.0",
     "preact-render-to-string": "npm:preact-render-to-string@^6.6.7",

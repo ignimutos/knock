@@ -1,30 +1,19 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@fresh/build-id@1": "1.0.1",
-    "jsr:@fresh/core@^2.3.0": "2.3.0",
     "jsr:@logtape/file@^2.0.5": "2.0.5",
     "jsr:@logtape/logtape@^2.0.5": "2.0.5",
     "jsr:@logtape/redaction@^2.0.5": "2.0.5",
     "jsr:@std/assert@^1.0.19": "1.0.19",
-    "jsr:@std/encoding@^1.0.10": "1.0.10",
     "jsr:@std/fmt@^1.0.10": "1.0.10",
-    "jsr:@std/fmt@^1.0.8": "1.0.10",
-    "jsr:@std/fs@^1.0.19": "1.0.23",
     "jsr:@std/fs@^1.0.23": "1.0.23",
-    "jsr:@std/html@^1.0.5": "1.0.5",
-    "jsr:@std/http@^1.0.21": "1.0.25",
     "jsr:@std/internal@^1.0.12": "1.0.12",
-    "jsr:@std/net@^1.0.6": "1.0.6",
     "jsr:@std/path@^1.1.0": "1.1.4",
-    "jsr:@std/path@^1.1.2": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
     "jsr:@std/yaml@^1.1.0": "1.1.0",
     "npm:@ai-sdk/anthropic@^3.0.71": "3.0.71_zod@4.3.6",
     "npm:@ai-sdk/google@^3.0.64": "3.0.64_zod@4.3.6",
     "npm:@ai-sdk/openai@^3.0.53": "3.0.53_zod@4.3.6",
-    "npm:@opentelemetry/api@^1.9.0": "1.9.0",
-    "npm:@preact/signals@^2.5.1": "2.9.0_preact@10.29.1",
     "npm:@preact/signals@^2.9.0": "2.9.0_preact@10.29.1",
     "npm:ai@^6.0.168": "6.0.168_zod@4.3.6",
     "npm:croner@^10.0.1": "10.0.1",
@@ -37,38 +26,16 @@
     "npm:luxon@^3.7.2": "3.7.2",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:nodemailer@^7.0.13": "7.0.13",
-    "npm:preact-render-to-string@^6.6.3": "6.6.7_preact@10.29.1",
     "npm:preact-render-to-string@^6.6.7": "6.6.7_preact@10.29.1",
     "npm:preact@^10.29.1": "10.29.1",
     "npm:prettier@*": "3.8.1",
     "npm:sanitize-html@^2.17.3": "2.17.3",
     "npm:turndown@^7.2.4": "7.2.4",
+    "npm:vite@*": "7.3.2",
     "npm:vite@^7.3.2": "7.3.2",
     "npm:zod@^4.3.6": "4.3.6"
   },
   "jsr": {
-    "@fresh/build-id@1.0.1": {
-      "integrity": "12a2ec25fd52ae9ec68c26848a5696cd1c9b537f7c983c7e56e4fb1e7e816c20",
-      "dependencies": [
-        "jsr:@std/encoding"
-      ]
-    },
-    "@fresh/core@2.3.0": {
-      "integrity": "c98fd9c4cf223f68150d8de0ebc89e68070a277c132579c3b9e4f81dfdba822f",
-      "dependencies": [
-        "jsr:@fresh/build-id",
-        "jsr:@std/fmt@^1.0.8",
-        "jsr:@std/fs@^1.0.19",
-        "jsr:@std/html",
-        "jsr:@std/http",
-        "jsr:@std/net",
-        "jsr:@std/path@^1.1.2",
-        "npm:@opentelemetry/api",
-        "npm:@preact/signals@^2.5.1",
-        "npm:preact",
-        "npm:preact-render-to-string@^6.6.3"
-      ]
-    },
     "@logtape/file@2.0.5": {
       "integrity": "368621b15b73fd63c137e47ae43411e350627683ce7e0b4492af3ccb159e098b",
       "dependencies": [
@@ -91,9 +58,6 @@
         "jsr:@std/internal"
       ]
     },
-    "@std/encoding@1.0.10": {
-      "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
-    },
     "@std/fmt@1.0.10": {
       "integrity": "90dfba288802ac6de82fb31d0917eb9e4450b9925b954d5e51fc29ac07419db5"
     },
@@ -104,17 +68,8 @@
         "jsr:@std/path@^1.1.4"
       ]
     },
-    "@std/html@1.0.5": {
-      "integrity": "4e2d693f474cae8c16a920fa5e15a3b72267b94b84667f11a50c6dd1cb18d35e"
-    },
-    "@std/http@1.0.25": {
-      "integrity": "577b4252290af1097132812b339fffdd55fb0f4aeb98ff11bdbf67998aa17193"
-    },
     "@std/internal@1.0.12": {
       "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
-    },
-    "@std/net@1.0.6": {
-      "integrity": "110735f93e95bb9feb95790a8b1d1bf69ec0dc74f3f97a00a76ea5efea25500c"
     },
     "@std/path@1.1.4": {
       "integrity": "1d2d43f39efb1b42f0b1882a25486647cb851481862dc7313390b2bb044314b5",
@@ -689,8 +644,7 @@
       "integrity": "sha512-vcujgrDbDezCxNDO4KY6gjwduLYOKfrexpRUwhoysRvcXZ3+IgZ/PMYFDgh8c3cQIxZ6skAwYo+H6ibMrBWPjQ==",
       "dependencies": [
         "@types/node",
-        "tarn",
-        "tedious@19.2.1_@azure+core-client@1.10.1"
+        "tarn"
       ]
     },
     "@types/node@25.6.0": {
@@ -997,12 +951,6 @@
         "safer-buffer"
       ]
     },
-    "iconv-lite@0.7.2": {
-      "integrity": "sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==",
-      "dependencies": [
-        "safer-buffer"
-      ]
-    },
     "ieee754@1.2.1": {
       "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA=="
     },
@@ -1166,7 +1114,7 @@
         "debug",
         "rfdc",
         "tarn",
-        "tedious@18.6.2_@azure+core-client@1.10.1"
+        "tedious"
       ],
       "bin": true
     },
@@ -1351,22 +1299,7 @@
         "@js-joda/core",
         "@types/node",
         "bl",
-        "iconv-lite@0.6.3",
-        "js-md4",
-        "native-duplexpair",
-        "sprintf-js"
-      ]
-    },
-    "tedious@19.2.1_@azure+core-client@1.10.1": {
-      "integrity": "sha512-pk1Q16Yl62iocuQB+RWbg6rFUFkIyzqOFQ6NfysCltRvQqKwfurgj8v/f2X+CKvDhSL4IJ0cCOfCHDg9PWEEYA==",
-      "dependencies": [
-        "@azure/core-auth",
-        "@azure/identity",
-        "@azure/keyvault-keys",
-        "@js-joda/core",
-        "@types/node",
-        "bl",
-        "iconv-lite@0.7.2",
+        "iconv-lite",
         "js-md4",
         "native-duplexpair",
         "sprintf-js"
@@ -1485,8 +1418,6 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@fresh/core@^2.3.0",
-      "jsr:@fresh/plugin-vite@^1.0.8",
       "jsr:@logtape/file@^2.0.5",
       "jsr:@logtape/logtape@^2.0.5",
       "jsr:@logtape/redaction@^2.0.5",

@@ -878,13 +878,7 @@ test('[contract] waitForWebReady: 单次长首访应在总等待窗口内成功'
 
   const startedAt = Date.now()
   try {
-    await waitForWebReady(
-      {
-        status: new Promise<Deno.CommandStatus>(() => {}),
-      } as Deno.ChildProcess,
-      '127.0.0.1',
-      port,
-    )
+    await waitForWebReady('127.0.0.1', port)
   } finally {
     await server.shutdown()
   }

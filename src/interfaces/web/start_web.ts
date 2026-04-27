@@ -1,9 +1,9 @@
 import { dirname, join, resolve, toFileUrl } from '@std/path'
 import { z } from 'zod'
 import { deleteEnv, getEnv, setEnv } from '../../platform/env.ts'
-import { cwd, readTextFile, statPath } from '../../platform/fs.ts'
+import { cwd, isNotFoundError, readTextFile, statPath } from '../../platform/fs.ts'
 import { spawnSelf } from '../../platform/process.ts'
-import { serve } from '../../platform/serve.ts'
+import { isAddrInUseError, serve } from '../../platform/serve.ts'
 import { loadConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import { findConfigFile, parseRawConfigDocument } from '../../config/load_config.ts'
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
@@ -29,7 +29,7 @@ export const SKIP_WEB_RUNTIME_READY_CHECK_ENV = 'KNOCK_SKIP_WEB_RUNTIME_READY_CH
 const WEB_READY_PATH = '/config'
 const WEB_READY_MARKER = 'Knock Config'
 const WEB_READY_TIMEOUT_MS = 90_000
-const WEB_SERVER_ENTRY = '_fresh/server.js'
+const WEB_CLIENT_ENTRY = '.web-dist/assets/client.js'
 
 function normalizeWebReadyProbeHost(host: string): string {
   if (host === '0.0.0.0') return '127.0.0.1'
@@ -251,10 +251,10 @@ async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | un
 
 async function ensureWebBuildExists(): Promise<void> {
   try {
-    await statPath(join(cwd(), WEB_SERVER_ENTRY))
+    await statPath(join(cwd(), WEB_CLIENT_ENTRY))
     return
   } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) {
+    if (!isNotFoundError(error)) {
       throw error
     }
   }
@@ -272,17 +272,6 @@ async function ensureWebBuildExists(): Promise<void> {
   if (!status.success) {
     throw new Error(`web 生产构建失败: ${status.code}`)
   }
-}
-
-async function loadFreshServerFetch(): Promise<(request: Request) => Response | Promise<Response>> {
-  const module = (await import(toFileUrl(resolve(cwd(), WEB_SERVER_ENTRY)).href)) as {
-    default?: { fetch?: (request: Request) => Response | Promise<Response> }
-  }
-  const fetchHandler = module.default?.fetch
-  if (typeof fetchHandler !== 'function') {
-    throw new Error('Fresh server entry 未导出可用 fetch handler')
-  }
-  return fetchHandler
 }
 
 async function assertWebRuntimeReady(): Promise<void> {
@@ -365,11 +354,7 @@ function startWebReadyProbe(
   }
 }
 
-export async function waitForWebReady(
-  _child: Deno.ChildProcess | undefined,
-  host: string,
-  port: number,
-): Promise<void> {
+export async function waitForWebReady(host: string, port: number): Promise<void> {
   const deadline = Date.now() + WEB_READY_TIMEOUT_MS
   let lastError: unknown
 
@@ -421,7 +406,7 @@ export async function startWeb(options: StartWebOptions) {
   })
 
   await ensureWebBuildExists()
-  const fetchHandler = await loadFreshServerFetch()
+  const { handleWebRequest } = await import(toFileUrl(resolve(cwd(), 'web/main.tsx')).href)
   const abortController = new AbortController()
   let server: ReturnType<typeof serve> | undefined
 
@@ -432,11 +417,11 @@ export async function startWeb(options: StartWebOptions) {
         port: options.port,
         signal: abortController.signal,
       },
-      (request) => fetchHandler(request),
+      (request) => handleWebRequest(request),
     )
 
     const url = `http://${options.host}:${options.port}/`
-    await waitForWebReady(undefined, options.host, options.port)
+    await waitForWebReady(options.host, options.port)
     logger.info(`Web 服务开始监听 ${url}`, {
       'web.operation': 'startup',
       'web.outcome': 'listening',
@@ -446,7 +431,7 @@ export async function startWeb(options: StartWebOptions) {
     })
     await server.finished
   } catch (error) {
-    if (error instanceof Deno.errors.AddrInUse) {
+    if (isAddrInUseError(error)) {
       throw new Error('web 子进程异常退出: 1')
     }
     throw error

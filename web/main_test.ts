@@ -3,7 +3,7 @@ import { createLogger } from '../src/core/logger.ts'
 import { setCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
 import { test } from '../src/testing/test_api.ts'
 import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../src/testing/test_helpers.ts'
-import app, { withApiRequestLogging } from './main.ts'
+import app, { withApiRequestLogging } from './main.tsx'
 
 async function withRuntimeDir(configYml: string, fn: (runtimeDir: string) => Promise<void>) {
   await withRuntimeHarness(async ({ runtimeDir }) => {
@@ -20,8 +20,9 @@ async function withRuntimeDir(configYml: string, fn: (runtimeDir: string) => Pro
   })
 }
 
-test('[contract] web main: 应暴露 fresh app 默认导出', () => {
+test('[contract] web main: 应暴露统一 web app 默认导出', () => {
   assertEquals(typeof app.listen, 'function')
+  assertEquals(typeof app.handler, 'function')
 })
 
 test('[contract] web main: 应注册 reader 页面路由', async () => {
