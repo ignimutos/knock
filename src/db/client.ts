@@ -4,6 +4,7 @@ import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { SqliteConfigResolved } from '../config/types.ts'
 import type { Logger } from '../core/logger.ts'
 import { initializeSqliteFactsSchema } from '../infrastructure/sqlite/schema.ts'
+import { mkdirPathSync } from '../platform/fs.ts'
 import { initializeSqliteRuntimeSchema } from './schema.ts'
 
 export interface CreateDbClientOptions {
@@ -71,7 +72,7 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
     'db.path': databasePath,
   })
 
-  Deno.mkdirSync(dirname(databasePath), { recursive: true })
+  mkdirPathSync(dirname(databasePath), { recursive: true })
   const client = new DatabaseSync(databasePath)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
@@ -99,7 +100,7 @@ export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClie
     'db.path': databasePath,
   })
 
-  Deno.mkdirSync(dirname(databasePath), { recursive: true })
+  mkdirPathSync(dirname(databasePath), { recursive: true })
   const client = new DatabaseSync(databasePath)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)

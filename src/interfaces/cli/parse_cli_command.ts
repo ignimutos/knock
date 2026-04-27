@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
+import { getEnvObject } from '../../platform/env.ts'
 import { parseWithFirstIssue } from '../../zod_utils.ts'
 
 export type CliMode = 'all' | 'web' | 'daemon'
@@ -226,7 +227,7 @@ export function toDaemonStartOptions(command: CliCommand): DaemonStartOptions {
 
 export function resolveDaemonStartOptions(
   command: CliCommand,
-  env: Record<string, string | undefined> = Deno.env.toObject(),
+  env: Record<string, string | undefined> = getEnvObject(),
 ): DaemonStartOptions {
   const options = toDaemonStartOptions(command)
   return {

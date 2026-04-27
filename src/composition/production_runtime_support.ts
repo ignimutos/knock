@@ -2,6 +2,7 @@ import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
 import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
 import type nodemailer from 'nodemailer'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
+import type { ProxyClientFactory } from '../core/http_client.ts'
 import { createLogger, type Logger } from '../core/logger.ts'
 import { createScheduler } from '../core/scheduler.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
@@ -39,7 +40,7 @@ export interface CreateProductionRuntimeServicesInput {
   config: AppConfigResolved
   definitions?: DefinitionSet
   httpFetcher?: typeof fetch
-  httpProxyClientFactory?: typeof Deno.createHttpClient
+  httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: typeof nodemailer.createTransport
   now: () => string
   factsDb?: FactsDbClient
@@ -84,13 +85,13 @@ function createProductionSourceExecutionCore(input: {
   factsDb: FactsDbClient
   loggers: ProductionRuntimeLoggers
   httpFetcher?: typeof fetch
-  httpProxyClientFactory?: typeof Deno.createHttpClient
+  httpProxyClientFactory?: ProxyClientFactory
 }) {
   return createSourceExecutionCore({
     config: input.config,
     factsDb: input.factsDb,
     fetcher: input.httpFetcher ?? fetch,
-    proxyClientFactory: input.httpProxyClientFactory ?? Deno.createHttpClient,
+    proxyClientFactory: input.httpProxyClientFactory,
     aiLogger: input.loggers.ai,
     contentLogger: input.loggers.content,
     parserLogger: input.loggers.parser,
@@ -144,7 +145,7 @@ function createProductionRunSourceUseCase(input: {
   now: () => string
   loggers: ProductionRuntimeLoggers
   httpFetcher?: typeof fetch
-  httpProxyClientFactory?: typeof Deno.createHttpClient
+  httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: typeof nodemailer.createTransport
 }) {
   const core = createProductionSourceExecutionCore({

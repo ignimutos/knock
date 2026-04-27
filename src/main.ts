@@ -1,8 +1,9 @@
 import { fromFileUrl } from '@std/path'
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
+import type { ProxyClientFactory } from './core/http_client.ts'
 import { getEnvObject } from './platform/env.ts'
-import { execPath, spawnSelf } from './platform/process.ts'
+import { execPath, getArgs, spawnSelf } from './platform/process.ts'
 import { loadCompiledConfig } from './config/load_compiled_config.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
 import {
@@ -27,7 +28,7 @@ export interface StartAppOptions {
   runtimeDir?: string
   configPath?: string
   httpFetcher?: typeof fetch
-  httpProxyClientFactory?: typeof Deno.createHttpClient
+  httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: typeof nodemailer.createTransport
   keepAlive?: boolean
   keepAliveSignal?: Promise<void>
@@ -38,7 +39,7 @@ interface StartAppInput {
   runtimeDir?: string
   configPath?: string
   httpFetcher: typeof fetch
-  httpProxyClientFactory: typeof Deno.createHttpClient
+  httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: typeof nodemailer.createTransport
   keepAlive: boolean
   keepAliveSignal?: Promise<void>
@@ -65,7 +66,7 @@ const startAppOptionsSchema = z.object({
       message: 'httpFetcher 必须是函数',
     },
   ),
-  httpProxyClientFactory: z.custom<typeof Deno.createHttpClient>(
+  httpProxyClientFactory: z.custom<ProxyClientFactory>(
     (value) => value === undefined || typeof value === 'function',
     { message: 'httpProxyClientFactory 必须是函数' },
   ),
@@ -88,7 +89,7 @@ function normalizeStartAppInput(options: StartAppOptions = {}): StartAppInput {
     runtimeDir: parsed.runtimeDir,
     configPath: parsed.configPath,
     httpFetcher: parsed.httpFetcher ?? fetch,
-    httpProxyClientFactory: parsed.httpProxyClientFactory ?? Deno.createHttpClient,
+    httpProxyClientFactory: parsed.httpProxyClientFactory,
     emailTransportFactory: parsed.emailTransportFactory,
     keepAlive: parsed.keepAlive ?? true,
     keepAliveSignal: parsed.keepAliveSignal,
@@ -153,7 +154,7 @@ function buildSelfCommandArgs(args: string[]): string[] {
     ]
   }
 
-  return args
+  return [fromFileUrl(import.meta.url), ...args]
 }
 
 export async function runAllModes(command: AllCliCommand): Promise<void> {
@@ -237,5 +238,5 @@ export async function main(args: string[], deps: DispatchCliCommandDeps = {}): P
 }
 
 if (import.meta.main) {
-  await main(Deno.args)
+  await main(getArgs())
 }

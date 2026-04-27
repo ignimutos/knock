@@ -12,6 +12,7 @@ import {
   parseRawConfigDocument,
   type LoadedCompiledConfig,
 } from '../config/load_compiled_config.ts'
+import { readTextFile } from '../platform/fs.ts'
 import { loadConfigRuntimeContext } from '../config/runtime_config_context.ts'
 import { PIPELINE_ITEM_STATUSES, SOURCE_RUN_STATUSES } from '../infrastructure/sqlite/schema.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
@@ -387,7 +388,7 @@ export async function buildCurrentReaderOverview(input: {
   rawDocument?: Record<string, unknown>
 }): Promise<ReaderOverview> {
   const rawDocument =
-    input.rawDocument ?? parseRawConfigDocument(await Deno.readTextFile(input.loaded.configPath))
+    input.rawDocument ?? parseRawConfigDocument(await readTextFile(input.loaded.configPath))
   if (input.factsDb) {
     return buildReaderOverview({
       config: input.loaded.config,

@@ -1,5 +1,6 @@
 import { join } from '@std/path'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
+import { cwd } from '../platform/fs.ts'
 import { getCurrentWebLoggingRuntime } from '../interfaces/web/start_web.ts'
 import {
   executePreviewSource,
@@ -30,12 +31,12 @@ export function createPlaygroundConfig(source: ResolvedSourceConfig): AppConfigR
   const loggingRuntime = getCurrentWebLoggingRuntime()
 
   return {
-    runtimeDir: Deno.cwd(),
+    runtimeDir: cwd(),
     language: 'zh-CN',
     timezone: loggingRuntime?.timezone ?? 'UTC',
     timestampFormat: loggingRuntime?.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss',
     sqlite: {
-      path: join(Deno.cwd(), '.tmp', 'playground-preview.db'),
+      path: join(cwd(), '.tmp', 'playground-preview.db'),
       busyTimeout: '5s',
       journalMode: 'WAL',
       retention: {

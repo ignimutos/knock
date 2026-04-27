@@ -1,5 +1,7 @@
 import { dirname, join, resolve } from '@std/path'
 import { stringify } from '@std/yaml'
+import { getEnv } from '../platform/env.ts'
+import { cwd, readTextFile, writeTextFile } from '../platform/fs.ts'
 import {
   compileConfigDocument,
   findConfigFile,
@@ -19,7 +21,7 @@ export interface RawConfigDocumentLoadResult {
 }
 
 export function getConfigDocumentLookupFromEnv(): ConfigDocumentLookup {
-  const configPath = Deno.env.get('KNOCK_CONFIG_PATH')
+  const configPath = getEnv('KNOCK_CONFIG_PATH')
   if (configPath) {
     const resolvedConfigPath = resolve(configPath)
     return {
@@ -29,7 +31,7 @@ export function getConfigDocumentLookupFromEnv(): ConfigDocumentLookup {
   }
 
   return {
-    runtimeDir: resolve(Deno.env.get('KNOCK_RUNTIME_DIR') ?? join(Deno.cwd(), 'runtime')),
+    runtimeDir: resolve(getEnv('KNOCK_RUNTIME_DIR') ?? join(cwd(), 'runtime')),
   }
 }
 
@@ -37,7 +39,7 @@ export async function loadRawConfigDocument(
   lookup: ConfigDocumentLookup,
 ): Promise<RawConfigDocumentLoadResult> {
   const configPath = lookup.configPath ?? (await findConfigFile(lookup.runtimeDir))
-  const raw = await Deno.readTextFile(configPath)
+  const raw = await readTextFile(configPath)
 
   return {
     runtimeDir: lookup.runtimeDir,
@@ -57,6 +59,6 @@ export async function writeValidatedConfigDocument(input: {
     configPath: input.configPath,
     envMode: 'preserve_unknown',
   })
-  await Deno.writeTextFile(input.configPath, stringify(input.document))
+  await writeTextFile(input.configPath, stringify(input.document))
   return compiled
 }

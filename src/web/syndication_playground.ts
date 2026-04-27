@@ -1,4 +1,3 @@
-import { join, toFileUrl } from '@std/path'
 import { z } from 'zod'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import {
@@ -115,8 +114,9 @@ export async function evaluateSyndicationPlayground(input: EvaluateSyndicationPl
     deliveries: [],
   }
 
-  const previewModuleUrl = toFileUrl(join(Deno.cwd(), 'src', 'web', 'playground_preview.ts')).href
-  const { evaluatePlaygroundPreview } = await import(previewModuleUrl)
+  const { evaluatePlaygroundPreview } = await import(
+    new URL('./playground_preview.ts', import.meta.url).href
+  )
 
   return await evaluatePlaygroundPreview({
     source: resolvedSource,

@@ -3,6 +3,8 @@ import { parse } from '@std/yaml'
 import type { Logger } from '../core/logger.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
+import { getEnv } from '../platform/env.ts'
+import { cwd, isNotFoundError, readTextFile, statPath } from '../platform/fs.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import { isEnvExpansionAllowed } from './capabilities.ts'
 import { resolveConfig } from './resolve_config.ts'
@@ -31,31 +33,31 @@ export interface LoadedCompiledConfig {
 function getRuntimeDir(options: LoadConfigOptions): string {
   if (options.runtimeDir) return resolve(options.runtimeDir)
 
-  const fromEnv = Deno.env.get('KNOCK_RUNTIME_DIR')
+  const fromEnv = getEnv('KNOCK_RUNTIME_DIR')
   if (fromEnv) return resolve(fromEnv)
 
   if (options.configPath) return dirname(resolve(options.configPath))
 
-  return join(Deno.cwd(), 'runtime')
+  return join(cwd(), 'runtime')
 }
 
 export async function findConfigFile(runtimeDir: string): Promise<string> {
   const yml = join(runtimeDir, 'config.yml')
   try {
-    await Deno.stat(yml)
+    await statPath(yml)
     return yml
   } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) {
+    if (!isNotFoundError(error)) {
       throw error
     }
   }
 
   const yaml = join(runtimeDir, 'config.yaml')
   try {
-    await Deno.stat(yaml)
+    await statPath(yaml)
     return yaml
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isNotFoundError(error)) {
       throw new Error(`配置文件不存在: ${yml} 或 ${yaml}`)
     }
     throw error
@@ -77,7 +79,7 @@ function expandEnvString(
   }
 
   return value.replace(/\$\{([A-Z0-9_]+)\}/g, (matched, name: string) => {
-    const envValue = Deno.env.get(name)
+    const envValue = getEnv(name)
     if (envValue === undefined) {
       if (envMode === 'preserve_unknown') return matched
       throw new Error(`${path} 引用了未定义环境变量: ${name}`)
@@ -193,7 +195,7 @@ async function loadResolvedConfig(
   })
 
   try {
-    const raw = await Deno.readTextFile(configPath)
+    const raw = await readTextFile(configPath)
     const document = parseRawConfigDocument(raw)
 
     options.logger?.info('开始校验配置', {

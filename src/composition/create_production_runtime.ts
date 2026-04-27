@@ -6,6 +6,7 @@ import type nodemailer from 'nodemailer'
 import type { AppConfigResolved } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
+import type { ProxyClientFactory } from '../core/http_client.ts'
 import { createProductionRuntimeServices } from './production_runtime_support.ts'
 
 export interface ProductionRuntimeRunResult {
@@ -27,7 +28,7 @@ export interface CreateProductionRuntimeOptions {
   config: AppConfigResolved
   definitions?: DefinitionSet
   httpFetcher?: typeof fetch
-  httpProxyClientFactory?: typeof Deno.createHttpClient
+  httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: typeof nodemailer.createTransport
   keepAlive?: boolean
   keepAliveSignal?: Promise<void>

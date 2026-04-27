@@ -1,6 +1,6 @@
 import { main } from './main.ts'
 import { getEnv, getEnvObject } from './platform/env.ts'
-import { exit, spawnCommand } from './platform/process.ts'
+import { exit, getArgs, spawnCommand } from './platform/process.ts'
 
 export function hasFlag(flag: string, args: string[]): boolean {
   return args.includes(flag)
@@ -94,7 +94,7 @@ export function applyContainerDefaults(
   return nextArgs
 }
 
-export async function runContainerEntrypoint(rawArgs: string[] = [...Deno.args]): Promise<void> {
+export async function runContainerEntrypoint(rawArgs: string[] = getArgs()): Promise<void> {
   const appArgs = normalizeAppArgs(rawArgs)
 
   if (!appArgs) {

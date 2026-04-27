@@ -7,6 +7,24 @@ const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504] as const
 
 type RetryTransportConfig = NonNullable<HttpTransportConfig['retry']>
 
+export interface ProxyClient {
+  close(): void
+}
+
+export interface ProxyClientFactoryOptions {
+  proxy: {
+    url: string
+  }
+}
+
+export type ProxyClientFactory = (options: ProxyClientFactoryOptions) => ProxyClient
+
+interface DenoProxyRuntime {
+  Deno?: {
+    createHttpClient?: ProxyClientFactory
+  }
+}
+
 export interface HttpRequestInput {
   transport?: HttpTransportConfig
   request: RequestInfo | URL
@@ -20,7 +38,7 @@ export interface HttpClient {
 
 export interface CreateHttpClientOptions {
   fetcher?: typeof fetch
-  proxyClientFactory?: typeof Deno.createHttpClient
+  proxyClientFactory?: ProxyClientFactory
 }
 
 function toKyRetryConfig(retry: RetryTransportConfig | undefined) {
@@ -35,15 +53,27 @@ function toKyRetryConfig(retry: RetryTransportConfig | undefined) {
   }
 }
 
+function getDefaultProxyClientFactory(): ProxyClientFactory | undefined {
+  return (globalThis as DenoProxyRuntime).Deno?.createHttpClient
+}
+
+function isDenoProxyRuntime(): boolean {
+  return typeof (globalThis as DenoProxyRuntime).Deno?.createHttpClient === 'function'
+}
+
 export function createHttpClient(options: CreateHttpClientOptions = {}): HttpClient {
   const fetcher = options.fetcher ?? fetch
-  const proxyClientFactory = options.proxyClientFactory ?? Deno.createHttpClient
+  const proxyClientFactory = options.proxyClientFactory ?? getDefaultProxyClientFactory()
 
   return {
     async request(input: HttpRequestInput): Promise<Response> {
       const transport = input.transport
+      if (transport?.proxy && !proxyClientFactory) {
+        throw new Error('当前运行时不支持 transport.proxy')
+      }
+
       const proxyClient = transport?.proxy
-        ? proxyClientFactory({
+        ? proxyClientFactory?.({
             proxy: {
               url: transport.proxy,
             },
@@ -54,13 +84,19 @@ export function createHttpClient(options: CreateHttpClientOptions = {}): HttpCli
         if (!proxyClient) {
           return fetcher(request as RequestInfo | URL, init as unknown as RequestInit)
         }
-        return fetcher(
-          request as RequestInfo | URL,
-          {
-            ...(init as unknown as RequestInit),
-            client: proxyClient,
-          } as unknown as RequestInit,
-        )
+
+        const requestInit = init as unknown as RequestInit
+        if (isDenoProxyRuntime()) {
+          return fetcher(
+            request as RequestInfo | URL,
+            {
+              ...requestInit,
+              client: proxyClient,
+            } as unknown as RequestInit,
+          )
+        }
+
+        return fetcher(request as RequestInfo | URL, requestInit)
       }
 
       const timeoutMs = transport?.timeout

@@ -1,4 +1,3 @@
-import { join, toFileUrl } from '@std/path'
 import type { SourceDeliveryOverride } from '../../config/types.ts'
 import {
   loadConfigRuntimeContext,
@@ -107,10 +106,9 @@ export async function runSourceNow(input: unknown): Promise<{
     throwConflict(`source ${context.request.sourceId} 已停用，不能强制获取`)
   }
 
-  const runtimeModuleUrl = toFileUrl(
-    join(Deno.cwd(), 'src', 'composition', 'create_production_runtime.ts'),
-  ).href
-  const { createProductionRuntime } = await import(runtimeModuleUrl)
+  const { createProductionRuntime } = await import(
+    new URL('../../composition/create_production_runtime.ts', import.meta.url).href
+  )
   const runtime = createProductionRuntime({
     config: context.loaded.config,
     definitions: context.loaded.definitions,
