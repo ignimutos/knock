@@ -31,16 +31,14 @@ SHARED_RUNTIME_PATTERN = re.compile(
 )
 
 HIGH_RISK_BOUNDARIES = (
-    "deno.json",
+    "package.json",
+    "bun.lock",
     "scripts/run-paths.sh",
     "src/main.ts",
-    "src/core/app.ts",
-    "src/db/client.ts",
-    "src/db/schema.ts",
-    "src/db/migrations/",
+    "src/container_entrypoint.ts",
+    "src/db/",
     "src/test_runtime.ts",
     "src/sources/xquery.ts",
-    "src/sources/source_runtime.ts",
 )
 
 
@@ -272,16 +270,16 @@ def _verification_commands(changed_paths: List[str]) -> List[List[str]]:
         return commands
 
     if has_test_related_changes:
-        commands.append(["deno", "task", "test", *changed_test_files])
+        commands.append(["bun", "run", "test:path", "--", *changed_test_files])
 
     if checkable_paths:
-        commands.append(["deno", "task", "check", *checkable_paths])
+        commands.append(["bun", "run", "check"])
 
     if changed_paths:
-        commands.append(["deno", "task", "fmt:check", *changed_paths])
+        commands.append(["bun", "run", "fmt:check:path", "--", *changed_paths])
 
     if has_high_risk_changes:
-        commands.append(["deno", "task", "test"])
+        commands.append(["bun", "run", "test"])
 
     return commands
 

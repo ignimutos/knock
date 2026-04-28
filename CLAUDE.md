@@ -8,8 +8,9 @@
 
 ## Project-specific workflow
 
-- 当标准 task 存在时，agents **MUST** 优先使用 `deno task`。
-- 对 `check` / `fmt:check` / `lint:check` / `test` 的直接调用，agents **MUST** 优先使用受影响路径。
+- 当标准 task 存在时，agents **MUST** 优先使用 `bun run`。
+- 对 `fmt:check` / `lint:check` / `test` 的直接调用，agents **MUST** 优先使用受影响路径（例如 `bun run fmt:check:path -- <paths>`、`bun run lint:check:path -- <paths>`、`bun run test:path -- <paths>`）。
+- `check` 当前使用项目级 `tsc --project tsconfig.json`，agents **SHOULD** 运行 `bun run check` 作为基线验证。
 - 非平凡任务（多文件、接口/状态变化、重构）agents **SHOULD** 先给出简短计划（目标 / 实现 / 验证）。
 - 细节规则 **SHOULD** 放在 `.claude/rules/*.md`；本文件只保留顶层项目约束。
 
@@ -24,7 +25,7 @@
 
 - docs-only 改动 **MUST** 做路径与命令一致性检查。
 - code changes **MUST** 先跑最窄相关验证。
-- 命中共享高影响边界时 **MUST** 追加全量 `deno task test`。
+- 命中共享高影响边界时 **MUST** 追加全量 `bun run test`。
 - 最终交付 **SHOULD** 明确已运行验证、未运行验证与剩余风险。
 
 ## CI reality

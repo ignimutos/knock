@@ -3,7 +3,10 @@ paths:
   - 'src/**'
   - 'web/**'
   - 'scripts/**'
-  - 'deno.json'
+  - 'package.json'
+  - 'bun.lock'
+  - 'Dockerfile'
+  - '.github/workflows/**'
   - 'CLAUDE.md'
   - '.claude/rules/**'
 ---

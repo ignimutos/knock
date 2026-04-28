@@ -48,8 +48,9 @@ class GuardTests(unittest.TestCase):
         self.assertIn("related_paths", result)
 
     def test_stdin_path_extraction_supports_tool_input_and_tool_response(self) -> None:
+        repo_root = Path(__file__).resolve().parents[4]
         stdin_payload = (
-            '{"tool_input":{"file_path":"/root/git/knock/.claude/worktrees/testing-refactor/src/core/logger_test.ts"},'
+            f'{{"tool_input":{{"file_path":"{repo_root.as_posix()}/src/core/logger_test.ts"}},'
             '"tool_response":{"filePath":"src/db/client_test.ts"}}'
         )
 
@@ -105,9 +106,13 @@ class GuardTests(unittest.TestCase):
 
     def test_new_high_risk_boundaries_trigger_full_test_command(self) -> None:
         for boundary_path in (
+            "package.json",
+            "bun.lock",
             "scripts/run-paths.sh",
+            "src/main.ts",
+            "src/container_entrypoint.ts",
             "src/test_runtime.ts",
-            "src/sources/source_runtime.ts",
+            "src/sources/xquery.ts",
         ):
             with self.subTest(boundary_path=boundary_path):
                 executed = []
@@ -124,7 +129,7 @@ class GuardTests(unittest.TestCase):
                 )
 
                 self.assertEqual(result["gate"], "passed")
-                self.assertIn("deno task test", executed)
+                self.assertIn("bun run test", executed)
 
     def test_scoped_check_skips_non_code_paths(self) -> None:
         executed = []
@@ -141,9 +146,9 @@ class GuardTests(unittest.TestCase):
         )
 
         self.assertEqual(result["gate"], "passed")
-        self.assertIn("deno task test src/core/logger_test.ts", executed)
-        self.assertIn("deno task check src/core/logger_test.ts", executed)
-        self.assertTrue(all("docs/testing/risk-matrix.yml" not in cmd or "fmt:check" in cmd for cmd in executed))
+        self.assertIn("bun run test:path -- src/core/logger_test.ts", executed)
+        self.assertIn("bun run check", executed)
+        self.assertIn("bun run fmt:check:path -- src/core/logger_test.ts docs/testing/risk-matrix.yml", executed)
 
 
 if __name__ == "__main__":

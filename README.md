@@ -670,6 +670,10 @@ logging:
 - `bun run test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
 - `bun run test:startup`：校验配置解析、CLI、主入口、容器入口与 Web 入口的启动契约。
 - `bun run verify:full`：串起 build、check、startup/arch tests 与全量测试。
+- `bun run test:path -- <paths>`：按路径运行测试子集。
+- `bun run lint:check:path -- <paths>`：按路径运行 lint 子集。
+- `bun run fmt:check:path -- <paths>`：按路径运行 Prettier 检查子集。
+- `bun run check`：当前仍为项目级 TypeScript 基线验证，不支持按路径切片。
 
 当前 CI / 本地发布前门禁会依次执行 `build:web`、`check`、`test:arch`、`test:startup`、`test`，然后再做 Docker build 与镜像体积检查。
 

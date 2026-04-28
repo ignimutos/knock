@@ -23,5 +23,5 @@ paths:
 - `contract` 与 `flow` 测试命中风险条目时，测试文件路径 MUST 出现在对应 `owner_tests` 中。
 - `unit` 测试 MAY 不绑定风险 ID。
 - 命中测试相关文件改动时，仓库门禁 MUST 运行测试架构校验。
-- 命中共享高风险边界时，门禁 MUST 追加一次全量 `deno task test`。
+- 命中共享高风险边界时，门禁 MUST 追加一次全量 `bun run test`。
 - 新增或迁移测试后，变更集 MUST 通过 scoped 的 `test`、`check`、`fmt:check` 验证。
