@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 
 import { join } from 'node:path'
-import type { ComponentChildren } from 'preact'
+import type { ComponentChildren } from '../src/platform/preact_types.ts'
 import renderToString from '../src/platform/preact_render_to_string.ts'
 import { createLogger, type Logger } from '../src/core/logger.ts'
 import { cwd, isNotFoundError, readTextFile } from '../src/platform/fs.ts'

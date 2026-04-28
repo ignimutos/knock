@@ -26,7 +26,8 @@
     "jsxImportSource": "preact"
   },
   "imports": {
-    "preact": "npm:preact@^10.29.1",
+    "preact/jsx-runtime": "npm:preact@^10.29.1/jsx-runtime",
+    "preact/jsx-dev-runtime": "npm:preact@^10.29.1/jsx-dev-runtime",
     "@preact/signals": "npm:@preact/signals@^2.9.0",
     "vite": "npm:vite@^7.3.2",
     "feedsmith": "npm:feedsmith@^2.9.3",
