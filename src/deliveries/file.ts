@@ -1,8 +1,17 @@
-import { basename, dirname, extname, join } from '@std/path'
+import { basename, dirname, extname, join } from 'node:path'
 import { z } from 'zod'
 import { parseDurationMs, resolveRuntimePath } from '../config/runtime_semantics.ts'
 import type { FileRotationConfig } from '../config/schema.ts'
 import { getLogFields, type Logger } from '../core/logger.ts'
+import {
+  type FileInfo,
+  mkdirPath,
+  readDir,
+  removePath,
+  renamePath,
+  statPath,
+  writeTextFile,
+} from '../platform/fs.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 
 export interface FileDeliveryFactoryOptions {
@@ -76,7 +85,7 @@ function buildRotatedPath(targetPath: string, now: Date): string {
 }
 
 function detectRotationReason(
-  fileInfo: Deno.FileInfo,
+  fileInfo: FileInfo,
   rotation: FileRotationConfig,
 ): 'size' | 'age' | 'none' {
   const exceedsSizeLimit = rotation.size ? fileInfo.size >= parseSizeBytes(rotation.size) : false
@@ -93,9 +102,9 @@ async function resolveRotationDecision(
   targetPath: string,
   rotation: FileRotationConfig,
 ): Promise<{ shouldRotate: boolean; reason: 'size' | 'age' | 'none' }> {
-  let fileInfo: Deno.FileInfo
+  let fileInfo: FileInfo
   try {
-    fileInfo = await Deno.stat(targetPath)
+    fileInfo = await statPath(targetPath)
   } catch {
     return { shouldRotate: false, reason: 'none' }
   }
@@ -123,7 +132,7 @@ async function pruneBackups(targetPath: string, backups: number): Promise<void> 
   const pattern = buildBackupFilenamePattern(targetPath)
 
   const files: string[] = []
-  for await (const entry of Deno.readDir(dir)) {
+  for (const entry of await readDir(dir)) {
     if (!entry.isFile) continue
     if (pattern.test(entry.name)) files.push(entry.name)
   }
@@ -133,7 +142,7 @@ async function pruneBackups(targetPath: string, backups: number): Promise<void> 
   if (removeCount <= 0) return
 
   for (let i = 0; i < removeCount; i += 1) {
-    await Deno.remove(join(dir, files[i]))
+    await removePath(join(dir, files[i]))
   }
 }
 
@@ -149,7 +158,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
 
       const rotation = req.rotation
       try {
-        await Deno.mkdir(dirname(targetPath), { recursive: true })
+        await mkdirPath(dirname(targetPath), { recursive: true })
         if (rotation?.enabled) {
           const decision = await resolveRotationDecision(targetPath, rotation)
           options.logger?.debug('检查文件轮转', {
@@ -162,7 +171,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
 
           if (decision.shouldRotate) {
             const rotatedPath = buildRotatedPath(targetPath, new Date())
-            await Deno.rename(targetPath, rotatedPath)
+            await renamePath(targetPath, rotatedPath)
             options.logger?.debug('执行文件轮转', {
               'delivery.operation': 'rotate_file',
               'delivery.outcome': 'success',
@@ -184,7 +193,7 @@ export function createFileDelivery(options: FileDeliveryFactoryOptions): FileDel
           }
         }
 
-        await Deno.writeTextFile(targetPath, `${req.content}\n`, {
+        await writeTextFile(targetPath, `${req.content}\n`, {
           append: true,
         })
         options.logger?.info('写入文件成功', {

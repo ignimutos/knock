@@ -1,5 +1,5 @@
-import { dirname, join, resolve } from '@std/path'
-import { stringify } from '@std/yaml'
+import { dirname, join, resolve } from 'node:path'
+import { stringify } from 'yaml'
 import { getEnv } from '../platform/env.ts'
 import { cwd, readTextFile, writeTextFile } from '../platform/fs.ts'
 import {

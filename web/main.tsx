@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 
-import { join } from '@std/path'
+import { join } from 'node:path'
 import type { ComponentChildren } from 'preact'
 import { renderToString } from 'preact-render-to-string'
 import { createLogger, type Logger } from '../src/core/logger.ts'

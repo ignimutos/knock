@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assert } from '@std/assert'
+import { assertEquals, assertRejects, assert } from '../testing/assert.ts'
 import type { RunSourceResult } from './run_source_use_case.ts'
 import { RunDueSourcesUseCase } from './run_due_sources_use_case.ts'
 import { test } from '../testing/test_api.ts'

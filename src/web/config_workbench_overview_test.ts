@@ -1,22 +1,15 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import { loadConfigWorkbenchContext } from './config_workbench_overview.ts'
 import { test } from '../testing/test_api.ts'
+import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../testing/test_helpers.ts'
 
 async function withRuntimeDir(configYml: string, fn: (runtimeDir: string) => Promise<void>) {
-  const runtimeDir = await Deno.makeTempDir()
-  const previous = Deno.env.get('KNOCK_RUNTIME_DIR')
-  try {
-    await Deno.writeTextFile(`${runtimeDir}/config.yml`, configYml)
-    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
-    await fn(runtimeDir)
-  } finally {
-    if (previous === undefined) {
-      Deno.env.delete('KNOCK_RUNTIME_DIR')
-    } else {
-      Deno.env.set('KNOCK_RUNTIME_DIR', previous)
-    }
-    await Deno.remove(runtimeDir, { recursive: true })
-  }
+  await withRuntimeHarness(async ({ runtimeDir }) => {
+    await writeRuntimeFile(runtimeDir, 'config.yml', configYml)
+    await withEnv({ KNOCK_RUNTIME_DIR: runtimeDir }, async () => {
+      await fn(runtimeDir)
+    })
+  })
 }
 
 test('[contract] config workbench overview: 应对 raw secret 做 redaction', async () => {

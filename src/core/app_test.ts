@@ -1,6 +1,7 @@
-import { assertEquals, assertRejects } from '@std/assert'
-import { join } from '@std/path'
+import { assertEquals, assertRejects } from '../testing/assert.ts'
+import { join } from 'node:path'
 import { startApp } from '../main.ts'
+import { cwd, statPath } from '../platform/fs.ts'
 import { test } from '../testing/test_api.ts'
 import { withRuntimeHarness, writeRuntimeFile } from '../testing/test_helpers.ts'
 
@@ -8,7 +9,7 @@ function withAppRuntime(
   testName: string,
   run: (runtimeDir: string) => Promise<void>,
 ): Promise<void> {
-  return withRuntimeHarness(join(Deno.cwd(), '.tmp', `runtime-app-${testName}`), run)
+  return withRuntimeHarness(join(cwd(), '.tmp', `runtime-app-${testName}`), run)
 }
 
 test('[contract] app: 启动入口应拒绝非法 keepAlive 类型', async () => {
@@ -93,7 +94,7 @@ sources: {}
     })
 
     const logPath = join(testRuntime, 'logs', 'app.jsonl')
-    const stat = await Deno.stat(logPath)
+    const stat = await statPath(logPath)
     assertEquals(stat.isFile, true)
   })
 })

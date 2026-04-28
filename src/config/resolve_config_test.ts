@@ -1,4 +1,4 @@
-import { assertEquals, assertNotStrictEquals } from '@std/assert'
+import { assertEquals, assertNotStrictEquals } from '../testing/assert.ts'
 // 风险映射: R03 R04 R17
 import { resolveConfig } from './resolve_config.ts'
 import { validateConfig } from './validate_config.ts'

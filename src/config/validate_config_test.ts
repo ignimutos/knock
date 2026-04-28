@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
+import { assertEquals, assertStringIncludes, assertThrows } from '../testing/assert.ts'
 // 风险映射: R03 R04 R17
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import { phase1ConfigSchema } from './schema.ts'

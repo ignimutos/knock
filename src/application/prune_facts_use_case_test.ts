@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import type { PruneFactsInput } from './ports/prune_facts_repository.ts'
 import { PruneFactsUseCase } from './prune_facts_use_case.ts'
 import { test } from '../testing/test_api.ts'

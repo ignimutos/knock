@@ -1,4 +1,4 @@
-import { isAbsolute, join, normalize } from '@std/path'
+import { isAbsolute, join, normalize } from 'node:path'
 import { z } from 'zod'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 

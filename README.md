@@ -1,6 +1,6 @@
 # Knock
 
-Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
+Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 
 它按计划抓取 RSS / Atom / JSON Feed，或通过 XQuery 从 HTML/XML 提取条目；随后统一 feed 与 entry 字段，执行 Liquid 过滤与渲染，并将结果投递到 file、push(HTTP)、email(SMTP) 通道，同时把状态与去重信息写入 SQLite。
 
@@ -32,7 +32,8 @@ src/interfaces/              CLI、daemon、web 等入口适配面
 src/db/                      SQLite 客户端、schema 与状态存储
 web/                         网页调试页与 API 路由
 config.example.yml           完整参考配置
-deno.json                    任务脚本入口
+package.json                 Bun 运行 / 构建脚本入口
+deno.json                    Deno baseline 验证任务入口
 ```
 
 ## 快速开始
@@ -40,13 +41,16 @@ deno.json                    任务脚本入口
 ### 1) 准备环境
 
 ```bash
-deno --version
+bun --version
 ```
 
 ```bash
 git clone <你的仓库地址> knock
 cd knock
+bun install
 ```
+
+如果你还要跑 Deno baseline（例如 `bun run verify:full` 里委托的 `deno task ...`），本机也需要安装 Deno。
 
 ### 2) 基于参考配置创建配置文件
 
@@ -80,13 +84,13 @@ sources:
 ### 4) 先跑一次即时执行
 
 ```bash
-deno task daemon --config <your-config.yml> --immediate
+bun run daemon -- --config <your-config.yml> --immediate
 ```
 
 ### 5) 启动常驻模式
 
 ```bash
-deno task start --config <your-config.yml>
+bun run start -- --config <your-config.yml>
 ```
 
 ## 配置设计原则
@@ -528,13 +532,13 @@ sources:
 启动方式：
 
 ```bash
-deno task start --mode web
+bun run src/main.ts --mode web
 ```
 
 ## 命令行用法
 
 ```bash
-deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-run src/main.ts \
+bun run src/main.ts \
   [--mode <all|web|daemon>] \
   [--config <path>] \
   [--runtime_dir <dir>] \
@@ -584,19 +588,19 @@ deno run --allow-read --allow-write --allow-env --allow-net --allow-ffi --allow-
 ### 构建
 
 ```bash
-deno task docker:build
+bun run docker:build
 ```
 
 默认产物标签是 `knock:local`；也可通过 `KNOCK_IMAGE_TAG` 覆盖：
 
 ```bash
-KNOCK_IMAGE_TAG=knock:dev deno task docker:build
+KNOCK_IMAGE_TAG=knock:dev bun run docker:build
 ```
 
 ### 本地镜像验证
 
 ```bash
-deno task docker:size:check
+bun run docker:size:check
 ```
 
 ### 运行
@@ -610,9 +614,9 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为离线二进制 `/app/knock`，内部仍复用 `src/container_entrypoint.ts`：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为 `bun src/container_main.ts`，内部仍复用 `src/container_entrypoint.ts`：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
 
-CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `deno task verify:full`，再构建与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
+CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run verify:full`，再构建与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
 
 Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 
@@ -660,10 +664,11 @@ logging:
 
 常用本地验证入口：
 
+- `bun run test`
 - `deno task check`
 - `deno task fmt:check`
 - `deno task lint:check`
-- `deno task test`
+- `deno task test`：保留 Deno baseline，全量回归仍以它兜底。
 - `deno task test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
 - `deno task test:startup`：校验配置解析、CLI、主入口、容器入口与 Web 入口的启动契约。
 

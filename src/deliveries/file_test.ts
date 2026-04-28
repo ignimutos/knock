@@ -1,16 +1,17 @@
-import { assert, assertEquals, assertMatch, assertRejects, assertStringIncludes } from '@std/assert'
-import { emptyDir, ensureDir } from '@std/fs'
-import { join } from '@std/path'
-import { withOwnedRuntime } from '../test_runtime.ts'
+import { assert, assertEquals, assertMatch, assertRejects, assertStringIncludes } from '../testing/assert.ts'
+import { emptyDir, ensureDir } from '../testing/fs.ts'
+import { utimes } from 'node:fs/promises'
+import { join } from 'node:path'
 import { createLogger } from '../core/logger.ts'
+import { cwd, readDir, readTextFile } from '../platform/fs.ts'
+import { withOwnedRuntime } from '../test_runtime.ts'
+import { test as repoTest } from '../testing/test_api.ts'
 import { createFileDelivery } from './file.ts'
 
-const TEST_RUNTIME = join(Deno.cwd(), '.tmp', 'runtime-file-pusher')
-
-const registerTest = Deno.test
+const TEST_RUNTIME = join(cwd(), '.tmp', 'runtime-file-pusher')
 
 function test(name: string, fn: () => Promise<void> | void): void {
-  registerTest(name, async () => {
+  repoTest(name, async () => {
     await withOwnedRuntime(TEST_RUNTIME, async () => {
       await fn()
     })
@@ -24,7 +25,7 @@ test('[unit] fileDelivery: 相对路径按 runtime_dir 输出', async () => {
   const pusher = createFileDelivery({ runtimeDir: TEST_RUNTIME })
   await pusher.push({ path: 'source.md', content: 'hello world' })
 
-  const out = await Deno.readTextFile(join(TEST_RUNTIME, 'source.md'))
+  const out = await readTextFile(join(TEST_RUNTIME, 'source.md'))
   assertStringIncludes(out, 'hello world')
 })
 
@@ -36,7 +37,7 @@ test('[unit] fileDelivery: 绝对路径应直接使用', async () => {
   const absolutePath = join(TEST_RUNTIME, 'absolute', 'source.md')
   await pusher.push({ path: absolutePath, content: 'hello absolute' })
 
-  const out = await Deno.readTextFile(absolutePath)
+  const out = await readTextFile(absolutePath)
   assertStringIncludes(out, 'hello absolute')
 })
 
@@ -66,7 +67,7 @@ test('[contract] fileDelivery: 轮转文件名按字典序可反映时间先后'
   })
 
   const rotated: string[] = []
-  for await (const entry of Deno.readDir(TEST_RUNTIME)) {
+  for (const entry of await readDir(TEST_RUNTIME)) {
     if (/^rotate-order\.\d{8}T\d{9}Z\.md$/.test(entry.name)) {
       rotated.push(entry.name)
     }
@@ -97,14 +98,14 @@ test('[flow] R09 fileDelivery: size 达到阈值时应触发 rotation', async ()
   })
 
   const names: string[] = []
-  for await (const entry of Deno.readDir(TEST_RUNTIME)) {
+  for (const entry of await readDir(TEST_RUNTIME)) {
     names.push(entry.name)
   }
 
   assert(names.includes('rotate-size.md'))
   assert(names.some((name) => /^rotate-size\.\d{8}T\d{9}Z\.md$/.test(name)))
 
-  const current = await Deno.readTextFile(join(TEST_RUNTIME, 'rotate-size.md'))
+  const current = await readTextFile(join(TEST_RUNTIME, 'rotate-size.md'))
   assertStringIncludes(current, 'second-content')
 })
 
@@ -122,7 +123,7 @@ test('[flow] R09 fileDelivery: age 达到阈值时应触发 rotation', async () 
   })
 
   const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000)
-  await Deno.utime(currentPath, twoHoursAgo, twoHoursAgo)
+  await utimes(currentPath, twoHoursAgo, twoHoursAgo)
 
   await pusher.push({
     path: 'rotate-age.md',
@@ -131,7 +132,7 @@ test('[flow] R09 fileDelivery: age 达到阈值时应触发 rotation', async () 
   })
 
   const names: string[] = []
-  for await (const entry of Deno.readDir(TEST_RUNTIME)) {
+  for (const entry of await readDir(TEST_RUNTIME)) {
     names.push(entry.name)
   }
 
@@ -163,7 +164,7 @@ test('[flow] R09 fileDelivery: backups 超限时应清理最老轮转文件', as
   })
 
   const names: string[] = []
-  for await (const entry of Deno.readDir(TEST_RUNTIME)) {
+  for (const entry of await readDir(TEST_RUNTIME)) {
     names.push(entry.name)
   }
 
@@ -295,14 +296,55 @@ test('[flow] R09 fileDelivery: rotation 失败时也应记录 failure 日志并�
     writeStderr: (line: string) => logs.push(line),
   })
   const pusher = createFileDelivery({ runtimeDir: TEST_RUNTIME, logger })
-  const rename = Deno.rename
+  const fixedNow = new Date('2026-04-28T12:34:56.789Z')
+  const realDate = Date
+  const rotatedPath = join(TEST_RUNTIME, 'rotate-failure.20260428T123456789Z.md')
+
+  class FixedDate extends Date {
+    constructor(...args: unknown[]) {
+      if (args.length === 0) {
+        super(fixedNow.getTime())
+        return
+      }
+
+      if (args.length === 1) {
+        const value = args[0]
+        super(value instanceof realDate ? value.getTime() : (value as string | number))
+        return
+      }
+
+      super(
+        args[0] as number,
+        args[1] as number,
+        args[2] as number | undefined,
+        args[3] as number | undefined,
+        args[4] as number | undefined,
+        args[5] as number | undefined,
+        args[6] as number | undefined,
+      )
+    }
+
+    static override now(): number {
+      return fixedNow.getTime()
+    }
+
+    static override parse(value: string): number {
+      return realDate.parse(value)
+    }
+
+    static override UTC(...args: Parameters<typeof Date.UTC>): number {
+      return realDate.UTC(...args)
+    }
+  }
+
   try {
     await pusher.push({
       path: 'rotate-failure.md',
       content: 'v1',
       rotation: { enabled: true, size: '1b', backups: 1 },
     })
-    Deno.rename = (() => Promise.reject(new Error('rename failed'))) as typeof Deno.rename
+    await ensureDir(rotatedPath)
+    globalThis.Date = FixedDate as DateConstructor
 
     const error = await assertRejects(
       () =>
@@ -331,7 +373,7 @@ test('[flow] R09 fileDelivery: rotation 失败时也应记录 failure 日志并�
     assertEquals(failureAttributes['delivery.rotation_enabled'], true)
     assertEquals(failureAttributes['delivery.path'], join(TEST_RUNTIME, 'rotate-failure.md'))
   } finally {
-    Deno.rename = rename
+    globalThis.Date = realDate
   }
 })
 

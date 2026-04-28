@@ -1,5 +1,6 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects } from '../testing/assert.ts'
 import { createInMemoryDb } from '../db/client.ts'
+import { statPath } from '../platform/fs.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { createPreviewComposition } from './create_preview_runtime.ts'
 import { test } from '../testing/test_api.ts'
@@ -103,7 +104,7 @@ test('[contract] preview composition: 应使用 capture executors 并仅记录 a
     assertEquals(result.plan.profile, 'preview')
     assertEquals(captured, ['archive'])
     assertEquals(
-      await Deno.stat(`${runtimeDir}/outputs/archive.md`).then(
+      await statPath(`${runtimeDir}/outputs/archive.md`).then(
         () => true,
         () => false,
       ),

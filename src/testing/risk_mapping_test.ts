@@ -1,9 +1,10 @@
-import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
-import { dirname, fromFileUrl, join } from '@std/path'
+import { assertEquals, assertRejects, assertStringIncludes } from './assert.ts'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadRiskMatrix, validateRiskMatrix } from './risk_mapping.ts'
 import { test } from './test_api.ts'
 
-const TEST_DIR = dirname(fromFileUrl(import.meta.url))
+const TEST_DIR = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = join(TEST_DIR, 'fixtures')
 const CANONICAL_RISK_MATRIX_PATH = join(TEST_DIR, '..', '..', 'docs', 'testing', 'risk-matrix.yml')
 

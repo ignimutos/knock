@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import type { PushConfig } from './schema.ts'
 import { toPushRequestType } from './delivery_semantics.ts'
 import { test } from '../testing/test_api.ts'

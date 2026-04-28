@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects } from './assert.ts'
 import { runScenario } from './scenario_runner.ts'
 import { test } from './test_api.ts'
 

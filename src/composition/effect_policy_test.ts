@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import { previewEffectPolicy, productionEffectPolicy } from './effect_policy.ts'
 import { test } from '../testing/test_api.ts'
 

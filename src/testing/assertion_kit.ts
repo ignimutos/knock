@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
+import { assertEquals, assertStringIncludes } from './assert.ts'
 
 export interface ErrorShapeExpectation {
   name?: string

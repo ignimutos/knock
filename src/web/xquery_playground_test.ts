@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from '@std/assert'
+import { assertEquals, assertRejects, assertThrows } from '../testing/assert.ts'
 import {
   getCurrentWebLoggingRuntime,
   setCurrentWebLoggingRuntime,

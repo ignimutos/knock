@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
+import { assertEquals, assertRejects, assertStringIncludes } from '../testing/assert.ts'
 // 风险映射: R11 R16
 import { resolveConfig } from '../config/resolve_config.ts'
 import { validateConfig } from '../config/validate_config.ts'

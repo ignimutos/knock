@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilities.ts'
 import { test } from '../testing/test_api.ts'
 

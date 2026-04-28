@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from '@std/assert'
+import { assertEquals, assertThrows } from '../testing/assert.ts'
 // 风险映射: R06 R07 R09 R12 R14 R15
 import { assertDeliveryAttemptInvariant, createDeliveryAttempt } from './delivery_attempt.ts'
 import { createPipelineItem } from './pipeline_item.ts'

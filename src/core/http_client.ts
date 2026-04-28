@@ -57,10 +57,6 @@ function getDefaultProxyClientFactory(): ProxyClientFactory | undefined {
   return (globalThis as DenoProxyRuntime).Deno?.createHttpClient
 }
 
-function isDenoProxyRuntime(): boolean {
-  return typeof (globalThis as DenoProxyRuntime).Deno?.createHttpClient === 'function'
-}
-
 export function createHttpClient(options: CreateHttpClientOptions = {}): HttpClient {
   const fetcher = options.fetcher ?? fetch
   const proxyClientFactory = options.proxyClientFactory ?? getDefaultProxyClientFactory()
@@ -86,17 +82,13 @@ export function createHttpClient(options: CreateHttpClientOptions = {}): HttpCli
         }
 
         const requestInit = init as unknown as RequestInit
-        if (isDenoProxyRuntime()) {
-          return fetcher(
-            request as RequestInfo | URL,
-            {
-              ...requestInit,
-              client: proxyClient,
-            } as unknown as RequestInit,
-          )
-        }
-
-        return fetcher(request as RequestInfo | URL, requestInit)
+        return fetcher(
+          request as RequestInfo | URL,
+          {
+            ...requestInit,
+            client: proxyClient,
+          } as unknown as RequestInit,
+        )
       }
 
       const timeoutMs = transport?.timeout

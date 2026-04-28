@@ -1,4 +1,5 @@
-import { dirname, join, resolve, toFileUrl } from '@std/path'
+import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { deleteEnv, getEnv, setEnv } from '../../platform/env.ts'
 import { cwd, isNotFoundError, readTextFile, statPath } from '../../platform/fs.ts'
@@ -249,6 +250,13 @@ async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | un
   }
 }
 
+function buildWebBuildArgs(): string[] {
+  if (typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined') {
+    return ['run', 'build:web']
+  }
+  return ['run', '-A', '--node-modules-dir=none', 'npm:vite', 'build', '--configLoader', 'native']
+}
+
 async function ensureWebBuildExists(): Promise<void> {
   try {
     await statPath(join(cwd(), WEB_CLIENT_ENTRY))
@@ -260,7 +268,7 @@ async function ensureWebBuildExists(): Promise<void> {
   }
 
   const build = spawnSelf({
-    args: ['run', '-A', '--node-modules-dir=none', 'npm:vite', 'build', '--configLoader', 'native'],
+    args: buildWebBuildArgs(),
     cwd: cwd(),
     env: buildWebChildEnv(),
     stdin: 'inherit',
@@ -406,7 +414,7 @@ export async function startWeb(options: StartWebOptions) {
   })
 
   await ensureWebBuildExists()
-  const { handleWebRequest } = await import(toFileUrl(resolve(cwd(), 'web/main.tsx')).href)
+  const { handleWebRequest } = await import(pathToFileURL(resolve(cwd(), 'web/main.tsx')).href)
   const abortController = new AbortController()
   let server: ReturnType<typeof serve> | undefined
 

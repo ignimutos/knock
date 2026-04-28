@@ -1,6 +1,8 @@
-import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
-import { dirname, fromFileUrl, join } from '@std/path'
+import { assertEquals, assertRejects, assertStringIncludes } from '../testing/assert.ts'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createLogger } from '../core/logger.ts'
+import { mkdirPath } from '../platform/fs.ts'
 import { test as registerTest } from '../testing/test_api.ts'
 import {
   withEnv,
@@ -11,7 +13,7 @@ import {
 import { compileConfigDocument, loadCompiledConfig } from './load_compiled_config.ts'
 import { loadConfig } from './load_config.ts'
 
-const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
+const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const TEST_RUNTIME = join(PROJECT_ROOT, '.tmp', 'runtime-load-config')
 
 function test(name: string, fn: () => Promise<void> | void): void {
@@ -541,7 +543,7 @@ sources: {}
 
 test('loadConfig: configPath 应派生 runtimeDir 并解析相对路径', async () => {
   const nestedRuntime = join(TEST_RUNTIME, 'nested-runtime')
-  await Deno.mkdir(nestedRuntime, { recursive: true })
+  await mkdirPath(nestedRuntime, { recursive: true })
   const configPath = join(nestedRuntime, 'custom.yml')
 
   await writeTextFile(
@@ -566,9 +568,9 @@ test('loadConfig: 显式 runtimeDir 应优先于 KNOCK_RUNTIME_DIR 与 configPat
   const explicitRuntime = join(TEST_RUNTIME, 'explicit-runtime')
   const envRuntime = join(TEST_RUNTIME, 'env-runtime')
   const otherDir = join(TEST_RUNTIME, 'other-dir')
-  await Deno.mkdir(explicitRuntime, { recursive: true })
-  await Deno.mkdir(envRuntime, { recursive: true })
-  await Deno.mkdir(otherDir, { recursive: true })
+  await mkdirPath(explicitRuntime, { recursive: true })
+  await mkdirPath(envRuntime, { recursive: true })
+  await mkdirPath(otherDir, { recursive: true })
 
   const configPath = join(otherDir, 'custom.yml')
 

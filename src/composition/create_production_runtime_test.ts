@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertExists } from '@std/assert'
+import { assert, assertEquals, assertExists } from '../testing/assert.ts'
 import type { RunDueSourcesCommand } from '../application/run_due_sources_use_case.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import { createInMemoryDb } from '../db/client.ts'

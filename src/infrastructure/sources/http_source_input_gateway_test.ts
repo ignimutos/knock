@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects } from '../../testing/assert.ts'
 import { createLogger } from '../../core/logger.ts'
 import { HttpSourceInputGateway } from './http_source_input_gateway.ts'
 import { test } from '../../testing/test_api.ts'

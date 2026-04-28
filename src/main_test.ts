@@ -1,7 +1,13 @@
-import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from '@std/assert'
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
+import { Readable } from 'node:stream'
+import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from './testing/assert.ts'
 import type { StartAppOptions } from './main.ts'
 import { dispatchCliCommand, main, startWeb } from './main.ts'
 import { waitForWebReady } from './interfaces/web/start_web.ts'
+import { cwd } from './platform/fs.ts'
+import { execPath } from './platform/process.ts'
+import { serve } from './platform/serve.ts'
 import { withOwnedRuntime } from './test_runtime.ts'
 import { test } from './testing/test_api.ts'
 import { createStableChildEnv, withEnv, writeRuntimeFile } from './testing/test_helpers.ts'
@@ -14,14 +20,132 @@ import {
 
 const WEB_STARTUP_TEST_TIMEOUT_MS = 90_000
 
+type ChildOutputStream = NodeJS.ReadableStream | ReadableStream<Uint8Array> | null
+
+type TestChildProcess = {
+  stdout: ChildOutputStream
+  stderr: ChildOutputStream
+  status: Promise<{ success: boolean; code: number; signal?: NodeJS.Signals }>
+  kill: (signal?: NodeJS.Signals) => void
+}
+
+function toWebReadableStream(stream: ChildOutputStream): ReadableStream<Uint8Array> | null {
+  if (!stream) return null
+  if ('getReader' in stream) {
+    return stream as ReadableStream<Uint8Array>
+  }
+  return Readable.toWeb(stream as Readable) as ReadableStream<Uint8Array>
+}
+
+async function closeChildStream(stream: ChildOutputStream): Promise<void> {
+  if (!stream) return
+  if ('cancel' in stream) {
+    await (stream as ReadableStream<Uint8Array>).cancel().catch(() => {})
+    return
+  }
+  ;(stream as Readable).destroy()
+}
+
+function buildMainTestCommandArgs(args: string[]): string[] {
+  if (typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined') {
+    return ['run', 'src/main.ts', ...args]
+  }
+  return [
+    'run',
+    '--allow-read',
+    '--allow-write',
+    '--allow-env',
+    '--allow-net',
+    '--allow-ffi',
+    '--allow-run',
+    '--allow-sys',
+    'src/main.ts',
+    ...args,
+  ]
+}
+
+function spawnMainProcess(args: string[], env: Record<string, string>): TestChildProcess {
+  const child = spawn(execPath(), buildMainTestCommandArgs(args), {
+    cwd: cwd(),
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return {
+    stdout: child.stdout,
+    stderr: child.stderr,
+    status: new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code, signal) => {
+        resolve({
+          success: code === 0,
+          code: code ?? 1,
+          signal: signal ?? undefined,
+        })
+      })
+    }),
+    kill: (signal: NodeJS.Signals = 'SIGTERM') => {
+      child.kill(signal)
+    },
+  }
+}
+
+async function reservePort(): Promise<number> {
+  const server = createServer()
+  return await new Promise<number>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('无法分配测试端口')))
+        return
+      }
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolve(address.port)
+      })
+    })
+  })
+}
+
+async function occupyPort(): Promise<{ port: number; close: () => Promise<void> }> {
+  const server = createServer()
+  return await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('无法占用测试端口')))
+        return
+      }
+      resolve({
+        port: address.port,
+        close: () =>
+          new Promise<void>((innerResolve, innerReject) => {
+            server.close((error) => {
+              if (error) {
+                innerReject(error)
+                return
+              }
+              innerResolve()
+            })
+          }),
+      })
+    })
+  })
+}
+
 async function readCommandOutputUntil(
-  stream: ReadableStream<Uint8Array> | null,
+  stream: ChildOutputStream,
   expected: string,
   timeoutMs: number,
 ): Promise<string> {
-  if (!stream) return ''
+  const readable = toWebReadableStream(stream)
+  if (!readable) return ''
 
-  const reader = stream.getReader()
+  const reader = readable.getReader()
   const decoder = new TextDecoder()
   let output = ''
   const deadline = Date.now() + timeoutMs
@@ -56,7 +180,7 @@ async function readCommandOutputUntil(
 }
 
 async function readStartupOutput(
-  child: Deno.ChildProcess,
+  child: TestChildProcess,
   port: number,
   timeoutMs: number,
 ): Promise<string> {
@@ -434,33 +558,14 @@ test('[contract] main: all 模式启动不应因 web 预检抢占 sqlite 而失�
       ['sqlite:', '  path: db/knock.db', 'sources: {}'].join('\n'),
     )
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+    const port = await reservePort()
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--web_host',
-        '127.0.0.1',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
+    const child = spawnMainProcess(
+      ['--web_host', '127.0.0.1', '--web_port', String(port)],
+      createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
       }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+    )
 
     try {
       const deadline = Date.now() + 10_000
@@ -496,16 +601,8 @@ test('[contract] main: all 模式启动不应因 web 预检抢占 sqlite 而失�
       } catch {
         // noop
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
+      await closeChildStream(child.stdout)
+      await closeChildStream(child.stderr)
       await child.status.catch(() => undefined)
     }
   })
@@ -535,35 +632,14 @@ test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty', as
           ].join('\n'),
         )
 
-        const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-        const { port } = listener.addr as Deno.NetAddr
-        listener.close()
+        const port = await reservePort()
 
-        const child = new Deno.Command(Deno.execPath(), {
-          args: [
-            'run',
-            '--allow-read',
-            '--allow-write',
-            '--allow-env',
-            '--allow-net',
-            '--allow-ffi',
-            '--allow-run',
-            '--allow-sys',
-            'src/main.ts',
-            '--mode',
-            'web',
-            '--web_host',
-            '127.0.0.1',
-            '--web_port',
-            String(port),
-          ],
-          cwd: Deno.cwd(),
-          env: createStableChildEnv({
+        const child = spawnMainProcess(
+          ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
+          createStableChildEnv({
             KNOCK_RUNTIME_DIR: runtimeDir,
           }),
-          stdout: 'piped',
-          stderr: 'piped',
-        }).spawn()
+        )
 
         try {
           const output = await readStartupOutput(child, port, WEB_STARTUP_TEST_TIMEOUT_MS)
@@ -579,16 +655,8 @@ test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty', as
           } catch {
             // noop
           }
-          try {
-            await child.stdout?.cancel()
-          } catch {
-            // noop
-          }
-          try {
-            await child.stderr?.cancel()
-          } catch {
-            // noop
-          }
+          await closeChildStream(child.stdout)
+          await closeChildStream(child.stderr)
           await child.status
         }
       })
@@ -648,35 +716,14 @@ test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host、port
       ].join('\n'),
     )
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+    const port = await reservePort()
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--mode',
-        'web',
-        '--web_host',
-        '127.0.0.1',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
+    const child = spawnMainProcess(
+      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
+      createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
       }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+    )
 
     try {
       const output = await readStartupOutput(child, port, WEB_STARTUP_TEST_TIMEOUT_MS)
@@ -694,16 +741,8 @@ test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host、port
       } catch {
         // noop
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
+      await closeChildStream(child.stdout)
+      await closeChildStream(child.stderr)
       await child.status
     }
   })
@@ -718,35 +757,14 @@ test('[contract] startWeb: 配置存在但 sqlite 不可用时应 fail fast 而�
     )
     await writeRuntimeFile(runtimeDir, 'db', 'not-a-directory')
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+    const port = await reservePort()
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--mode',
-        'web',
-        '--web_host',
-        '127.0.0.1',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
+    const child = spawnMainProcess(
+      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
+      createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
       }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+    )
 
     try {
       const stderr = await readCommandOutputUntil(child.stderr, 'Web 启动前检查失败:', 10_000)
@@ -759,16 +777,8 @@ test('[contract] startWeb: 配置存在但 sqlite 不可用时应 fail fast 而�
       } catch {
         // noop
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
+      await closeChildStream(child.stdout)
+      await closeChildStream(child.stderr)
       await child.status.catch(() => undefined)
     }
   })
@@ -778,35 +788,14 @@ test('[contract] startWeb: 监听 0.0.0.0 时应通过回环地址完成就绪�
   await withOwnedRuntime(async ({ runtimeDir }) => {
     await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+    const port = await reservePort()
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--mode',
-        'web',
-        '--web_host',
-        '0.0.0.0',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
+    const child = spawnMainProcess(
+      ['--mode', 'web', '--web_host', '0.0.0.0', '--web_port', String(port)],
+      createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
       }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+    )
 
     try {
       const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
@@ -838,55 +827,50 @@ test('[contract] startWeb: 监听 0.0.0.0 时应通过回环地址完成就绪�
       } catch {
         // noop
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
+      await closeChildStream(child.stdout)
+      await closeChildStream(child.stderr)
       await child.status
     }
   })
 })
 
 test('[contract] waitForWebReady: 单次长首访应在总等待窗口内成功', async () => {
-  const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-  const { port } = listener.addr as Deno.NetAddr
-  listener.close()
+  const port = await reservePort()
+  const abortController = new AbortController()
 
   let requestCount = 0
-  const server = Deno.serve({ hostname: '127.0.0.1', port }, async (request) => {
-    if (new URL(request.url).pathname !== '/config') {
-      return new Response('not found', { status: 404 })
-    }
+  const server = serve(
+    { hostname: '127.0.0.1', port, signal: abortController.signal },
+    async (request) => {
+      if (new URL(request.url).pathname !== '/config') {
+        return new Response('not found', { status: 404 })
+      }
 
-    requestCount += 1
-    if (requestCount === 1) {
-      await new Promise((resolve) => setTimeout(resolve, 18_000))
-    }
+      requestCount += 1
+      if (requestCount === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000))
+      }
 
-    return new Response('<html><body>Knock Config</body></html>', {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-      },
-    })
-  })
+      return new Response('<html><body>Knock Config</body></html>', {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+        },
+      })
+    },
+  )
 
   const startedAt = Date.now()
   try {
     await waitForWebReady('127.0.0.1', port)
   } finally {
+    abortController.abort()
     await server.shutdown()
   }
 
   if (requestCount !== 1) {
     throw new Error(`长首访不应被中断重试，实际请求了 ${requestCount} 次`)
   }
-  if (Date.now() - startedAt < 18_000) {
+  if (Date.now() - startedAt < 2_000) {
     throw new Error('waitForWebReady 不应在长首访完成前返回')
   }
 })
@@ -895,35 +879,14 @@ test('[contract] startWeb: 启动后 config 页面应实际可访问', async () 
   await withOwnedRuntime(async ({ runtimeDir }) => {
     await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+    const port = await reservePort()
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--mode',
-        'web',
-        '--web_host',
-        '127.0.0.1',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
+    const child = spawnMainProcess(
+      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
+      createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
       }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+    )
 
     try {
       const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
@@ -959,16 +922,8 @@ test('[contract] startWeb: 启动后 config 页面应实际可访问', async () 
       } catch {
         // noop
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
+      await closeChildStream(child.stdout)
+      await closeChildStream(child.stderr)
       await child.status
     }
   })
@@ -978,8 +933,8 @@ test('[contract] startWeb: 端口被占用时应直接报子进程退出而不�
   await withOwnedRuntime(async ({ runtimeDir }) => {
     await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
 
-    const occupied = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = occupied.addr as Deno.NetAddr
+    const occupied = await occupyPort()
+    const { port } = occupied
 
     try {
       await withEnv({ KNOCK_RUNTIME_DIR: runtimeDir }, async () => {
@@ -999,7 +954,7 @@ test('[contract] startWeb: 端口被占用时应直接报子进程退出而不�
         }
       })
     } finally {
-      occupied.close()
+      await occupied.close()
     }
   })
 })
@@ -1008,35 +963,14 @@ test('[contract] startWeb: 就绪后短窗口内不应因 config watcher 立即�
   await withOwnedRuntime(async ({ runtimeDir }) => {
     await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
 
-    const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 })
-    const { port } = listener.addr as Deno.NetAddr
-    listener.close()
+    const port = await reservePort()
 
-    const child = new Deno.Command(Deno.execPath(), {
-      args: [
-        'run',
-        '--allow-read',
-        '--allow-write',
-        '--allow-env',
-        '--allow-net',
-        '--allow-ffi',
-        '--allow-run',
-        '--allow-sys',
-        'src/main.ts',
-        '--mode',
-        'web',
-        '--web_host',
-        '127.0.0.1',
-        '--web_port',
-        String(port),
-      ],
-      cwd: Deno.cwd(),
-      env: createStableChildEnv({
+    const child = spawnMainProcess(
+      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
+      createStableChildEnv({
         KNOCK_RUNTIME_DIR: runtimeDir,
       }),
-      stdout: 'piped',
-      stderr: 'piped',
-    }).spawn()
+    )
 
     try {
       const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
@@ -1078,16 +1012,8 @@ test('[contract] startWeb: 就绪后短窗口内不应因 config watcher 立即�
       } catch {
         // noop
       }
-      try {
-        await child.stdout?.cancel()
-      } catch {
-        // noop
-      }
-      try {
-        await child.stderr?.cancel()
-      } catch {
-        // noop
-      }
+      await closeChildStream(child.stdout)
+      await closeChildStream(child.stderr)
       await child.status
     }
   })

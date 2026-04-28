@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from './assert.ts'
 import { createSourceFixture } from './fixture_factory.ts'
 import { test } from './test_api.ts'
 

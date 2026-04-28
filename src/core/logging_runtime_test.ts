@@ -1,6 +1,7 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
-import { ensureDir, exists } from '@std/fs'
-import { dirname, join } from '@std/path'
+import { assertEquals, assertStringIncludes } from '../testing/assert.ts'
+import { ensureDir, exists } from '../testing/fs.ts'
+import { dirname, join } from 'node:path'
+import { readDir, readTextFile } from '../platform/fs.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './logging_runtime.ts'
 import { createLogger } from './logger.ts'
@@ -65,7 +66,7 @@ test('[contract] R11 logging_runtime: 只配置 file sink 时应只写 jsonl 文
 
     assertEquals(stdout, [])
     assertEquals(await exists(logPath), true)
-    const written = await Deno.readTextFile(logPath)
+    const written = await readTextFile(logPath)
     assertStringIncludes(written, '"delivery.id":"archive"')
   })
 })
@@ -105,7 +106,7 @@ test('[contract] R11 logging_runtime: size rotation 应委托 rotating file sink
     }
     await shutdownLoggingRuntime()
 
-    const files = [...Deno.readDirSync(join(runtimeDir, 'logs'))].map((entry) => entry.name)
+    const files = (await readDir(join(runtimeDir, 'logs'))).map((entry) => entry.name)
     assertEquals(
       files.some((name) => name.includes('rotating')),
       true,
@@ -139,7 +140,7 @@ test('[contract] R11 logging_runtime: shutdown 应 flush file sink 尾日志', a
     }).info('tail record')
     await shutdownLoggingRuntime()
 
-    const written = await Deno.readTextFile(logPath)
+    const written = await readTextFile(logPath)
     assertStringIncludes(written, 'tail record')
   })
 })

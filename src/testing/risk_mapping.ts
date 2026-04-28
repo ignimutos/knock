@@ -1,6 +1,8 @@
-import { walk } from '@std/fs'
-import { dirname, fromFileUrl, join, relative } from '@std/path'
-import { parse } from '@std/yaml'
+import { walk } from './fs.ts'
+import { dirname, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { parse } from 'yaml'
+import { readTextFile } from '../platform/fs.ts'
 import { z } from 'zod'
 
 export type RequiredLayer = 'unit' | 'contract' | 'flow' | 'flow+contract'
@@ -67,7 +69,7 @@ const helperDefaultLayerPattern =
 const testFilePattern = /_test\.tsx?$/
 
 function getProjectRoot(): string {
-  return join(dirname(fromFileUrl(import.meta.url)), '..', '..')
+  return join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 }
 
 function normalizeRelativePath(projectRoot: string, path: string): string {
@@ -183,7 +185,7 @@ async function collectTestMetadata(projectRoot: string): Promise<{
 
   for (const testFile of testFiles) {
     const absolutePath = join(projectRoot, testFile)
-    const source = await Deno.readTextFile(absolutePath)
+    const source = await readTextFile(absolutePath)
     testCases.push(...parseTestCases(testFile, source))
 
     const annotation = parseFileRiskAnnotation(testFile, source)
@@ -290,7 +292,7 @@ function validateRiskCoverage(input: {
 }
 
 export async function loadRiskMatrix(path: string): Promise<RiskRule[]> {
-  const text = await Deno.readTextFile(path)
+  const text = await readTextFile(path)
   const parsed = parse(text)
 
   if (!Array.isArray(parsed) || parsed.length !== 20) {

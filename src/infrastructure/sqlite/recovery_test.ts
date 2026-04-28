@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assertRejects } from '@std/assert'
+import { assertEquals, assertExists, assertRejects } from '../../testing/assert.ts'
 import { createInMemoryDb } from '../../db/client.ts'
 import { insertDeliveryAttempt } from './delivery_attempt_repository.ts'
 import { insertSourceRun } from './run_repository.ts'

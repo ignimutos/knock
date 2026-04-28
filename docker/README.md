@@ -1,6 +1,6 @@
 # Knock
 
-Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
+Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 
 它可以抓取 RSS / Atom / JSON Feed，或通过 XQuery 从 HTML/XML 提取条目；随后统一 feed 与 entry 字段，执行 Liquid 过滤与渲染，并将结果投递到 file、push(HTTP)、email 通道，同时把状态与去重信息写入 SQLite。
 
@@ -10,11 +10,11 @@ Knock 是一个基于 Deno + TypeScript 的订阅抓取与投递守护进程。
 - 默认运行目录：`/app/runtime`
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
 - 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
-- 容器默认以非 root 用户 `10001:10001` 运行
-- 默认入口：离线二进制 `/app/knock`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
-- 构建阶段固定使用 `denoland/deno:2.7.13`
-- 运行阶段固定使用 `cgr.dev/chainguard/glibc-dynamic` + `/app/knock` 编译产物，并内置 CA 证书与 `tzdata`
-- 发布前门禁固定执行：`deno task verify:full`、`deno task docker:build`、`deno task docker:size:check`
+- 容器默认以非 root 用户 `bun` 运行
+- 默认入口：`bun src/container_main.ts`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
+- 构建阶段固定使用 `oven/bun:1.3.13`
+- 运行阶段固定使用 `oven/bun:1.3.13`，并内置 CA 证书与 `tzdata`
+- 发布前门禁固定执行：`bun run verify:full`、`bun run docker:build`、`bun run docker:size:check`
 - 已发布标签：`latest`、`sha-<git-sha>`
 
 ## 准备配置
@@ -95,8 +95,8 @@ docker run -d \
 
 本仓库 CI 会先做三层门禁：
 
-1. `verify`：`deno task verify:full`
-2. `image`：`deno task image:prepare`（构建并校验镜像体积）
+1. `verify`：`bun run verify:full`
+2. `image`：`bun run image:prepare`（构建并校验镜像体积）
 3. `publish`：仅 `main` 推送 `linux/amd64` 镜像并同步 Docker Hub README
 
 镜像体积默认预算由 `KNOCK_IMAGE_MAX_SIZE_MB` 控制，CI 当前使用 `450` MB。

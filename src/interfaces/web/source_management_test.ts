@@ -1,29 +1,23 @@
-import { assertEquals } from '@std/assert'
-import { parse } from '@std/yaml'
+import { assertEquals } from '../../testing/assert.ts'
+import YAML from 'yaml'
 import { clearSourceHistory, runSourceNow, updateSourceConfig } from './source_management.ts'
 import { createFactsDbClient } from '../../db/client.ts'
 import { insertDeliveryAttempt } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { insertPipelineItem } from '../../infrastructure/sqlite/item_repository.ts'
 import { insertSourceRun } from '../../infrastructure/sqlite/run_repository.ts'
+import { readTextFile } from '../../platform/fs.ts'
 import { test } from '../../testing/test_api.ts'
+import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../../testing/test_helpers.ts'
 
 const CONFIG_YML = `sqlite:\n  path: facts.db\nlogging:\n  level: info\ndeliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\n  telegram:\n    push:\n      http:\n        url: https://example.com/webhook\n      request:\n        type: body\n        payload:\n          text: '{{ entry.title }}'\nsources:\n  rust:\n    name: Rust Blog\n    enabled: true\n    schedule: '*/30 * * * *'\n    http:\n      url: https://example.com/feed.xml\n    syndication: {}\n    deliveries:\n      local:\n        content: '{{ entry.title }}'\n      telegram: {}\n`
 
 async function withRuntimeDir(fn: (runtimeDir: string) => Promise<void>) {
-  const runtimeDir = await Deno.makeTempDir()
-  const previous = Deno.env.get('KNOCK_RUNTIME_DIR')
-  try {
-    await Deno.writeTextFile(`${runtimeDir}/config.yml`, CONFIG_YML)
-    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
-    await fn(runtimeDir)
-  } finally {
-    if (previous === undefined) {
-      Deno.env.delete('KNOCK_RUNTIME_DIR')
-    } else {
-      Deno.env.set('KNOCK_RUNTIME_DIR', previous)
-    }
-    await Deno.remove(runtimeDir, { recursive: true })
-  }
+  await withRuntimeHarness(async ({ runtimeDir }) => {
+    await writeRuntimeFile(runtimeDir, 'config.yml', CONFIG_YML)
+    await withEnv({ KNOCK_RUNTIME_DIR: runtimeDir }, async () => {
+      await fn(runtimeDir)
+    })
+  })
 }
 
 test('[contract] source management: updateSourceConfig 应写回 source 子树并保留 keyed deliveries', async () => {
@@ -53,7 +47,7 @@ test('[contract] source management: updateSourceConfig 应写回 source 子树�
     })
 
     assertEquals(result.message, 'source rust 配置已保存')
-    const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
       sources?: Record<
         string,
         {
@@ -208,7 +202,7 @@ test('[contract] source management: updateSourceConfig 对编译期 delivery 引
 test('[contract] source management: 应保留未修改的 source override secret', async () => {
   await withRuntimeDir(async (runtimeDir) => {
     const configYml = `sqlite:\n  path: facts.db\nlogging:\n  level: info\ndeliveries:\n  telegram:\n    push:\n      http:\n        url: https://example.com/webhook\n      request:\n        type: body\n        payload:\n          text: '{{ entry.title }}'\nsources:\n  rust:\n    enabled: true\n    http:\n      url: https://example.com/feed.xml\n    syndication: {}\n    deliveries:\n      telegram:\n        payload:\n          text: hi\n          token: real-token\n`
-    await Deno.writeTextFile(`${runtimeDir}/config.yml`, configYml)
+    await writeRuntimeFile(runtimeDir, 'config.yml', configYml)
 
     await updateSourceConfig({
       sourceId: 'rust',
@@ -232,7 +226,7 @@ test('[contract] source management: 应保留未修改的 source override secret
       xqueryEntryId: '',
     })
 
-    const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
       sources?: Record<string, { deliveries?: Record<string, { payload?: { token?: string } }> }>
     }
     assertEquals(nextConfig.sources?.rust?.deliveries?.telegram?.payload?.token, 'real-token')

@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from '@std/assert'
+import { assertEquals, assertThrows } from '../testing/assert.ts'
 import { parseXquerySource } from './xquery.ts'
 import { test } from '../testing/test_api.ts'
 

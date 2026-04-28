@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../../testing/assert.ts'
 import { DeduplicationStage } from './deduplication_stage.ts'
 import { test } from '../../testing/test_api.ts'
 

@@ -1,10 +1,10 @@
-import { dirname } from '@std/path'
-import { DatabaseSync } from 'node:sqlite'
+import { dirname } from 'node:path'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { SqliteConfigResolved } from '../config/types.ts'
 import type { Logger } from '../core/logger.ts'
 import { initializeSqliteFactsSchema } from '../infrastructure/sqlite/schema.ts'
 import { mkdirPathSync } from '../platform/fs.ts'
+import { openSqliteDatabase, type SqliteDatabase } from '../platform/sqlite.ts'
 import { initializeSqliteRuntimeSchema } from './schema.ts'
 
 export interface CreateDbClientOptions {
@@ -13,15 +13,15 @@ export interface CreateDbClientOptions {
 }
 
 export interface DbClient {
-  $client: DatabaseSync
+  $client: SqliteDatabase
 }
 
 export interface FactsDbClient {
-  $client: DatabaseSync
+  $client: SqliteDatabase
 }
 
 interface TransactionCapableDb {
-  $client: DatabaseSync
+  $client: SqliteDatabase
 }
 
 export function runInTransaction<T>(db: TransactionCapableDb, operation: () => T): T {
@@ -73,7 +73,7 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
   })
 
   mkdirPathSync(dirname(databasePath), { recursive: true })
-  const client = new DatabaseSync(databasePath)
+  const client = openSqliteDatabase(databasePath)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
   initializeSqliteRuntimeSchema(client)
@@ -101,7 +101,7 @@ export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClie
   })
 
   mkdirPathSync(dirname(databasePath), { recursive: true })
-  const client = new DatabaseSync(databasePath)
+  const client = openSqliteDatabase(databasePath)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
   initializeSqliteFactsSchema(client)
@@ -117,7 +117,7 @@ export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClie
 }
 
 export function createInMemoryDb(): FactsDbClient {
-  const client = new DatabaseSync(':memory:')
+  const client = openSqliteDatabase(':memory:')
   initializeSqliteFactsSchema(client)
   return { $client: client }
 }

@@ -1,5 +1,5 @@
-import { assertEquals } from '@std/assert'
-import { join } from '@std/path'
+import { assertEquals } from '../testing/assert.ts'
+import { join } from 'node:path'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
 import { createContentRuntime } from '../core/content_runtime.ts'
@@ -10,6 +10,7 @@ import {
 } from '../infrastructure/sqlite/run_repository.ts'
 import { createSummaryQueryService } from '../infrastructure/sqlite/summary_query_service.ts'
 import { insertPipelineItem } from '../infrastructure/sqlite/item_repository.ts'
+import { cwd } from '../platform/fs.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { buildSummarySource } from './summary.ts'
 import { test } from '../testing/test_api.ts'
@@ -17,7 +18,7 @@ import { test } from '../testing/test_api.ts'
 // risk-id: R17
 // layer: contract
 
-const TEST_RUNTIME = join(Deno.cwd(), '.tmp', 'runtime-summary-source')
+const TEST_RUNTIME = join(cwd(), '.tmp', 'runtime-summary-source')
 
 function createSqliteConfig(databaseName: string) {
   return {

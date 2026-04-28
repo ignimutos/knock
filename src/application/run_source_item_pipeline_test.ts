@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import type { UnifiedFeedFields } from '../config/types.ts'
 import { createLogger, type Logger } from '../core/logger.ts'
 import type { DeliveryAttempt, RenderedSnapshot } from '../domain/delivery_attempt.ts'

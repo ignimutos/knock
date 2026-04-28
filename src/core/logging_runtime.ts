@@ -1,10 +1,10 @@
 import { configure, dispose, getConsoleSink, type Sink } from '@logtape/logtape'
 import { getFileSink, getRotatingFileSink, getTimeRotatingFileSink } from '@logtape/file'
 import { redactByField, redactByPattern } from '@logtape/redaction'
-import { ensureDir } from '@std/fs'
-import { basename, dirname, extname } from '@std/path'
+import { basename, dirname, extname } from 'node:path'
 import type { LoggingConfigResolved } from '../config/types.ts'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
+import { mkdirPath } from '../platform/fs.ts'
 import {
   createPrettyFormatter,
   createRepositoryJsonlFormatter,
@@ -166,7 +166,7 @@ export async function configureLoggingRuntime(input: ConfigureLoggingRuntimeInpu
   const sinks: Record<string, Sink> = {}
 
   if (input.logging.sinks.file) {
-    await ensureDir(dirname(input.logging.sinks.file.path))
+    await mkdirPath(dirname(input.logging.sinks.file.path), { recursive: true })
   }
 
   if (input.logging.sinks.console) {

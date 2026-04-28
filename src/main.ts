@@ -1,4 +1,4 @@
-import { fromFileUrl } from '@std/path'
+import { fileURLToPath } from 'node:url'
 import type nodemailer from 'nodemailer'
 import { z } from 'zod'
 import type { ProxyClientFactory } from './core/http_client.ts'
@@ -143,18 +143,13 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
 }
 
 function buildSelfCommandArgs(args: string[]): string[] {
+  const entryPath = fileURLToPath(import.meta.url)
+
   if (/([/\\]|^)deno(?:\.exe)?$/i.test(execPath())) {
-    return [
-      'run',
-      '--allow-all',
-      '--cached-only',
-      '--node-modules-dir=none',
-      fromFileUrl(Deno.mainModule),
-      ...args,
-    ]
+    return ['run', '--allow-all', '--cached-only', '--node-modules-dir=none', entryPath, ...args]
   }
 
-  return [fromFileUrl(import.meta.url), ...args]
+  return [entryPath, ...args]
 }
 
 export async function runAllModes(command: AllCliCommand): Promise<void> {

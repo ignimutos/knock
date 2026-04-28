@@ -1,5 +1,11 @@
-import { emptyDir, ensureDir } from '@std/fs'
-import { dirname, join } from '@std/path'
+import { dirname, join } from 'node:path'
+import { deleteEnv, getEnv, setEnv } from '../platform/env.ts'
+import {
+  makeTempDir,
+  mkdirPath,
+  removePath,
+  writeTextFile as writePlatformTextFile,
+} from '../platform/fs.ts'
 
 export interface RuntimeHarnessContext {
   runtimeDir: string
@@ -31,7 +37,7 @@ export function createStableChildEnv(
   const next: Record<string, string> = {}
 
   for (const key of STABLE_CHILD_ENV_KEYS) {
-    const value = Deno.env.get(key)
+    const value = getEnv(key)
     if (value !== undefined) {
       next[key] = value
     }
@@ -47,17 +53,12 @@ export function createStableChildEnv(
 }
 
 export async function prepareRuntimeHarness(runtimeDir: string): Promise<void> {
-  await emptyDir(runtimeDir)
-  await ensureDir(runtimeDir)
+  await removePath(runtimeDir, { recursive: true, force: true })
+  await mkdirPath(runtimeDir, { recursive: true })
 }
 
 export async function cleanupRuntimeHarness(runtimeDir: string): Promise<void> {
-  try {
-    await Deno.remove(runtimeDir, { recursive: true })
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return
-    throw error
-  }
+  await removePath(runtimeDir, { recursive: true, force: true })
 }
 
 export async function withEnv<T>(
@@ -68,20 +69,20 @@ export async function withEnv<T>(
   const previous = new Map<string, string | undefined>()
 
   for (const key of Object.keys(values)) {
-    previous.set(key, Deno.env.get(key))
+    previous.set(key, getEnv(key))
   }
 
   if (options.clear) {
     for (const key of Object.keys(values)) {
-      Deno.env.delete(key)
+      deleteEnv(key)
     }
   }
 
   for (const [key, value] of Object.entries(values)) {
     if (value !== undefined) {
-      Deno.env.set(key, value)
+      setEnv(key, value)
     } else {
-      Deno.env.delete(key)
+      deleteEnv(key)
     }
   }
 
@@ -90,17 +91,17 @@ export async function withEnv<T>(
   } finally {
     for (const [key, value] of previous.entries()) {
       if (value === undefined) {
-        Deno.env.delete(key)
+        deleteEnv(key)
       } else {
-        Deno.env.set(key, value)
+        setEnv(key, value)
       }
     }
   }
 }
 
 export async function writeTextFile(path: string, content: string): Promise<string> {
-  await ensureDir(dirname(path))
-  await Deno.writeTextFile(path, content)
+  await mkdirPath(dirname(path), { recursive: true })
+  await writePlatformTextFile(path, content)
   return path
 }
 
@@ -134,7 +135,7 @@ export async function withRuntimeHarness<T>(
   }
 
   const run = runtimeDirOrRun
-  const runtimeDir = await Deno.makeTempDir({ prefix: 'knock-test-' })
+  const runtimeDir = await makeTempDir('knock-test-')
   await prepareRuntimeHarness(runtimeDir)
   try {
     return await run({ runtimeDir })

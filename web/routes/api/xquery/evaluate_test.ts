@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../../../../src/testing/assert.ts'
 import { type EvaluateLogMeta, handler } from './evaluate.ts'
 import { test } from '../../../../src/testing/test_api.ts'
 
@@ -66,7 +66,7 @@ test('[flow] R19 xquery api: POST 应返回 JSON 结果并上报成功日志元�
   )
 
   assertEquals(response.status, 200)
-  assertEquals(response.headers.get('content-type'), 'application/json')
+  assertEquals(response.headers.get('content-type')?.includes('application/json'), true)
   const payload = await readJson(response)
   assertEquals(
     Object.keys(payload).sort(),

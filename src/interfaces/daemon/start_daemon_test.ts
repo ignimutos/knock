@@ -1,5 +1,5 @@
-import { assert, assertEquals } from '@std/assert'
-import { join } from '@std/path'
+import { assert, assertEquals } from '../../testing/assert.ts'
+import { join } from 'node:path'
 import { withOwnedRuntime } from '../../test_runtime.ts'
 import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
 import { startDaemon } from './start_daemon.ts'

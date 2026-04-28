@@ -1,0 +1,7 @@
+{
+  "name": "@std/fmt",
+  "type": "module",
+  "exports": {
+    "./colors": "./colors.js"
+  }
+}

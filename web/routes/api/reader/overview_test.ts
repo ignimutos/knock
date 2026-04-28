@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
+import { assertEquals, assertStringIncludes } from '../../../../src/testing/assert.ts'
 import { handler } from './overview.ts'
 import { test } from '../../../../src/testing/test_api.ts'
 

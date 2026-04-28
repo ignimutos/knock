@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../../../../src/testing/assert.ts'
 import { type SourceActionLogMeta, handler } from './clear.ts'
 import { test } from '../../../../src/testing/test_api.ts'
 

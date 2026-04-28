@@ -1,6 +1,8 @@
 import type { LogRecord, TextFormatter } from '@logtape/logtape'
-import { bold, cyan, dim, gray, green, magenta, red, yellow } from '@std/fmt/colors'
+import { createColors } from 'picocolors'
 import { DateTime } from 'luxon'
+
+const { bold, cyan, dim, gray, green, magenta, red, yellow } = createColors(true)
 import type { LogLevel } from '../config/types.ts'
 
 export interface OTelLogRecord {

@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import { createInMemoryDb } from '../db/client.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'

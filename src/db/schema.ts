@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite'
+import type { SqliteDatabase } from '../platform/sqlite.ts'
 
 const LEGACY_SQLITE_MIGRATION_HASH = '20260328192000_init'
 const LEGACY_SQLITE_MIGRATION_CREATED_AT = Date.parse('2026-03-28T19:20:00.000Z')
@@ -40,7 +40,7 @@ const SQLITE_RUNTIME_SCHEMA_SQL = [
   'CREATE INDEX IF NOT EXISTS idx_entries_source_last_seen_at ON entries(source_id, last_seen_at)',
 ] as const
 
-export function initializeSqliteRuntimeSchema(client: DatabaseSync): void {
+export function initializeSqliteRuntimeSchema(client: SqliteDatabase): void {
   for (const statement of SQLITE_RUNTIME_SCHEMA_SQL) {
     client.exec(statement)
   }

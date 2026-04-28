@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects } from '../testing/assert.ts'
 import { createLogger } from '../core/logger.ts'
 import type { DeliveryBinding } from '../domain/run_plan.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'

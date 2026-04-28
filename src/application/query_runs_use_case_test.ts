@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import type { SourceRunView } from './ports/source_run_query_service.ts'
 import { QueryRunsUseCase } from './query_runs_use_case.ts'
 import { test } from '../testing/test_api.ts'

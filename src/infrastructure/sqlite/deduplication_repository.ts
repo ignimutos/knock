@@ -45,7 +45,7 @@ export function createDeduplicationRepository(db: FactsDbClient): DeduplicationR
           input.fingerprint,
         )
 
-      return Promise.resolve(row !== undefined)
+      return Promise.resolve(row !== undefined && row !== null)
     },
 
     register(input: DeduplicationRecord): Promise<void> {

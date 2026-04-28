@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from '@std/assert'
+import { assertEquals, assertThrows } from '../../testing/assert.ts'
 import { createInMemoryDb } from '../../db/client.ts'
 import {
   createDeduplicationRepository,

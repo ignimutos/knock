@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../../testing/assert.ts'
 import type { PreviewRunRequest } from '../../application/preview_run_use_case.ts'
 import type { RunSourceResult } from '../../application/run_source_use_case.ts'
 import type { SourceDefinition } from '../../domain/source_definition.ts'

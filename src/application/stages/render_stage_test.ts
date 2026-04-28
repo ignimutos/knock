@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../../testing/assert.ts'
 import { getAiEntryRuntime } from '../../core/ai_runtime.ts'
 import { createPipelineItem } from '../../domain/pipeline_item.ts'
 import { RenderStage } from './render_stage.ts'

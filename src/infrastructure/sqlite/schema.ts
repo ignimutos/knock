@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite'
+import type { SqliteDatabase } from '../../platform/sqlite.ts'
 
 export const SOURCE_RUN_STATUSES = [
   'planned',
@@ -100,7 +100,7 @@ const SQLITE_FACTS_SCHEMA_SQL = [
   'CREATE INDEX IF NOT EXISTS idx_deduplications_lookup ON deduplications(effect_domain, scope, scope_id, fingerprint)',
 ] as const
 
-export function initializeSqliteFactsSchema(client: DatabaseSync): void {
+export function initializeSqliteFactsSchema(client: SqliteDatabase): void {
   client.exec('PRAGMA foreign_keys = ON')
 
   for (const statement of SQLITE_FACTS_SCHEMA_SQL) {

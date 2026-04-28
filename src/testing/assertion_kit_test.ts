@@ -1,4 +1,4 @@
-import { assertThrows } from '@std/assert'
+import { assertThrows } from './assert.ts'
 import { assertErrorShape } from './assertion_kit.ts'
 import { test } from './test_api.ts'
 

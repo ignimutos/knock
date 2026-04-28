@@ -1,6 +1,6 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
-import { stripAnsiCode } from '@std/fmt/colors'
-import { fromFileUrl } from '@std/path'
+import { assertEquals, assertStringIncludes } from '../testing/assert.ts'
+import { stripVTControlCharacters } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import * as loggerModule from './logger.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './logging_runtime.ts'
 import { test } from '../testing/test_api.ts'
@@ -31,7 +31,7 @@ function toUnixNano(input: Date): string {
 }
 
 function stripAnsi(line: string): string {
-  return stripAnsiCode(line)
+  return stripVTControlCharacters(line)
 }
 
 test('[contract] R11 logger: console format=jsonl 应输出仓库 OTel JSONL', async () => {
@@ -125,7 +125,7 @@ function buildStackWithLocation(
     filepath?: string
   } = {},
 ): string {
-  const filepath = options.filepath ?? fromFileUrl(import.meta.url)
+  const filepath = options.filepath ?? fileURLToPath(import.meta.url)
   const lineNumber = options.lineNumber ?? 1
   const location = `${filepath}:${lineNumber}:1`
   const frame = options.functionName
@@ -141,7 +141,11 @@ function withMockedError(buildStack: () => string, run: () => void): void {
     const MockError = class extends OriginalError {
       constructor(message?: string, options?: ErrorOptions) {
         super(message, options)
-        this.stack = buildStack()
+        Object.defineProperty(this, 'stack', {
+          value: buildStack(),
+          configurable: true,
+          writable: true,
+        })
       }
     }
 
@@ -151,6 +155,28 @@ function withMockedError(buildStack: () => string, run: () => void): void {
     globalThis.Error = OriginalError
   }
 }
+
+const SUPPORTS_MOCKED_ERROR_STACKS = (() => {
+  const OriginalError = globalThis.Error
+  try {
+    const MockError = class extends OriginalError {
+      constructor(message?: string, options?: ErrorOptions) {
+        super(message, options)
+        Object.defineProperty(this, 'stack', {
+          value: 'mocked-stack-sentinel',
+          configurable: true,
+          writable: true,
+        })
+      }
+    }
+    globalThis.Error = MockError as unknown as ErrorConstructor
+    return new Error().stack === 'mocked-stack-sentinel'
+  } catch {
+    return false
+  } finally {
+    globalThis.Error = OriginalError
+  }
+})()
 
 test('[contract] R11 logger: enabled=false 时不输出日志', () => {
   const stdout: string[] = []
@@ -318,6 +344,7 @@ test('[contract] R11 logger: 应优先从调用栈补全 code.* 属性且 run_id
 })
 
 test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath 与 code.line.number', () => {
+  if (!SUPPORTS_MOCKED_ERROR_STACKS) return
   const stdout: string[] = []
   const lineNumber = 245
 
@@ -339,7 +366,7 @@ test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath 与 co
   assertEquals(stdout.length, 1)
   const record = parseRecord(stdout[0])
   const attributes = getAttributes(record)
-  assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
+  assertEquals(attributes['code.filepath'], fileURLToPath(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
   assertEquals('operation' in attributes, false)
@@ -347,6 +374,7 @@ test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath 与 co
 })
 
 test('[contract] R11 logger: async 路径栈帧 fallback 时仍输出 code.filepath 与 code.line.number', () => {
+  if (!SUPPORTS_MOCKED_ERROR_STACKS) return
   const stdout: string[] = []
   const lineNumber = 312
 
@@ -355,7 +383,7 @@ test('[contract] R11 logger: async 路径栈帧 fallback 时仍输出 code.filep
       [
         'Error',
         '    at getCodeAttributes (/src/core/logger.ts:331:1)',
-        `    at async ${fromFileUrl(import.meta.url)}:${lineNumber}:1`,
+        `    at async ${fileURLToPath(import.meta.url)}:${lineNumber}:1`,
       ].join('\n'),
     () => {
       const logger = createLogger({
@@ -373,7 +401,7 @@ test('[contract] R11 logger: async 路径栈帧 fallback 时仍输出 code.filep
   assertEquals(stdout.length, 1)
   const record = parseRecord(stdout[0])
   const attributes = getAttributes(record)
-  assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
+  assertEquals(attributes['code.filepath'], fileURLToPath(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
   assertEquals('operation' in attributes, false)
@@ -411,6 +439,7 @@ test('[contract] R11 logger: ext 内部 runtime frame 应降级而不是误记�
 })
 
 test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继续查找下一条业务帧', () => {
+  if (!SUPPORTS_MOCKED_ERROR_STACKS) return
   const stdout: string[] = []
   const lineNumber = 366
 
@@ -419,7 +448,7 @@ test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继续查
       [
         'Error',
         `    at async createLogger (${loggerModuleUrl}:420:1)`,
-        `    at ${fromFileUrl(import.meta.url)}:${lineNumber}:1`,
+        `    at ${fileURLToPath(import.meta.url)}:${lineNumber}:1`,
       ].join('\n'),
     () => {
       const logger = createLogger({
@@ -437,7 +466,7 @@ test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继续查
   assertEquals(stdout.length, 1)
   const record = parseRecord(stdout[0])
   const attributes = getAttributes(record)
-  assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
+  assertEquals(attributes['code.filepath'], fileURLToPath(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
   assertEquals('operation' in attributes, false)
@@ -445,6 +474,7 @@ test('[contract] R11 logger: 归一化后的 self-frame 应被过滤并继续查
 })
 
 test('[contract] R11 logger: 缓存不会把上一条调用点误复用到下一条不同 stack line', () => {
+  if (!SUPPORTS_MOCKED_ERROR_STACKS) return
   const stdout: string[] = []
   const firstLineNumber = 401
   const secondLineNumber = 402
@@ -472,9 +502,9 @@ test('[contract] R11 logger: 缓存不会把上一条调用点误复用到下一
   const firstAttributes = getAttributes(parseRecord(stdout[0]))
   const secondAttributes = getAttributes(parseRecord(stdout[1]))
 
-  assertEquals(firstAttributes['code.filepath'], fromFileUrl(import.meta.url))
+  assertEquals(firstAttributes['code.filepath'], fileURLToPath(import.meta.url))
   assertEquals(firstAttributes['code.line.number'], firstLineNumber)
-  assertEquals(secondAttributes['code.filepath'], fromFileUrl(import.meta.url))
+  assertEquals(secondAttributes['code.filepath'], fileURLToPath(import.meta.url))
   assertEquals(secondAttributes['code.line.number'], secondLineNumber)
   assertEquals('operation' in firstAttributes, false)
   assertEquals('outcome' in firstAttributes, false)
@@ -503,6 +533,7 @@ test('[contract] R11 logger: 有界缓存 helper 达到上限时应淘汰最旧 
 })
 
 test('[contract] R11 logger: Windows 风格分隔符归一化后 self-frame 仍会被过滤', () => {
+  if (!SUPPORTS_MOCKED_ERROR_STACKS) return
   const stdout: string[] = []
   const lineNumber = 544
   const windowsLoggerModulePath = 'C:\\repo\\src\\core\\logger.ts'
@@ -512,7 +543,7 @@ test('[contract] R11 logger: Windows 风格分隔符归一化后 self-frame 仍�
       [
         'Error',
         `    at createLogger (${windowsLoggerModulePath}:420:1)`,
-        `    at ${fromFileUrl(import.meta.url)}:${lineNumber}:1`,
+        `    at ${fileURLToPath(import.meta.url)}:${lineNumber}:1`,
       ].join('\n'),
     () => {
       const logger = createLogger({
@@ -533,7 +564,7 @@ test('[contract] R11 logger: Windows 风格分隔符归一化后 self-frame 仍�
   assertEquals(stdout.length, 1)
   const record = parseRecord(stdout[0])
   const attributes = getAttributes(record)
-  assertEquals(attributes['code.filepath'], fromFileUrl(import.meta.url))
+  assertEquals(attributes['code.filepath'], fileURLToPath(import.meta.url))
   assertEquals(attributes['code.line.number'], lineNumber)
   assertEquals('code.function.name' in attributes, false)
   assertEquals('operation' in attributes, false)

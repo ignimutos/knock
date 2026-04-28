@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects } from '../testing/assert.ts'
 import { createInMemoryDb } from '../db/client.ts'
 import { createLogger } from '../core/logger.ts'
 import {

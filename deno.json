@@ -47,6 +47,8 @@
     "sanitize-html": "npm:sanitize-html@^2.17.3",
     "luxon": "npm:luxon@^3.7.2",
     "croner": "npm:croner@^10.0.1",
+    "picocolors": "npm:picocolors@^1.1.1",
+    "yaml": "npm:yaml@^2.8.3",
     "turndown": "npm:turndown@^7.2.4",
     "zod": "npm:zod@^4.3.6",
     "ky": "npm:ky@^1.14.3",

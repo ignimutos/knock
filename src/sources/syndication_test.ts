@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects } from '../testing/assert.ts'
 import type { SyndicationSourceConfig } from '../config/schema.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
 import { parseSyndicationSource } from './syndication.ts'

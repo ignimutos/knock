@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../testing/assert.ts'
 import type { PreviewRunRequest } from './preview_run_use_case.ts'
 import { PreviewRunUseCase } from './preview_run_use_case.ts'
 import { test } from '../testing/test_api.ts'

@@ -14,6 +14,9 @@
     "npm:@ai-sdk/anthropic@^3.0.71": "3.0.71_zod@4.3.6",
     "npm:@ai-sdk/google@^3.0.64": "3.0.64_zod@4.3.6",
     "npm:@ai-sdk/openai@^3.0.53": "3.0.53_zod@4.3.6",
+    "npm:@logtape/file@^2.0.5": "2.0.5_@logtape+logtape@2.0.5",
+    "npm:@logtape/logtape@^2.0.5": "2.0.5",
+    "npm:@logtape/redaction@^2.0.5": "2.0.5_@logtape+logtape@2.0.5",
     "npm:@preact/signals@^2.9.0": "2.9.0_preact@10.29.1",
     "npm:ai@^6.0.168": "6.0.168_zod@4.3.6",
     "npm:croner@^10.0.1": "10.0.1",
@@ -26,20 +29,22 @@
     "npm:luxon@^3.7.2": "3.7.2",
     "npm:markdown-it@^14.1.1": "14.1.1",
     "npm:nodemailer@^7.0.13": "7.0.13",
+    "npm:picocolors@^1.1.1": "1.1.1",
     "npm:preact-render-to-string@^6.6.7": "6.6.7_preact@10.29.1",
     "npm:preact@^10.29.1": "10.29.1",
     "npm:prettier@*": "3.8.1",
     "npm:sanitize-html@^2.17.3": "2.17.3",
     "npm:turndown@^7.2.4": "7.2.4",
-    "npm:vite@*": "7.3.2",
-    "npm:vite@^7.3.2": "7.3.2",
+    "npm:vite@*": "7.3.2_yaml@2.8.3",
+    "npm:vite@^7.3.2": "7.3.2_yaml@2.8.3",
+    "npm:yaml@^2.8.3": "2.8.3",
     "npm:zod@^4.3.6": "4.3.6"
   },
   "jsr": {
     "@logtape/file@2.0.5": {
       "integrity": "368621b15b73fd63c137e47ae43411e350627683ce7e0b4492af3ccb159e098b",
       "dependencies": [
-        "jsr:@logtape/logtape",
+        "jsr:@logtape/logtape@^2.0.5",
         "jsr:@std/path@^1.1.0"
       ]
     },
@@ -49,7 +54,7 @@
     "@logtape/redaction@2.0.5": {
       "integrity": "b79610d8b2f8253378fca3cdb2c106a78f8b9e14e68644b24cf51b8118fa0818",
       "dependencies": [
-        "jsr:@logtape/logtape"
+        "jsr:@logtape/logtape@^2.0.5"
       ]
     },
     "@std/assert@1.0.19": {
@@ -486,6 +491,21 @@
     },
     "@js-joda/core@5.7.0": {
       "integrity": "sha512-WBu4ULVVxySLLzK1Ppq+OdfP+adRS4ntmDQT915rzDJ++i95gc2jZkM5B6LWEAwN3lGXpfie3yPABozdD3K3Vg=="
+    },
+    "@logtape/file@2.0.5_@logtape+logtape@2.0.5": {
+      "integrity": "sha512-SJ2UZ00IJptilqDMFwPIGmZLMTYNZbP7k4+7aBfP5DoLVifSmQoaxP2HtXMdExXhGP4/JrFepLE86ryPBUKB/Q==",
+      "dependencies": [
+        "@logtape/logtape"
+      ]
+    },
+    "@logtape/logtape@2.0.5": {
+      "integrity": "sha512-UizDkh20ZPJVOddRxG1F77WhHdlNl/sbQgoO8T534R7XvUBMAJ9En9f35u+meW2tRsNLvjz6R87Zanwf53tspQ=="
+    },
+    "@logtape/redaction@2.0.5_@logtape+logtape@2.0.5": {
+      "integrity": "sha512-EyC6gaTITsZCujGvEl6jNf1+od6YtY8H+Y6Rs9aWXtbr0LDMcts/Tk2v6T3uXf1M/YPwb+xCmcBU+r8NQcJmxA==",
+      "dependencies": [
+        "@logtape/logtape"
+      ]
     },
     "@mixmark-io/domino@2.2.0": {
       "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
@@ -1356,7 +1376,7 @@
       "integrity": "sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==",
       "bin": true
     },
-    "vite@7.3.2": {
+    "vite@7.3.2_yaml@2.8.3": {
       "integrity": "sha512-Bby3NOsna2jsjfLVOHKes8sGwgl4TT0E6vvpYgnAYDIF/tie7MRaFthmKuHx1NSXjiTueXH3do80FMQgvEktRg==",
       "dependencies": [
         "esbuild",
@@ -1364,10 +1384,14 @@
         "picomatch",
         "postcss",
         "rollup",
-        "tinyglobby"
+        "tinyglobby",
+        "yaml"
       ],
       "optionalDependencies": [
         "fsevents"
+      ],
+      "optionalPeers": [
+        "yaml"
       ],
       "bin": true
     },
@@ -1412,6 +1436,10 @@
         "whynot"
       ]
     },
+    "yaml@2.8.3": {
+      "integrity": "sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg==",
+      "bin": true
+    },
     "zod@4.3.6": {
       "integrity": "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="
     }
@@ -1441,12 +1469,42 @@
       "npm:luxon@^3.7.2",
       "npm:markdown-it@^14.1.1",
       "npm:nodemailer@^7.0.13",
+      "npm:picocolors@^1.1.1",
       "npm:preact-render-to-string@^6.6.7",
       "npm:preact@^10.29.1",
       "npm:sanitize-html@^2.17.3",
       "npm:turndown@^7.2.4",
       "npm:vite@^7.3.2",
+      "npm:yaml@^2.8.3",
       "npm:zod@^4.3.6"
-    ]
+    ],
+    "packageJson": {
+      "dependencies": [
+        "npm:@ai-sdk/anthropic@^3.0.71",
+        "npm:@ai-sdk/google@^3.0.64",
+        "npm:@ai-sdk/openai@^3.0.53",
+        "npm:@logtape/file@^2.0.5",
+        "npm:@logtape/logtape@^2.0.5",
+        "npm:@logtape/redaction@^2.0.5",
+        "npm:ai@^6.0.168",
+        "npm:croner@^10.0.1",
+        "npm:feedsmith@^2.9.3",
+        "npm:fontoxpath@^3.34.0",
+        "npm:jsdom@^29.0.2",
+        "npm:ky@^1.14.3",
+        "npm:liquidjs@^10.25.7",
+        "npm:luxon@^3.7.2",
+        "npm:markdown-it@^14.1.1",
+        "npm:nodemailer@^7.0.13",
+        "npm:picocolors@^1.1.1",
+        "npm:preact-render-to-string@^6.6.7",
+        "npm:preact@^10.29.1",
+        "npm:sanitize-html@^2.17.3",
+        "npm:turndown@^7.2.4",
+        "npm:vite@^7.3.2",
+        "npm:yaml@^2.8.3",
+        "npm:zod@^4.3.6"
+      ]
+    }
   }
 }

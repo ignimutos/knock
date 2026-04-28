@@ -4,19 +4,22 @@ import {
   assertNotEquals,
   assertStringIncludes,
   assertThrows,
-} from '@std/assert'
-import { emptyDir, ensureDir } from '@std/fs'
-import { dirname, fromFileUrl, join } from '@std/path'
+} from '../testing/assert.ts'
+import { emptyDir, ensureDir } from '../testing/fs.ts'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadConfig } from '../config/load_config.ts'
 import type { AppConfigResolved } from '../config/types.ts'
+import { writeTextFile } from '../platform/fs.ts'
 import { buildDefinitionsConfigFixture } from '../interfaces/config/definitions_test_fixture.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
+import { test as repoTest } from '../testing/test_api.ts'
 import { compileDefinitionsFromResolvedConfig } from './compile_definitions.ts'
 
-const PROJECT_ROOT = dirname(dirname(dirname(fromFileUrl(import.meta.url))))
+const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const TEST_RUNTIME = join(PROJECT_ROOT, '.tmp', 'runtime-compile-definitions')
 
-const registerTest = Deno.test
+const registerTest = repoTest
 
 function test(name: string, fn: () => Promise<void> | void): void {
   registerTest(name, async () => {
@@ -30,7 +33,7 @@ test('[contract] compileDefinitions: 应从 resolved config 生成单一 Definit
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 
-  await Deno.writeTextFile(join(TEST_RUNTIME, 'config.yml'), buildDefinitionsConfigFixture())
+  await writeTextFile(join(TEST_RUNTIME, 'config.yml'), buildDefinitionsConfigFixture())
 
   const config = await loadConfig({ runtimeDir: TEST_RUNTIME })
   const definitionSet = compileDefinitionsFromResolvedConfig(config)

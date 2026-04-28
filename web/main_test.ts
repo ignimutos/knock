@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
+import { assertEquals, assertStringIncludes } from '../src/testing/assert.ts'
 import { createLogger } from '../src/core/logger.ts'
 import { setCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
 import { test } from '../src/testing/test_api.ts'

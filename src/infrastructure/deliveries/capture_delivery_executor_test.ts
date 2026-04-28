@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert'
+import { assertEquals } from '../../testing/assert.ts'
 import type { DeliveryAttemptPlan } from '../../application/ports/delivery_executor.ts'
 import { createCaptureDeliveryExecutor } from './capture_delivery_executor.ts'
 import { test } from '../../testing/test_api.ts'

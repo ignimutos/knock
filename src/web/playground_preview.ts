@@ -1,4 +1,4 @@
-import { join } from '@std/path'
+import { join } from 'node:path'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import { cwd } from '../platform/fs.ts'
 import { getCurrentWebLoggingRuntime } from '../interfaces/web/start_web.ts'

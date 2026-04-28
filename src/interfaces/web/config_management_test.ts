@@ -1,27 +1,21 @@
-import { assertEquals, assertRejects, assertStringIncludes } from '@std/assert'
-import { parse } from '@std/yaml'
+import { assertEquals, assertRejects, assertStringIncludes } from '../../testing/assert.ts'
+import YAML from 'yaml'
 import {
   deleteDeliveryConfig,
   upsertDeliveryConfig,
   updateGlobalConfig,
 } from './config_management.ts'
+import { readTextFile } from '../../platform/fs.ts'
 import { test } from '../../testing/test_api.ts'
+import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../../testing/test_helpers.ts'
 
 async function withRuntimeDir(configYml: string, fn: (runtimeDir: string) => Promise<void>) {
-  const runtimeDir = await Deno.makeTempDir()
-  const previous = Deno.env.get('KNOCK_RUNTIME_DIR')
-  try {
-    await Deno.writeTextFile(`${runtimeDir}/config.yml`, configYml)
-    Deno.env.set('KNOCK_RUNTIME_DIR', runtimeDir)
-    await fn(runtimeDir)
-  } finally {
-    if (previous === undefined) {
-      Deno.env.delete('KNOCK_RUNTIME_DIR')
-    } else {
-      Deno.env.set('KNOCK_RUNTIME_DIR', previous)
-    }
-    await Deno.remove(runtimeDir, { recursive: true })
-  }
+  await withRuntimeHarness(async ({ runtimeDir }) => {
+    await writeRuntimeFile(runtimeDir, 'config.yml', configYml)
+    await withEnv({ KNOCK_RUNTIME_DIR: runtimeDir }, async () => {
+      await fn(runtimeDir)
+    })
+  })
 }
 
 const CONFIG_YML = `language: en-US\ntimezone: UTC\ntimestampFormat: yyyy-MM-dd HH:mm:ss\nsqlite:\n  path: facts.db\nlogging:\n  level: info\ndeliveries:\n  local:\n    file:\n      path: outputs/releases.md\n      content: '{{ entry.title }}'\nsources:\n  rust:\n    enabled: true\n    http:\n      url: https://example.com/feed.xml\n    syndication: {}\n    deliveries:\n      local: {}\n`
@@ -44,7 +38,7 @@ test('[contract] config management: updateGlobalConfig 应写回 global 子树',
     })
 
     assertEquals(result.message, 'global 配置已保存')
-    const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
       language?: string
       timezone?: string
       timestampFormat?: string
@@ -80,7 +74,7 @@ test('[contract] config management: updateGlobalConfig 结构化保存应保留�
         loggingFilePath: 'logs/app.jsonl',
       })
 
-      const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
         sqlite?: { path?: string; retention?: { maxEntriesPerSource?: number } }
         logging?: {
           level?: string
@@ -107,7 +101,7 @@ test('[contract] config management: upsertDeliveryConfig 应写回 canonical del
     })
 
     assertEquals(result.message, 'delivery local 配置已保存')
-    const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
       deliveries?: Record<string, { enabled?: boolean; file?: { path?: string; content?: string } }>
     }
     assertEquals(nextConfig.deliveries?.local?.enabled, false)
@@ -130,7 +124,7 @@ test('[contract] config management: upsertDeliveryConfig 结构化保存应保�
         fileContent: '{{ entry.link }}',
       })
 
-      const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<
           string,
           {
@@ -159,7 +153,7 @@ test('[contract] config management: deleteDeliveryConfig 应删除未被引用�
       })
 
       assertEquals(result.message, 'delivery local 已删除')
-      const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<string, unknown>
       }
       assertEquals(nextConfig.deliveries, undefined)
@@ -197,7 +191,7 @@ test('[contract] config management: 结构化保存应保留未修改的 secret'
         emailMessageText: 'body',
       })
 
-      const nextConfig = parse(await Deno.readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<string, { email?: { smtp?: { auth?: { password?: string } } } }>
       }
       assertEquals(nextConfig.deliveries?.mailer?.email?.smtp?.auth?.password, 'real-secret')

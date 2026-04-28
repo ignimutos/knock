@@ -1,14 +1,17 @@
-import { assertEquals, assertExists, assertNotEquals } from '@std/assert'
-import { emptyDir, ensureDir } from '@std/fs'
-import { dirname, fromFileUrl, join } from '@std/path'
+import { assertEquals, assertExists, assertNotEquals } from '../../testing/assert.ts'
+import { emptyDir, ensureDir } from '../../testing/fs.ts'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { writeTextFile } from '../../platform/fs.ts'
 import { withOwnedRuntime } from '../../test_runtime.ts'
+import { test as repoTest } from '../../testing/test_api.ts'
 import { buildDefinitionsConfigFixture } from './definitions_test_fixture.ts'
 import { loadDefinitions } from './load_definitions.ts'
 
-const PROJECT_ROOT = dirname(dirname(dirname(dirname(fromFileUrl(import.meta.url)))))
+const PROJECT_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const TEST_RUNTIME = join(PROJECT_ROOT, '.tmp', 'runtime-load-definitions')
 
-const registerTest = Deno.test
+const registerTest = repoTest
 
 function test(name: string, fn: () => Promise<void> | void): void {
   registerTest(name, async () => {
@@ -22,7 +25,7 @@ test('[contract] loadDefinitions: 应将 resolved config 组装成判别联合 S
   await emptyDir(TEST_RUNTIME)
   await ensureDir(TEST_RUNTIME)
 
-  await Deno.writeTextFile(
+  await writeTextFile(
     join(TEST_RUNTIME, 'config.yml'),
     buildDefinitionsConfigFixture({ includePushRequestVariants: true }),
   )

@@ -1,23 +1,22 @@
-import { assertEquals, assertExists } from '@std/assert'
-import { exists } from '@std/fs'
-import { join } from '@std/path'
+import { assertEquals, assertExists } from '../testing/assert.ts'
+import { join } from 'node:path'
 import { createLogger } from '../core/logger.ts'
+import { cwd, statPath } from '../platform/fs.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
+import { test as repoTest } from '../testing/test_api.ts'
 import { createDbClient } from './client.ts'
 
-const TEST_RUNTIME = join(Deno.cwd(), '.tmp', 'runtime-db')
-
-const registerTest = Deno.test
+const TEST_RUNTIME = join(cwd(), '.tmp', 'runtime-db')
 
 function test(name: string, fn: () => Promise<void> | void): void {
-  registerTest(name, async () => {
+  repoTest(name, async () => {
     await withOwnedRuntime(TEST_RUNTIME, async () => {
       await fn()
     })
   })
 }
 
-test('createDbClient: 使用 node:sqlite 初始化并可执行查询', () => {
+test('createDbClient: 使用 sqlite runtime 初始化并可执行查询', () => {
   const db = createDbClient({
     sqlite: {
       path: join(TEST_RUNTIME, 'knock.db'),
@@ -113,7 +112,7 @@ test('createDbClient: 应在 sqlite.path 指定位置创建数据库并应用 pr
     },
   })
 
-  assertEquals(await exists(databasePath), true)
+  assertEquals((await statPath(databasePath)).isFile, true)
   assertEquals(db.$client.prepare('PRAGMA busy_timeout').get(), {
     timeout: 1234,
   })

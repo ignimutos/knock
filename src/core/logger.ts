@@ -1,7 +1,7 @@
 import type { LogRecord, Logger as LogTapeLogger } from '@logtape/logtape'
 import { getLogger as getLogTapeLogger } from '@logtape/logtape'
 import { redactByPattern } from '@logtape/redaction'
-import { fromFileUrl } from '@std/path'
+import { fileURLToPath } from 'node:url'
 import type { LogLevel } from '../config/types.ts'
 import {
   buildLogTapeRecord,
@@ -92,7 +92,7 @@ export interface CreateLoggerOptions {
 function toPathname(location: string): string {
   if (location.startsWith('file://')) {
     try {
-      return fromFileUrl(location)
+      return fileURLToPath(location)
     } catch {
       return location
     }

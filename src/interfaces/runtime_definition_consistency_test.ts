@@ -1,6 +1,7 @@
-import { assertEquals } from '@std/assert'
-import { join } from '@std/path'
+import { assertEquals } from '../testing/assert.ts'
+import { join } from 'node:path'
 import { loadConfig } from '../config/load_config.ts'
+import { writeTextFile } from '../platform/fs.ts'
 import type { DeliveryBinding } from '../domain/run_plan.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
 import {
@@ -68,7 +69,7 @@ function sortExecutions(executions: RuntimeExecution[]): RuntimeExecution[] {
 
 test('[contract] runtime definitions: daemon 与 preview 应看到一致的 SourceDefinition 与 DeliveryBinding', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
-    await Deno.writeTextFile(
+    await writeTextFile(
       join(runtimeDir, 'config.yml'),
       `
 language: zh-CN

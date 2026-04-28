@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from '@std/assert'
+import { assertEquals, assertThrows } from '../testing/assert.ts'
 import { resolveSourceConfig, selectSourceInputGateway } from './runtime_source_helpers.ts'
 import { test } from '../testing/test_api.ts'
 

@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from '@std/assert'
+import { assertEquals, assertStringIncludes } from '../../src/testing/assert.ts'
 import { renderToString } from 'preact-render-to-string'
 import type { ConfigWorkbenchOverview } from '../../src/web/config_workbench_overview.ts'
 import ConfigPage from './config.tsx'

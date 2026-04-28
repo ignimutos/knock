@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from '@std/assert'
+import { assertEquals, assertRejects, assertThrows } from '../testing/assert.ts'
 import { attachAiEntryRuntime, createAiRuntime } from './ai_runtime.ts'
 import { createLiquidRuntime, renderLiquid, renderLiquidSync } from './liquid_runtime.ts'
 import { createLogger } from './logger.ts'
