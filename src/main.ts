@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
-import type nodemailer from 'nodemailer'
 import { z } from 'zod'
+import type { CreateTransport } from './platform/nodemailer.ts'
 import type { ProxyClientFactory } from './core/http_client.ts'
 import { getEnvObject } from './platform/env.ts'
 import { execPath, getArgs, spawnSelf } from './platform/process.ts'
@@ -29,7 +29,7 @@ export interface StartAppOptions {
   configPath?: string
   httpFetcher?: typeof fetch
   httpProxyClientFactory?: ProxyClientFactory
-  emailTransportFactory?: typeof nodemailer.createTransport
+  emailTransportFactory?: CreateTransport
   keepAlive?: boolean
   keepAliveSignal?: Promise<void>
   immediate?: boolean
@@ -40,7 +40,7 @@ interface StartAppInput {
   configPath?: string
   httpFetcher: typeof fetch
   httpProxyClientFactory?: ProxyClientFactory
-  emailTransportFactory?: typeof nodemailer.createTransport
+  emailTransportFactory?: CreateTransport
   keepAlive: boolean
   keepAliveSignal?: Promise<void>
   immediate: boolean
@@ -70,7 +70,7 @@ const startAppOptionsSchema = z.object({
     (value) => value === undefined || typeof value === 'function',
     { message: 'httpProxyClientFactory 必须是函数' },
   ),
-  emailTransportFactory: z.custom<typeof nodemailer.createTransport>(
+  emailTransportFactory: z.custom<CreateTransport>(
     (value) => value === undefined || typeof value === 'function',
     { message: 'emailTransportFactory 必须是函数' },
   ),

@@ -1,5 +1,5 @@
 import { assertEquals } from '../../testing/assert.ts'
-import YAML from 'yaml'
+import YAML from '../../platform/yaml.ts'
 import { clearSourceHistory, runSourceNow, updateSourceConfig } from './source_management.ts'
 import { createFactsDbClient } from '../../db/client.ts'
 import { insertDeliveryAttempt } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'

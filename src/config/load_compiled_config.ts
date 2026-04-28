@@ -1,5 +1,5 @@
 import { dirname, join, resolve } from 'node:path'
-import { parse } from 'yaml'
+import { parse } from '../platform/yaml.ts'
 import type { Logger } from '../core/logger.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'

@@ -11,11 +11,6 @@
         "@logtape/file": "^2.0.5",
         "@logtape/logtape": "^2.0.5",
         "@logtape/redaction": "^2.0.5",
-        "@std/assert": "file:./bun-compat/@std/assert",
-        "@std/fmt": "file:./bun-compat/@std/fmt",
-        "@std/fs": "file:./bun-compat/@std/fs",
-        "@std/path": "file:./bun-compat/@std/path",
-        "@std/yaml": "file:./bun-compat/@std/yaml",
         "ai": "^6.0.168",
         "croner": "^10.0.1",
         "feedsmith": "^2.9.3",
@@ -191,16 +186,6 @@
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.2", "", { "os": "win32", "cpu": "x64" }, "sha512-Nd/SgG27WoA9e+/TdK74KnHz852TLa94ovOYySo/yMPuTmpckK/jIF2jSwS3g7ELSKXK13/cVdmg1Z/DaCWKxA=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
-
-    "@std/assert": ["@std/assert@file:bun-compat/@std/assert", {}],
-
-    "@std/fmt": ["@std/fmt@file:bun-compat/@std/fmt", {}],
-
-    "@std/fs": ["@std/fs@file:bun-compat/@std/fs", {}],
-
-    "@std/path": ["@std/path@file:bun-compat/@std/path", {}],
-
-    "@std/yaml": ["@std/yaml@file:bun-compat/@std/yaml", {}],
 
     "@types/estree": ["@types/estree@1.0.8", "", {}, "sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w=="],
 

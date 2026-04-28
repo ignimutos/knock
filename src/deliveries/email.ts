@@ -1,6 +1,9 @@
-import nodemailer from 'nodemailer'
-import type { EmailConfig } from '../config/schema.ts'
 import { getLogFields, type Logger } from '../core/logger.ts'
+import type { EmailConfig } from '../config/schema.ts'
+import {
+  createTransport as createMailTransport,
+  type CreateTransport,
+} from '../platform/nodemailer.ts'
 
 export interface EmailDeliveryRequest {
   deliveryId: string
@@ -11,7 +14,7 @@ export interface EmailDeliveryRequest {
 
 export interface EmailDeliveryFactoryOptions {
   logger?: Logger
-  createTransport?: typeof nodemailer.createTransport
+  createTransport?: CreateTransport
 }
 
 export interface EmailDelivery {
@@ -34,7 +37,7 @@ function toTransportOptions(smtp: EmailConfig['smtp']) {
 }
 
 export function createEmailDelivery(options: EmailDeliveryFactoryOptions = {}): EmailDelivery {
-  const createTransport = options.createTransport ?? nodemailer.createTransport
+  const createTransport = options.createTransport ?? createMailTransport
 
   return {
     async push(req: EmailDeliveryRequest): Promise<void> {

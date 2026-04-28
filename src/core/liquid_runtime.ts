@@ -1,4 +1,4 @@
-import { Liquid, TokenKind } from 'liquidjs'
+import { Liquid, TokenKind } from '../platform/liquidjs.ts'
 import MarkdownIt from 'markdown-it'
 import sanitizeHtml from 'sanitize-html'
 import TurndownService from 'turndown/lib/turndown.cjs.js'
@@ -834,7 +834,7 @@ function registerSharedLiquidFilters(engine: Liquid, logger?: Logger): void {
 function registerAiLiquidFilters(engine: Liquid, aiRuntime?: AiRuntime): void {
   engine.registerFilter(
     'ai_translate',
-    async function (value: unknown, ...args: unknown[]): Promise<string> {
+    async function (this: unknown, value: unknown, ...args: unknown[]): Promise<string> {
       if (!aiRuntime) {
         throw new Error('未配置 ai，无法使用 ai_translate')
       }
@@ -848,7 +848,7 @@ function registerAiLiquidFilters(engine: Liquid, aiRuntime?: AiRuntime): void {
 
   engine.registerFilter(
     'ai_summarize',
-    async function (value: unknown, ...args: unknown[]): Promise<string> {
+    async function (this: unknown, value: unknown, ...args: unknown[]): Promise<string> {
       if (!aiRuntime) {
         throw new Error('未配置 ai，无法使用 ai_summarize')
       }

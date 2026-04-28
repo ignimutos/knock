@@ -1,6 +1,6 @@
-import type { LogRecord, TextFormatter } from '@logtape/logtape'
+import type { LogRecord, TextFormatter } from '../platform/logtape.ts'
 import { createColors } from 'picocolors'
-import { DateTime } from 'luxon'
+import { DateTime } from '../platform/luxon.ts'
 
 const { bold, cyan, dim, gray, green, magenta, red, yellow } = createColors(true)
 import type { LogLevel } from '../config/types.ts'

@@ -1,6 +1,10 @@
-import { configure, dispose, getConsoleSink, type Sink } from '@logtape/logtape'
-import { getFileSink, getRotatingFileSink, getTimeRotatingFileSink } from '@logtape/file'
-import { redactByField, redactByPattern } from '@logtape/redaction'
+import { configure, dispose, getConsoleSink, type Sink } from '../platform/logtape.ts'
+import {
+  getFileSink,
+  getRotatingFileSink,
+  getTimeRotatingFileSink,
+} from '../platform/logtape_file.ts'
+import { redactByField, redactByPattern } from '../platform/logtape_redaction.ts'
 import { basename, dirname, extname } from 'node:path'
 import type { LoggingConfigResolved } from '../config/types.ts'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
@@ -27,9 +31,7 @@ interface ConfigureLoggingRuntimeInput {
 
 let configured = false
 
-function createConsoleLike(
-  input: NonNullable<ConfigureLoggingRuntimeInput['consoleWriters']>,
-): Console {
+function createConsoleLike(input: NonNullable<ConfigureLoggingRuntimeInput['consoleWriters']>) {
   return {
     log: (msg?: unknown, ...args: unknown[]) => input.stdout([msg, ...args].map(String).join(' ')),
     info: (msg?: unknown, ...args: unknown[]) => input.stdout([msg, ...args].map(String).join(' ')),
@@ -40,7 +42,7 @@ function createConsoleLike(
     warn: (msg?: unknown, ...args: unknown[]) => input.warn([msg, ...args].map(String).join(' ')),
     error: (msg?: unknown, ...args: unknown[]) =>
       input.stderr([msg, ...args].map(String).join(' ')),
-  } as Console
+  }
 }
 
 function parseByteSize(value: string): number {
@@ -94,7 +96,7 @@ function buildConsoleSink(input: ConfigureLoggingRuntimeInput): Sink {
       getConsoleSink({
         formatter,
         console: createConsoleLike(input.consoleWriters),
-      }),
+      } as any),
       {
         fieldPatterns: SENSITIVE_FIELD_NAMES,
         action: () => '****',
@@ -146,7 +148,7 @@ function buildFileSink(input: ConfigureLoggingRuntimeInput): Sink {
       directory: dirname(sink.path),
       interval: rotation.interval,
       maxAgeMs: parseDurationMs(rotation.maxAge, 'logging.sinks.file.rotation.maxAge'),
-      filename: (date) =>
+      filename: (date: Date) =>
         `${basename(sink.path, extname(sink.path))}-${formatRotationDate(date, rotation.interval)}${extname(sink.path)}`,
     }),
     {

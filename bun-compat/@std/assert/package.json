@@ -1,7 +1,0 @@
-{
-  "name": "@std/assert",
-  "type": "module",
-  "exports": {
-    ".": "./index.js"
-  }
-}

@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '../../testing/assert.ts'
-import YAML from 'yaml'
+import YAML from '../../platform/yaml.ts'
 import {
   deleteDeliveryConfig,
   upsertDeliveryConfig,

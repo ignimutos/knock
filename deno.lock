@@ -1,23 +1,17 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@logtape/file@^2.0.5": "2.0.5",
-    "jsr:@logtape/logtape@^2.0.5": "2.0.5",
-    "jsr:@logtape/redaction@^2.0.5": "2.0.5",
-    "jsr:@std/assert@^1.0.19": "1.0.19",
-    "jsr:@std/fmt@^1.0.10": "1.0.10",
-    "jsr:@std/fs@^1.0.23": "1.0.23",
-    "jsr:@std/internal@^1.0.12": "1.0.12",
-    "jsr:@std/path@^1.1.0": "1.1.4",
-    "jsr:@std/path@^1.1.4": "1.1.4",
-    "jsr:@std/yaml@^1.1.0": "1.1.0",
+    "npm:@ai-sdk/anthropic@*": "3.0.71_zod@4.3.6",
     "npm:@ai-sdk/anthropic@^3.0.71": "3.0.71_zod@4.3.6",
+    "npm:@ai-sdk/google@*": "3.0.64_zod@4.3.6",
     "npm:@ai-sdk/google@^3.0.64": "3.0.64_zod@4.3.6",
+    "npm:@ai-sdk/openai@*": "3.0.53_zod@4.3.6",
     "npm:@ai-sdk/openai@^3.0.53": "3.0.53_zod@4.3.6",
     "npm:@logtape/file@^2.0.5": "2.0.5_@logtape+logtape@2.0.5",
     "npm:@logtape/logtape@^2.0.5": "2.0.5",
     "npm:@logtape/redaction@^2.0.5": "2.0.5_@logtape+logtape@2.0.5",
     "npm:@preact/signals@^2.9.0": "2.9.0_preact@10.29.1",
+    "npm:ai@*": "6.0.168_zod@4.3.6",
     "npm:ai@^6.0.168": "6.0.168_zod@4.3.6",
     "npm:croner@^10.0.1": "10.0.1",
     "npm:drizzle-orm@1.0.0-beta.20": "1.0.0-beta.20_@opentelemetry+api@1.9.0_@types+mssql@9.1.11__@azure+core-client@1.10.1_mssql@11.0.1__@azure+core-client@1.10.1_zod@4.3.6_@azure+core-client@1.10.1",
@@ -25,12 +19,17 @@
     "npm:fontoxpath@^3.34.0": "3.34.0",
     "npm:jsdom@^29.0.2": "29.0.2",
     "npm:ky@^1.14.3": "1.14.3",
+    "npm:liquidjs@*": "10.25.7",
     "npm:liquidjs@^10.25.7": "10.25.7",
+    "npm:luxon@*": "3.7.2",
     "npm:luxon@^3.7.2": "3.7.2",
     "npm:markdown-it@^14.1.1": "14.1.1",
+    "npm:nodemailer@*": "7.0.13",
     "npm:nodemailer@^7.0.13": "7.0.13",
     "npm:picocolors@^1.1.1": "1.1.1",
+    "npm:preact-render-to-string@*": "6.6.7_preact@10.29.1",
     "npm:preact-render-to-string@^6.6.7": "6.6.7_preact@10.29.1",
+    "npm:preact@*": "10.29.1",
     "npm:preact@^10.29.1": "10.29.1",
     "npm:prettier@*": "3.8.1",
     "npm:sanitize-html@^2.17.3": "2.17.3",
@@ -38,53 +37,8 @@
     "npm:vite@*": "7.3.2_yaml@2.8.3",
     "npm:vite@^7.3.2": "7.3.2_yaml@2.8.3",
     "npm:yaml@^2.8.3": "2.8.3",
+    "npm:zod@*": "4.3.6",
     "npm:zod@^4.3.6": "4.3.6"
-  },
-  "jsr": {
-    "@logtape/file@2.0.5": {
-      "integrity": "368621b15b73fd63c137e47ae43411e350627683ce7e0b4492af3ccb159e098b",
-      "dependencies": [
-        "jsr:@logtape/logtape@^2.0.5",
-        "jsr:@std/path@^1.1.0"
-      ]
-    },
-    "@logtape/logtape@2.0.5": {
-      "integrity": "604d2121ed4ffb7aad35b47e729e2298d0cd7a7ddf1cb4171d27a61fa7d840a5"
-    },
-    "@logtape/redaction@2.0.5": {
-      "integrity": "b79610d8b2f8253378fca3cdb2c106a78f8b9e14e68644b24cf51b8118fa0818",
-      "dependencies": [
-        "jsr:@logtape/logtape@^2.0.5"
-      ]
-    },
-    "@std/assert@1.0.19": {
-      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
-      "dependencies": [
-        "jsr:@std/internal"
-      ]
-    },
-    "@std/fmt@1.0.10": {
-      "integrity": "90dfba288802ac6de82fb31d0917eb9e4450b9925b954d5e51fc29ac07419db5"
-    },
-    "@std/fs@1.0.23": {
-      "integrity": "3ecbae4ce4fee03b180fa710caff36bb5adb66631c46a6460aaad49515565a37",
-      "dependencies": [
-        "jsr:@std/internal",
-        "jsr:@std/path@^1.1.4"
-      ]
-    },
-    "@std/internal@1.0.12": {
-      "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
-    },
-    "@std/path@1.1.4": {
-      "integrity": "1d2d43f39efb1b42f0b1882a25486647cb851481862dc7313390b2bb044314b5",
-      "dependencies": [
-        "jsr:@std/internal"
-      ]
-    },
-    "@std/yaml@1.1.0": {
-      "integrity": "fc1c5c63e05c4c5eb6118355f557958035d41940d6c29d35b306ef7155d6edb0"
-    }
   },
   "npm": {
     "@ai-sdk/anthropic@3.0.71_zod@4.3.6": {
@@ -1446,36 +1400,18 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@logtape/file@^2.0.5",
-      "jsr:@logtape/logtape@^2.0.5",
-      "jsr:@logtape/redaction@^2.0.5",
-      "jsr:@std/assert@^1.0.19",
-      "jsr:@std/fmt@^1.0.10",
-      "jsr:@std/fs@^1.0.23",
-      "jsr:@std/path@^1.1.4",
-      "jsr:@std/yaml@^1.1.0",
-      "npm:@ai-sdk/anthropic@^3.0.71",
-      "npm:@ai-sdk/google@^3.0.64",
-      "npm:@ai-sdk/openai@^3.0.53",
       "npm:@preact/signals@^2.9.0",
-      "npm:ai@^6.0.168",
-      "npm:croner@^10.0.1",
       "npm:drizzle-orm@1.0.0-beta.20",
       "npm:feedsmith@^2.9.3",
       "npm:fontoxpath@^3.34.0",
       "npm:jsdom@^29.0.2",
-      "npm:ky@^1.14.3",
-      "npm:liquidjs@^10.25.7",
-      "npm:luxon@^3.7.2",
       "npm:markdown-it@^14.1.1",
-      "npm:nodemailer@^7.0.13",
       "npm:picocolors@^1.1.1",
       "npm:preact-render-to-string@^6.6.7",
       "npm:preact@^10.29.1",
       "npm:sanitize-html@^2.17.3",
       "npm:turndown@^7.2.4",
       "npm:vite@^7.3.2",
-      "npm:yaml@^2.8.3",
       "npm:zod@^4.3.6"
     ],
     "packageJson": {

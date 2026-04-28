@@ -1,6 +1,6 @@
 import { assertEquals } from '../testing/assert.ts'
 import { readFileSync } from 'node:fs'
-import YAML from 'yaml'
+import YAML from '../platform/yaml.ts'
 import { validateConfig } from './validate_config.ts'
 import { test } from '../testing/test_api.ts'
 

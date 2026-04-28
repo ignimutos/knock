@@ -1,5 +1,4 @@
-import ky from 'ky'
-import type { Input as KyInput, Options as KyOptions } from 'ky'
+import ky, { type KyInput, type KyOptions } from '../platform/ky.ts'
 import { parseDurationMs } from '../config/runtime_semantics.ts'
 import type { HttpTransportConfig } from '../config/schema.ts'
 

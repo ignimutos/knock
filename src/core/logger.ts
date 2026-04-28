@@ -1,6 +1,5 @@
-import type { LogRecord, Logger as LogTapeLogger } from '@logtape/logtape'
-import { getLogger as getLogTapeLogger } from '@logtape/logtape'
-import { redactByPattern } from '@logtape/redaction'
+import { getLogger as getLogTapeLogger, type LogRecord, type Logger as LogTapeLogger } from '../platform/logtape.ts'
+import { redactByPattern } from '../platform/logtape_redaction.ts'
 import { fileURLToPath } from 'node:url'
 import type { LogLevel } from '../config/types.ts'
 import {

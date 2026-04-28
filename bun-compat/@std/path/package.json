@@ -1,7 +1,0 @@
-{
-  "name": "@std/path",
-  "type": "module",
-  "exports": {
-    ".": "./index.js"
-  }
-}

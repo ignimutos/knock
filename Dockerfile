@@ -6,7 +6,6 @@ FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app
 
 COPY package.json bun.lock tsconfig.json vite.config.ts ./
-COPY bun-compat ./bun-compat
 RUN bun install --frozen-lockfile
 COPY src ./src
 COPY web ./web
@@ -17,7 +16,6 @@ FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION} AS prod-deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
-COPY bun-compat ./bun-compat
 RUN bun install --frozen-lockfile --production
 
 FROM alpine:3.21 AS runtime-assets

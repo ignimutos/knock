@@ -1,8 +1,8 @@
-import { Cron } from 'croner'
+import { Cron } from '../platform/croner.ts'
 import type { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
 import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
 import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
-import type nodemailer from 'nodemailer'
+import type { CreateTransport } from '../platform/nodemailer.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
@@ -29,7 +29,7 @@ export interface CreateProductionRuntimeOptions {
   definitions?: DefinitionSet
   httpFetcher?: typeof fetch
   httpProxyClientFactory?: ProxyClientFactory
-  emailTransportFactory?: typeof nodemailer.createTransport
+  emailTransportFactory?: CreateTransport
   keepAlive?: boolean
   keepAliveSignal?: Promise<void>
   now?: () => string

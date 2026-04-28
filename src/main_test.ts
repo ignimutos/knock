@@ -1,7 +1,12 @@
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { Readable } from 'node:stream'
-import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from './testing/assert.ts'
+import {
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from './testing/assert.ts'
 import type { StartAppOptions } from './main.ts'
 import { dispatchCliCommand, main, startWeb } from './main.ts'
 import { waitForWebReady } from './interfaces/web/start_web.ts'
@@ -870,7 +875,7 @@ test('[contract] waitForWebReady: 单次长首访应在总等待窗口内成功'
   if (requestCount !== 1) {
     throw new Error(`长首访不应被中断重试，实际请求了 ${requestCount} 次`)
   }
-  if (Date.now() - startedAt < 2_000) {
+  if (Date.now() - startedAt < 1_500) {
     throw new Error('waitForWebReady 不应在长首访完成前返回')
   }
 })

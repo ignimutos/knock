@@ -1,6 +1,6 @@
 import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
 import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
-import type nodemailer from 'nodemailer'
+import type { CreateTransport } from '../platform/nodemailer.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { ProxyClientFactory } from '../core/http_client.ts'
 import { createLogger, type Logger } from '../core/logger.ts'
@@ -41,7 +41,7 @@ export interface CreateProductionRuntimeServicesInput {
   definitions?: DefinitionSet
   httpFetcher?: typeof fetch
   httpProxyClientFactory?: ProxyClientFactory
-  emailTransportFactory?: typeof nodemailer.createTransport
+  emailTransportFactory?: CreateTransport
   now: () => string
   factsDb?: FactsDbClient
 }
@@ -104,7 +104,7 @@ function createProductionDeliveryExecutors(input: {
   config: AppConfigResolved
   core: ReturnType<typeof createSourceExecutionCore>
   loggers: ProductionRuntimeLoggers
-  emailTransportFactory?: typeof nodemailer.createTransport
+  emailTransportFactory?: CreateTransport
 }) {
   return {
     file: createFileDeliveryExecutor({
@@ -146,7 +146,7 @@ function createProductionRunSourceUseCase(input: {
   loggers: ProductionRuntimeLoggers
   httpFetcher?: typeof fetch
   httpProxyClientFactory?: ProxyClientFactory
-  emailTransportFactory?: typeof nodemailer.createTransport
+  emailTransportFactory?: CreateTransport
 }) {
   const core = createProductionSourceExecutionCore({
     config: input.config,

@@ -1,7 +1,0 @@
-{
-  "name": "@std/yaml",
-  "type": "module",
-  "exports": {
-    ".": "./index.js"
-  }
-}

@@ -1,4 +1,4 @@
-import { DateTime } from 'luxon'
+import { DateTime } from '../platform/luxon.ts'
 
 export interface FeedParseOptions {
   timezone?: string
