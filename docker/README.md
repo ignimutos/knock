@@ -37,9 +37,9 @@ deliveries:
         ---
 
 sources:
-  deno:
+  bun:
     http:
-      url: https://github.com/denoland/deno/releases.atom
+      url: https://github.com/oven-sh/bun/releases.atom
     deliveries:
       local: {}
 ```

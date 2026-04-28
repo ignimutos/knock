@@ -369,7 +369,7 @@ test('[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.
         seenSourceIds = sourceIds
         return Promise.resolve({
           rust: { name: 'Rust', feed: {}, entries: [] },
-          deno: { name: 'Deno', feed: {}, entries: [] },
+          bun: { name: 'Bun', feed: {}, entries: [] },
         })
       },
     },
@@ -392,7 +392,7 @@ test('[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.
       source: {
         kind: 'summary',
         sourceId: 'daily',
-        upstreamSourceIds: ['rust', 'deno'],
+        upstreamSourceIds: ['rust', 'bun'],
       },
       profile: 'preview',
       effectDomain: 'preview',
@@ -408,5 +408,5 @@ test('[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.
     },
   )
 
-  assertEquals(seenSourceIds, ['rust', 'deno'])
+  assertEquals(seenSourceIds, ['rust', 'bun'])
 })

@@ -22,8 +22,8 @@ test('[contract] config.example.yml: sources.deliveries keyed map 应通过当�
     'webhook',
   ])
   assertEquals(Object.keys(validated.sources ?? {}).sort(), [
+    'bun',
     'daily_summary',
-    'deno',
     'website_news',
     'website_news_byparr',
     'website_news_script',
@@ -31,47 +31,47 @@ test('[contract] config.example.yml: sources.deliveries keyed map 应通过当�
 
   assertEquals(validated.sources.daily_summary.schedule, '0 0 8 * * *')
   assertEquals(validated.sources.daily_summary.summary, {
-    sources: ['deno'],
+    sources: ['bun'],
     feed: {
-      title: '{{ sources.deno.feed.title }} Daily Summary',
+      title: '{{ sources.bun.feed.title }} Daily Summary',
       description:
         '{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}',
     },
     entry: {
       id: '{{ source.id }}:{{ source.runtime.window.previousCheckpoint }}..{{ source.runtime.window.scheduledAt }}',
-      title: '{{ sources.deno.feed.title }} Daily Summary',
+      title: '{{ sources.bun.feed.title }} Daily Summary',
       description:
-        '窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}\n条目数：{{ sources.deno.entries | size }}\n',
+        '窗口：{{ source.runtime.window.previousCheckpoint }} -> {{ source.runtime.window.scheduledAt }}\n条目数：{{ sources.bun.entries | size }}\n',
       content:
-        '{% for item in sources.deno.entries %}\n- {{ item.title }}{% if item.link != blank %} ({{ item.link }}){% endif %}\n{% endfor %}\n',
+        '{% for item in sources.bun.entries %}\n- {{ item.title }}{% if item.link != blank %} ({{ item.link }}){% endif %}\n{% endfor %}\n',
     },
   })
 
-  const denoDeliveries = validated.sources.deno.deliveries
+  const bunDeliveries = validated.sources.bun.deliveries
 
-  assertEquals(Array.isArray(denoDeliveries), false)
-  assertEquals(denoDeliveries === undefined, false)
+  assertEquals(Array.isArray(bunDeliveries), false)
+  assertEquals(bunDeliveries === undefined, false)
 
-  if (!denoDeliveries) {
-    throw new Error('config.example.yml 缺少 sources.deno.deliveries')
+  if (!bunDeliveries) {
+    throw new Error('config.example.yml 缺少 sources.bun.deliveries')
   }
 
-  assertEquals(Object.keys(denoDeliveries).sort(), [
+  assertEquals(Object.keys(bunDeliveries).sort(), [
     'local',
     'release_email',
     'telegram_webhook',
     'telegram_webhook_md',
     'webhook',
   ])
-  assertEquals(denoDeliveries.local, {})
-  assertEquals(denoDeliveries.telegram_webhook, {
+  assertEquals(bunDeliveries.local, {})
+  assertEquals(bunDeliveries.telegram_webhook, {
     payload: {
       text: '<b>[{{ source.id }}] {{ title }}</b>\n\n{{ content | to_telegram_html }}\n\n{{ link }}\n',
     },
   })
-  assertEquals(denoDeliveries.telegram_webhook_md, {})
-  assertEquals(denoDeliveries.webhook, {})
-  assertEquals(denoDeliveries.release_email, {
+  assertEquals(bunDeliveries.telegram_webhook_md, {})
+  assertEquals(bunDeliveries.webhook, {})
+  assertEquals(bunDeliveries.release_email, {
     message: {
       subject: '[release][{{ source.id }}] {{ entry.title }}',
     },
