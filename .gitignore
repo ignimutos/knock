@@ -15,6 +15,7 @@
 .next/
 .tmp
 .venv/
+.web-dist/
 .worktrees
 /*.md
 /*.png
@@ -23,7 +24,6 @@ __pycache__/
 build/
 coverage/
 dist/
-_fresh/
 node_modules/
 npm/
 runtime/
