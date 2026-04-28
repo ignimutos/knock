@@ -8,14 +8,16 @@
     "web": "bun run src/main.ts --mode web",
     "daemon": "bun run src/main.ts --mode daemon",
     "dev": "bun run src/main.ts",
+    "check": "tsc --project tsconfig.json",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "lint": "oxlint --fix .",
+    "lint:check": "oxlint .",
     "test": "bun test src web",
-    "test:deno": "deno task test",
-    "test:arch": "deno task test:arch",
-    "test:startup": "deno task test:startup",
-    "check": "deno task check",
-    "fmt:check": "deno task fmt:check",
-    "lint:check": "deno task lint:check",
-    "verify:full": "deno task verify:full",
+    "test:arch": "bun test src/testing/risk_mapping_test.ts",
+    "test:startup": "bun test src/config/config_example_test.ts src/interfaces/cli/parse_cli_command_test.ts src/core/app_test.ts src/container_entrypoint_test.ts web/main_test.ts",
+    "verify:scoped": "bun run build:web && bun run check && bun run test:arch && bun run test:startup",
+    "verify:full": "bun run verify:scoped && bun run test",
     "docker:build": "bash -lc 'docker build --tag \"${KNOCK_IMAGE_TAG:-knock:local}\" .'",
     "docker:size:check": "bash -lc 'image=\"${KNOCK_IMAGE_TAG:-knock:local}\"; size_bytes=$(docker image inspect \"$image\" --format \"{{.Size}}\"); size_mb=$(((size_bytes + 1048575) / 1048576)); limit_mb=${KNOCK_IMAGE_MAX_SIZE_MB:-450}; printf \"Docker image size: %s MB (limit %s MB)\\n\" \"$size_mb\" \"$limit_mb\"; test \"$size_mb\" -le \"$limit_mb\"'",
     "image:prepare": "bun run docker:build && bun run docker:size:check",
@@ -47,6 +49,11 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
+    "bun-types": "^1.3.13",
+    "oxlint": "^1.62.0",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
     "vite": "^7.3.2"
   }
 }

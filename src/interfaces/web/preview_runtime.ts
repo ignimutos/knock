@@ -5,6 +5,7 @@ import {
 import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types.ts'
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
 import { createPreviewComposition } from '../../composition/create_preview_runtime.ts'
+import type { Fetcher } from '../../core/http_client.ts'
 
 export interface PreviewRuntimeDeps<TRequest, TParsedRequest, TResponse> {
   previewRunUseCase: Pick<PreviewRunUseCase, 'execute'>
@@ -61,7 +62,7 @@ export function createPreviewRuntime<
 
 export function createPreviewRunUseCaseRuntime(input: {
   config: AppConfigResolved
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
   now?: () => string
 }) {
   return createPreviewComposition(input).previewRunUseCase
@@ -70,7 +71,7 @@ export function createPreviewRunUseCaseRuntime(input: {
 export async function executePreviewSource(input: {
   config: AppConfigResolved
   source: ResolvedSourceConfig
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
   now?: () => string
 }): Promise<Awaited<ReturnType<PreviewRunUseCase['execute']>>> {
   const previewRunUseCase = createPreviewRunUseCaseRuntime({

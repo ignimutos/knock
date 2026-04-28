@@ -1,1 +1,1 @@
-export type { ComponentChildren, JSX } from 'npm:preact'
+export type { ComponentChildren, JSX } from 'preact'

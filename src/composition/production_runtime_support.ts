@@ -2,7 +2,7 @@ import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
 import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'
 import type { CreateTransport } from '../platform/nodemailer.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
-import type { ProxyClientFactory } from '../core/http_client.ts'
+import type { Fetcher, ProxyClientFactory } from '../core/http_client.ts'
 import { createLogger, type Logger } from '../core/logger.ts'
 import { createScheduler } from '../core/scheduler.ts'
 import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
@@ -39,7 +39,7 @@ export interface ProductionRuntimeLoggers {
 export interface CreateProductionRuntimeServicesInput {
   config: AppConfigResolved
   definitions?: DefinitionSet
-  httpFetcher?: typeof fetch
+  httpFetcher?: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: CreateTransport
   now: () => string
@@ -84,7 +84,7 @@ function createProductionSourceExecutionCore(input: {
   config: AppConfigResolved
   factsDb: FactsDbClient
   loggers: ProductionRuntimeLoggers
-  httpFetcher?: typeof fetch
+  httpFetcher?: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
 }) {
   return createSourceExecutionCore({
@@ -144,7 +144,7 @@ function createProductionRunSourceUseCase(input: {
   factsDb: FactsDbClient
   now: () => string
   loggers: ProductionRuntimeLoggers
-  httpFetcher?: typeof fetch
+  httpFetcher?: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: CreateTransport
 }) {

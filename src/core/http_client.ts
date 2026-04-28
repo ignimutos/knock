@@ -18,12 +18,6 @@ export interface ProxyClientFactoryOptions {
 
 export type ProxyClientFactory = (options: ProxyClientFactoryOptions) => ProxyClient
 
-interface DenoProxyRuntime {
-  Deno?: {
-    createHttpClient?: ProxyClientFactory
-  }
-}
-
 export interface HttpRequestInput {
   transport?: HttpTransportConfig
   request: RequestInfo | URL
@@ -35,8 +29,10 @@ export interface HttpClient {
   fetchText(input: HttpRequestInput): Promise<string>
 }
 
+export type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 export interface CreateHttpClientOptions {
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
   proxyClientFactory?: ProxyClientFactory
 }
 
@@ -52,13 +48,9 @@ function toKyRetryConfig(retry: RetryTransportConfig | undefined) {
   }
 }
 
-function getDefaultProxyClientFactory(): ProxyClientFactory | undefined {
-  return (globalThis as DenoProxyRuntime).Deno?.createHttpClient
-}
-
 export function createHttpClient(options: CreateHttpClientOptions = {}): HttpClient {
   const fetcher = options.fetcher ?? fetch
-  const proxyClientFactory = options.proxyClientFactory ?? getDefaultProxyClientFactory()
+  const proxyClientFactory = options.proxyClientFactory
 
   return {
     async request(input: HttpRequestInput): Promise<Response> {

@@ -1,9 +1,8 @@
-import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { CreateTransport } from './platform/nodemailer.ts'
-import type { ProxyClientFactory } from './core/http_client.ts'
+import type { Fetcher, ProxyClientFactory } from './core/http_client.ts'
 import { getEnvObject } from './platform/env.ts'
-import { execPath, getArgs, spawnSelf } from './platform/process.ts'
+import { getArgs, isMainModule, spawnSelf } from './platform/process.ts'
 import { loadCompiledConfig } from './config/load_compiled_config.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from './core/logging_runtime.ts'
 import {
@@ -27,7 +26,7 @@ export const startWeb = startWebImpl
 export interface StartAppOptions {
   runtimeDir?: string
   configPath?: string
-  httpFetcher?: typeof fetch
+  httpFetcher?: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: CreateTransport
   keepAlive?: boolean
@@ -38,7 +37,7 @@ export interface StartAppOptions {
 interface StartAppInput {
   runtimeDir?: string
   configPath?: string
-  httpFetcher: typeof fetch
+  httpFetcher: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: CreateTransport
   keepAlive: boolean
@@ -60,12 +59,9 @@ export interface DispatchCliCommandDeps {
 const startAppOptionsSchema = z.object({
   runtimeDir: z.string({ message: 'runtimeDir 必须是字符串' }).optional(),
   configPath: z.string({ message: 'configPath 必须是字符串' }).optional(),
-  httpFetcher: z.custom<typeof fetch>(
-    (value) => value === undefined || typeof value === 'function',
-    {
-      message: 'httpFetcher 必须是函数',
-    },
-  ),
+  httpFetcher: z.custom<Fetcher>((value) => value === undefined || typeof value === 'function', {
+    message: 'httpFetcher 必须是函数',
+  }),
   httpProxyClientFactory: z.custom<ProxyClientFactory>(
     (value) => value === undefined || typeof value === 'function',
     { message: 'httpProxyClientFactory 必须是函数' },
@@ -142,16 +138,6 @@ export async function startApp(options: StartAppOptions = {}): Promise<StartAppR
   }
 }
 
-function buildSelfCommandArgs(args: string[]): string[] {
-  const entryPath = fileURLToPath(import.meta.url)
-
-  if (/([/\\]|^)deno(?:\.exe)?$/i.test(execPath())) {
-    return ['run', '--allow-all', '--cached-only', '--node-modules-dir=none', entryPath, ...args]
-  }
-
-  return [entryPath, ...args]
-}
-
 export async function runAllModes(command: AllCliCommand): Promise<void> {
   const childEnv = {
     ...getEnvObject(),
@@ -160,7 +146,7 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
   }
 
   const daemonChild = spawnSelf({
-    args: buildSelfCommandArgs(buildChildArgs(command, 'daemon')),
+    args: buildChildArgs(command, 'daemon'),
     env: childEnv,
     stdin: 'inherit',
     stdout: 'inherit',
@@ -168,7 +154,7 @@ export async function runAllModes(command: AllCliCommand): Promise<void> {
   })
 
   const webChild = spawnSelf({
-    args: buildSelfCommandArgs(buildChildArgs(command, 'web')),
+    args: buildChildArgs(command, 'web'),
     env: {
       ...childEnv,
       [SKIP_WEB_RUNTIME_READY_CHECK_ENV]: '1',
@@ -232,6 +218,6 @@ export async function main(args: string[], deps: DispatchCliCommandDeps = {}): P
   await dispatchCliCommand(parseCliCommand(args), deps)
 }
 
-if (import.meta.main) {
+if (isMainModule(import.meta.url)) {
   await main(getArgs())
 }

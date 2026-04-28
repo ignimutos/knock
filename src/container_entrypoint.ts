@@ -1,6 +1,6 @@
 import { main } from './main.ts'
 import { getEnv, getEnvObject } from './platform/env.ts'
-import { exit, getArgs, spawnCommand } from './platform/process.ts'
+import { exit, getArgs, isMainModule, spawnCommand } from './platform/process.ts'
 
 export function hasFlag(flag: string, args: string[]): boolean {
   return args.includes(flag)
@@ -47,8 +47,11 @@ export function resolveTargetMode(args: string[]): 'web' | 'daemon' | 'all' {
 
 export function normalizeAppArgs(rawArgs: string[]): string[] | undefined {
   if (rawArgs.length === 0) return []
-  if (rawArgs[0] === 'deno' && rawArgs[1] === 'task' && rawArgs[2] === 'start') {
+  if (rawArgs[0] === 'bun' && rawArgs[1] === 'run' && rawArgs[2] === 'start') {
     return rawArgs.slice(3)
+  }
+  if (rawArgs[0] === 'bun' && rawArgs[1] === 'start') {
+    return rawArgs.slice(2)
   }
   if (rawArgs[0]?.startsWith('--')) return [...rawArgs]
   return undefined
@@ -105,6 +108,6 @@ export async function runContainerEntrypoint(rawArgs: string[] = getArgs()): Pro
   await main(applyContainerDefaults(appArgs))
 }
 
-if (import.meta.main) {
+if (isMainModule(import.meta.url)) {
   await runContainerEntrypoint()
 }

@@ -8,19 +8,6 @@ type RuntimeWithServe = typeof globalThis & {
       stop: () => void
     }
   }
-  Deno?: {
-    serve: (
-      options: {
-        hostname: string
-        port: number
-        signal: AbortSignal
-      },
-      handler: (request: Request) => Response | Promise<Response>,
-    ) => {
-      finished: Promise<void>
-      shutdown(): Promise<void>
-    }
-  }
 }
 
 export interface ServeOptions {
@@ -78,15 +65,7 @@ export function serve(
     }
   }
 
-  if (runtime.Deno?.serve) {
-    const server = runtime.Deno.serve(options, handler)
-    return {
-      finished: server.finished,
-      shutdown: () => server.shutdown(),
-    }
-  }
-
-  throw new Error('当前运行时不支持 HTTP 服务')
+  throw new Error('当前运行时不支持 Bun HTTP 服务')
 }
 
 export function isAddrInUseError(error: unknown): boolean {

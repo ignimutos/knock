@@ -21,7 +21,7 @@ export interface EmailDelivery {
   push(req: EmailDeliveryRequest): Promise<void>
 }
 
-function toTransportOptions(smtp: EmailConfig['smtp']) {
+function toTransportOptions(smtp: EmailConfig['smtp']): Parameters<CreateTransport>[0] {
   return {
     host: smtp.host,
     port: smtp.port,

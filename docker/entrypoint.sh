@@ -42,9 +42,14 @@ if [ "$#" -eq 0 ]; then
   set --
 fi
 
-if [ "$#" -ge 3 ] && [ "$1" = "deno" ] && [ "$2" = "task" ] && [ "$3" = "start" ]; then
+if [ "$#" -ge 3 ] && [ "$1" = "bun" ] && [ "$2" = "run" ] && [ "$3" = "start" ]; then
   rewrite_start=1
   shift 3
+fi
+
+if [ "$#" -ge 2 ] && [ "$1" = "bun" ] && [ "$2" = "start" ]; then
+  rewrite_start=1
+  shift 2
 fi
 
 if [ "$rewrite_start" -eq 1 ]; then
@@ -79,11 +84,7 @@ if [ "$rewrite_start" -eq 1 ]; then
   fi
 
   set -- \
-    deno eval \
-    --cached-only \
-    --node-modules-dir=none \
-    'import { main } from "./src/main.ts"; await main(Deno.args)' \
-    -- \
+    bun src/main.ts \
     "$@"
 fi
 

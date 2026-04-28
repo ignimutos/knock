@@ -6,7 +6,7 @@ import type { CreateTransport } from '../platform/nodemailer.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
-import type { ProxyClientFactory } from '../core/http_client.ts'
+import type { Fetcher, ProxyClientFactory } from '../core/http_client.ts'
 import { createProductionRuntimeServices } from './production_runtime_support.ts'
 
 export interface ProductionRuntimeRunResult {
@@ -27,7 +27,7 @@ export interface ProductionRuntime {
 export interface CreateProductionRuntimeOptions {
   config: AppConfigResolved
   definitions?: DefinitionSet
-  httpFetcher?: typeof fetch
+  httpFetcher?: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: CreateTransport
   keepAlive?: boolean

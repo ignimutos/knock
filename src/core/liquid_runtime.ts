@@ -503,23 +503,25 @@ function sanitizeTelegramHtml(text: string): TelegramHtmlSanitizeResult {
       a: (tagName: string, attribs: Record<string, string>) => {
         const href = attribs.href
         if (typeof href !== 'string' || !isAllowedTelegramHref(href)) {
-          return { tagName, attribs: {} }
+          return { tagName, attribs: {} as Record<string, string> }
         }
         return { tagName, attribs: { href } }
       },
       blockquote: (tagName: string, attribs: Record<string, string>) => {
+        const nextAttribs: Record<string, string> = {}
         if (Object.hasOwn(attribs, 'expandable')) {
-          return { tagName, attribs: { expandable: 'expandable' } }
+          nextAttribs.expandable = 'expandable'
         }
-        return { tagName, attribs: {} }
+        return { tagName, attribs: nextAttribs }
       },
       code: (tagName: string, attribs: Record<string, string>) => {
+        const nextAttribs: Record<string, string> = {}
         const languageClass = getTelegramCodeLanguageClass(attribs)
         const parentTag = rawTagStack.at(-2)
         if (parentTag === 'pre' && typeof languageClass === 'string') {
-          return { tagName, attribs: { class: languageClass } }
+          nextAttribs.class = languageClass
         }
-        return { tagName, attribs: {} }
+        return { tagName, attribs: nextAttribs }
       },
       pre: (tagName: string) => {
         return { tagName, attribs: {} }
@@ -534,11 +536,12 @@ function sanitizeTelegramHtml(text: string): TelegramHtmlSanitizeResult {
         return { tagName, attribs: {} }
       },
       'tg-emoji': (tagName: string, attribs: Record<string, string>) => {
+        const nextAttribs: Record<string, string> = {}
         const emojiId = attribs['emoji-id']
         if (typeof emojiId === 'string' && emojiId.trim() !== '') {
-          return { tagName, attribs: { 'emoji-id': emojiId } }
+          nextAttribs['emoji-id'] = emojiId
         }
-        return { tagName, attribs: {} }
+        return { tagName, attribs: nextAttribs }
       },
     },
     exclusiveFilter: (frame: { tag: string; attribs: Record<string, string> }) => {

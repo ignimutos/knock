@@ -10,12 +10,9 @@ test('[contract] container entrypoint: 空参数应保留 CLI 默认模式', asy
   assertEquals(normalizeAppArgs([]), [])
 })
 
-test('[contract] container entrypoint: deno task start 应被改写为应用参数', async () => {
+test('[contract] container entrypoint: bun run start 应被改写为应用参数', async () => {
   const { normalizeAppArgs } = await import(`${moduleUrl.href}?task-start`)
-  assertEquals(normalizeAppArgs(['deno', 'task', 'start', '--mode', 'daemon']), [
-    '--mode',
-    'daemon',
-  ])
+  assertEquals(normalizeAppArgs(['bun', 'run', 'start', '--mode', 'daemon']), ['--mode', 'daemon'])
 })
 
 test('[contract] container entrypoint: 非法 KNOCK_IMMEDIATE 应报错', async () => {

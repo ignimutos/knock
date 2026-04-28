@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import process from 'node:process'
 
 export interface SpawnOptions {
@@ -65,6 +66,10 @@ export function exit(code: number): never {
 
 export function getArgs(): string[] {
   return process.argv.slice(2)
+}
+
+export function isMainModule(moduleUrl: string): boolean {
+  return process.argv[1] === fileURLToPath(moduleUrl)
 }
 
 export function spawnSelf(options: SpawnOptions): SpawnedProcess {

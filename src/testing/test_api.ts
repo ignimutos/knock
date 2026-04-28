@@ -12,10 +12,16 @@ function normalizeLayeredName(name: string, layer: RepoTestOptions['layer'] = 'c
   return `[${layer}] ${name}`
 }
 
-const runtimeTest =
+type RuntimeTest = (
+  name: string,
+  options: { timeout?: number },
+  fn: () => Promise<void> | void,
+) => void
+
+const runtimeTest: RuntimeTest =
   typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
-    ? (await import('bun:test')).test
-    : nodeTest
+    ? ((await import('bun:test')).test as unknown as RuntimeTest)
+    : (nodeTest as unknown as RuntimeTest)
 
 export function test(
   name: string,

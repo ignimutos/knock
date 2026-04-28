@@ -251,10 +251,7 @@ async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | un
 }
 
 function buildWebBuildArgs(): string[] {
-  if (typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined') {
-    return ['run', 'build:web']
-  }
-  return ['run', '-A', '--node-modules-dir=none', 'npm:vite', 'build', '--configLoader', 'native']
+  return ['run', 'build:web']
 }
 
 async function ensureWebBuildExists(): Promise<void> {
@@ -298,7 +295,7 @@ async function assertWebRuntimeReady(): Promise<void> {
 }
 
 function createDelay(ms: number): { promise: Promise<void>; cancel: () => void } {
-  let timeoutId: number | undefined
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   return {
     promise: new Promise<void>((resolve) => {
       timeoutId = setTimeout(resolve, ms)
@@ -320,7 +317,7 @@ function startWebReadyProbe(
   const controller = new AbortController()
   const probeHost = formatHttpHost(normalizeWebReadyProbeHost(host))
   let timedOut = false
-  let timeoutId: number | undefined = setTimeout(() => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
     timedOut = true
     controller.abort()
   }, timeoutMs)

@@ -6,6 +6,7 @@ import {
   executePreviewSource,
   toPreviewExecutionResult,
 } from '../interfaces/web/preview_runtime.ts'
+import type { Fetcher } from '../core/http_client.ts'
 
 export interface PlaygroundPreviewResult {
   warnings: string[]
@@ -24,7 +25,7 @@ export interface PlaygroundPreviewResult {
 export interface PlaygroundPreviewExecutorInput {
   config: AppConfigResolved
   source: ResolvedSourceConfig
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
 }
 
 export function createPlaygroundConfig(source: ResolvedSourceConfig): AppConfigResolved {
@@ -63,7 +64,7 @@ export function createPlaygroundConfig(source: ResolvedSourceConfig): AppConfigR
 export async function evaluatePlaygroundPreview(input: {
   source: ResolvedSourceConfig
   warnings: string[]
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
   previewExecutor?: (input: PlaygroundPreviewExecutorInput) => Promise<PlaygroundPreviewResult>
 }): Promise<PlaygroundPreviewResult> {
   const config = createPlaygroundConfig(input.source)

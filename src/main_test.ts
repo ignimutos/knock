@@ -37,7 +37,7 @@ type TestChildProcess = {
 function toWebReadableStream(stream: ChildOutputStream): ReadableStream<Uint8Array> | null {
   if (!stream) return null
   if ('getReader' in stream) {
-    return stream as ReadableStream<Uint8Array>
+    return stream as unknown as ReadableStream<Uint8Array>
   }
   return Readable.toWeb(stream as Readable) as ReadableStream<Uint8Array>
 }
@@ -158,7 +158,7 @@ async function readCommandOutputUntil(
   try {
     while (Date.now() < deadline) {
       const remaining = Math.max(0, deadline - Date.now())
-      let timeoutId: number | undefined
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
       const chunk = await Promise.race([
         reader.read(),
         new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {

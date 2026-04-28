@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertMatch, assertRejects, assertStringIncludes } from '../testing/assert.ts'
+import {
+  assert,
+  assertEquals,
+  assertMatch,
+  assertRejects,
+  assertStringIncludes,
+} from '../testing/assert.ts'
 import { emptyDir, ensureDir } from '../testing/fs.ts'
 import { utimes } from 'node:fs/promises'
 import { join } from 'node:path'

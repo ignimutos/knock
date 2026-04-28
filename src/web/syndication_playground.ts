@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
+import type { Fetcher } from '../core/http_client.ts'
 import {
   byparrSchema,
   sourceHttpSchema,
@@ -83,11 +84,11 @@ export function parseSyndicationPlaygroundRequest(
 
 export interface EvaluateSyndicationPlaygroundInput {
   request: unknown
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
   previewExecutor?: (input: {
     config: AppConfigResolved
     source: ResolvedSourceConfig
-    fetcher?: typeof fetch
+    fetcher?: Fetcher
   }) => Promise<{
     warnings: string[]
     fetchMeta: {

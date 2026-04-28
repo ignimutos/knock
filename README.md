@@ -32,8 +32,8 @@ src/interfaces/              CLI、daemon、web 等入口适配面
 src/db/                      SQLite 客户端、schema 与状态存储
 web/                         网页调试页与 API 路由
 config.example.yml           完整参考配置
-package.json                 Bun 运行 / 构建脚本入口
-deno.json                    Deno baseline 验证任务入口
+package.json                 Bun 运行 / 构建 / 验证脚本入口
+tsconfig.json                Bun / TypeScript 类型检查配置
 ```
 
 ## 快速开始
@@ -50,7 +50,6 @@ cd knock
 bun install
 ```
 
-如果你还要跑 Deno baseline（例如 `bun run verify:full` 里委托的 `deno task ...`），本机也需要安装 Deno。
 
 ### 2) 基于参考配置创建配置文件
 
@@ -665,14 +664,14 @@ logging:
 常用本地验证入口：
 
 - `bun run test`
-- `deno task check`
-- `deno task fmt:check`
-- `deno task lint:check`
-- `deno task test`：保留 Deno baseline，全量回归仍以它兜底。
-- `deno task test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
-- `deno task test:startup`：校验配置解析、CLI、主入口、容器入口与 Web 入口的启动契约。
+- `bun run check`
+- `bun run fmt:check`
+- `bun run lint:check`
+- `bun run test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
+- `bun run test:startup`：校验配置解析、CLI、主入口、容器入口与 Web 入口的启动契约。
+- `bun run verify:full`：串起 build、check、startup/arch tests 与全量测试。
 
-当前 CI 会依次执行 `deps:prefetch`、`build:web`、`check`、`test:arch`、`test:startup`、`test`，然后再做 Docker build 与镜像体积检查。
+当前 CI / 本地发布前门禁会依次执行 `build:web`、`check`、`test:arch`、`test:startup`、`test`，然后再做 Docker build 与镜像体积检查。
 
 ## 生产使用建议
 

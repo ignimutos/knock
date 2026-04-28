@@ -1,23 +1,20 @@
+import nodemailer from 'nodemailer'
+
 export interface MailTransport {
   sendMail(message: unknown): Promise<unknown>
 }
 
-export type CreateTransport = (options: unknown) => MailTransport
-
-interface NodemailerModule {
-  createTransport?: CreateTransport
-  default?: {
-    createTransport?: CreateTransport
+export interface MailTransportOptions {
+  host: string
+  port: number
+  secure: boolean
+  requireTLS: boolean
+  auth?: {
+    user: string
+    pass: string
   }
 }
 
-const specifier =
-  typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined' ? 'nodemailer' : 'npm:nodemailer'
-const mod = (await import(specifier)) as NodemailerModule
-const createTransportImpl = mod.default?.createTransport ?? mod.createTransport
+export type CreateTransport = (options: MailTransportOptions) => MailTransport
 
-if (typeof createTransportImpl !== 'function') {
-  throw new Error('nodemailer.createTransport 不可用')
-}
-
-export const createTransport = createTransportImpl
+export const createTransport = nodemailer.createTransport as unknown as CreateTransport

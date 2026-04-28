@@ -1,6 +1,7 @@
 import { PreviewRunUseCase } from '../application/preview_run_use_case.ts'
 import type { DeliveryAttemptPlan } from '../application/ports/delivery_executor.ts'
 import type { AppConfigResolved } from '../config/types.ts'
+import type { Fetcher } from '../core/http_client.ts'
 import { createInMemoryDb, type FactsDbClient } from '../db/client.ts'
 import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capture_delivery_executor.ts'
 import {
@@ -19,7 +20,7 @@ function asPreviewPushPayload(payload: unknown): Record<string, unknown> | undef
 
 export function createPreviewComposition(input: {
   config: AppConfigResolved
-  fetcher?: typeof fetch
+  fetcher?: Fetcher
   factsDb?: FactsDbClient
   now?: () => string
   onCaptured?: (plan: DeliveryAttemptPlan) => void

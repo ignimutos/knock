@@ -3,3 +3,4 @@
 Dockerfile
 .prettierignore
 deno.lock
+.web-dist
