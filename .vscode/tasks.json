@@ -5,7 +5,7 @@
       "label": "cleanup",
       "type": "shell",
       "linux": {
-        "command": "rm -rf runtime/db runtime/**.md && pkill -f 'deno' || true",
+        "command": "rm -rf runtime/db runtime/**.md && pkill -f 'bun.*src/main.ts' || true",
         "options": {
           "shell": {
             "executable": "/bin/bash",
