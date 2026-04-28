@@ -60,7 +60,7 @@ const riskMatrixSchema = z.array(riskRuleSchema).superRefine((matrix, ctx) => {
   })
 })
 
-const testTitlePattern = /\b((?:Deno\.)?test)\((?:\s|\n)*(['"`])([\s\S]*?)\2/g
+const testTitlePattern = /\btest\((?:\s|\n)*(['"`])([\s\S]*?)\1/g
 const riskIdPattern = /\bR\d{2}\b/g
 const riskCommentPattern = /^\s*\/\/\s*risk-id:\s*(.+)$/gm
 const layerCommentPattern = /^\s*\/\/\s*layer:\s*(unit|contract|flow)\s*$/m
@@ -118,13 +118,9 @@ function parseTestCases(filePath: string, source: string): TestCaseRef[] {
     source.includes('from "../src/testing/test_api.ts"')
 
   for (const match of source.matchAll(testTitlePattern)) {
-    const callee = match[1]
-    const title = match[3]
+    const title = match[2]
     const layer =
-      parseLayerFromTitle(title) ??
-      (callee === 'test'
-        ? (helperDefaultLayer ?? (usesRepoTestApi ? 'contract' : undefined))
-        : undefined)
+      parseLayerFromTitle(title) ?? helperDefaultLayer ?? (usesRepoTestApi ? 'contract' : undefined)
     if (!layer) continue
 
     cases.push({
