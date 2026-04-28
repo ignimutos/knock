@@ -28,7 +28,6 @@
   "imports": {
     "preact": "npm:preact@^10.29.1",
     "@preact/signals": "npm:@preact/signals@^2.9.0",
-    "preact-render-to-string": "npm:preact-render-to-string@^6.6.7",
     "vite": "npm:vite@^7.3.2",
     "feedsmith": "npm:feedsmith@^2.9.3",
     "drizzle-orm": "npm:drizzle-orm@1.0.0-beta.20",

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'preact/hooks'
+import { useMemo, useState } from '../../src/platform/preact_hooks.ts'
 import type {
   ConfigWorkbenchDeliveryConfig,
   ConfigWorkbenchOverview,

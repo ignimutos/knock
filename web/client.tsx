@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 
-import { hydrate } from 'preact'
+import { hydrate } from '../src/platform/preact.ts'
 import type { ConfigWorkbenchOverview } from '../src/web/config_workbench_overview.ts'
 import ConfigWorkbench from './islands/config_workbench.tsx'
 

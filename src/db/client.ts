@@ -74,8 +74,8 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
 
   mkdirPathSync(dirname(databasePath), { recursive: true })
   const client = openSqliteDatabase(databasePath)
-  client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
+  client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   initializeSqliteRuntimeSchema(client)
 
   logger?.info('sqlite 初始化完成', {
@@ -102,8 +102,8 @@ export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClie
 
   mkdirPathSync(dirname(databasePath), { recursive: true })
   const client = openSqliteDatabase(databasePath)
-  client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
+  client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
   initializeSqliteFactsSchema(client)
 
   logger?.info('sqlite facts 初始化完成', {

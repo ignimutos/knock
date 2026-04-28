@@ -1407,7 +1407,6 @@
       "npm:jsdom@^29.0.2",
       "npm:markdown-it@^14.1.1",
       "npm:picocolors@^1.1.1",
-      "npm:preact-render-to-string@^6.6.7",
       "npm:preact@^10.29.1",
       "npm:sanitize-html@^2.17.3",
       "npm:turndown@^7.2.4",
