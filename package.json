@@ -28,6 +28,7 @@
     "build:binary": "bun run scripts/release/build_binary.ts",
     "smoke:binary": "bash ./scripts/release/smoke_binary.sh",
     "smoke:image": "bash ./scripts/release/smoke_image.sh",
+    "measure:cold-start": "bash ./scripts/release/measure_cold_start.sh",
     "release:prepare": "bun run verify:full && bun run build:binary && bun run smoke:binary && bun run image:prepare"
   },
   "dependencies": {

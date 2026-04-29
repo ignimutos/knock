@@ -582,6 +582,14 @@ bun run src/main.ts \
 - `sqlite.path`、`deliveries.*.file.path` 的相对路径按最终 `runtime_dir` 解析。
 - `--config` 与 `--runtime_dir` 同时出现时，配置文件读取位置取 `--config`，运行期相对路径基准取 `--runtime_dir`。
 
+## 本地二进制构建
+
+```bash
+bun run build:binary
+```
+
+产物输出到 `dist/knock-linux-x64`。该二进制保留现有 CLI 契约，可继续使用 `--mode all|web|daemon`。
+
 ## 容器部署
 
 ### 构建
@@ -613,9 +621,9 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为 `bun src/container_main.ts`，内部仍复用 `src/container_entrypoint.ts`：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为 `/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
 
-CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run verify:full`，再构建与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
+CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run verify:full`、`bun run build:binary`、`bun run smoke:binary`，再构建、smoke 与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
 
 Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 
@@ -670,12 +678,16 @@ logging:
 - `bun run test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
 - `bun run test:startup`：校验配置解析、CLI、主入口、容器入口与 Web 入口的启动契约。
 - `bun run verify:full`：串起 build、check、startup/arch tests 与全量测试。
+- `bun run build:binary`：生成 `dist/knock-linux-x64` 单文件二进制。
+- `bun run smoke:binary`：对二进制跑 `daemon` / `web` / `all` 三条最小 smoke。
+- `bun run smoke:image`：对本地 Docker 镜像跑 `/config` 与 `/assets/client.js` smoke。
+- `bun run measure:cold-start`：对 baseline/candidate 镜像做 cold-start 中位数比较。
 - `bun run test:path -- <paths>`：按路径运行测试子集。
 - `bun run lint:check:path -- <paths>`：按路径运行 lint 子集。
 - `bun run fmt:check:path -- <paths>`：按路径运行 Prettier 检查子集。
 - `bun run check`：当前仍为项目级 TypeScript 基线验证，不支持按路径切片。
 
-当前 CI / 本地发布前门禁会依次执行 `build:web`、`check`、`test:arch`、`test:startup`、`test`，然后再做 Docker build 与镜像体积检查。
+当前 CI / 本地发布前门禁会依次执行 `build:web`、`check`、`test:arch`、`test:startup`、`test`、`build:binary`、`smoke:binary`，然后再做 Docker build、镜像 smoke 与镜像体积检查。
 
 ## 生产使用建议
 

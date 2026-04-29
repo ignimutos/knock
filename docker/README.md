@@ -10,11 +10,12 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 - 默认运行目录：`/app/runtime`
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
 - 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
-- 容器默认以非 root 用户 `bun` 运行
-- 默认入口：`bun src/container_main.ts`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
+- 容器默认以非 root 用户 `knock` 运行
+- 默认入口：`/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
 - 构建阶段固定使用 `oven/bun:1.3.13`
-- 运行阶段固定使用 `oven/bun:1.3.13`，并内置 CA 证书与 `tzdata`
-- 发布前门禁固定执行：`bun run verify:full`、`bun run docker:build`、`bun run docker:size:check`
+- 运行阶段固定使用 `debian:bookworm-slim`，并内置 CA 证书与 `tzdata`
+- 运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录
+- 发布前门禁固定执行：`bun run verify:full`、`bun run build:binary`、`bun run smoke:binary`、`bun run image:prepare`
 - 已发布标签：`latest`、`sha-<git-sha>`
 
 ## 准备配置
