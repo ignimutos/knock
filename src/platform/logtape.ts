@@ -1,14 +1,13 @@
-import { createRequire } from 'node:module'
+import {
+  configure,
+  dispose,
+  getConsoleSink,
+  getLogger,
+  type LogRecord,
+  type Logger,
+  type Sink,
+  type TextFormatter,
+} from '@logtape/logtape'
 
-const require = createRequire(import.meta.url)
-const mod = require('@logtape/logtape') as typeof import('@logtape/logtape')
-
-export const configure = mod.configure
-export const dispose = mod.dispose
-export const getConsoleSink = mod.getConsoleSink
-export const getLogger = mod.getLogger
-
-export type LogRecord = import('@logtape/logtape').LogRecord
-export type Logger = import('@logtape/logtape').Logger
-export type Sink = import('@logtape/logtape').Sink
-export type TextFormatter = import('@logtape/logtape').TextFormatter
+export { configure, dispose, getConsoleSink, getLogger }
+export type { LogRecord, Logger, Sink, TextFormatter }

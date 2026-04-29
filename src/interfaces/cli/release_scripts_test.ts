@@ -1,5 +1,5 @@
-import { assertEquals } from '../../testing/assert.ts'
-import { readFileSync } from 'node:fs'
+import { assert, assertEquals } from '../../testing/assert.ts'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from '../../testing/test_api.ts'
 
 type PackageJson = {
@@ -13,4 +13,7 @@ test('[contract] package.json scripts: binary release entrypoints', () => {
 
   assertEquals(scripts['build:binary'], 'bun run scripts/release/build_binary.ts')
   assertEquals(scripts['smoke:binary'], 'bash ./scripts/release/smoke_binary.sh')
+
+  assert(existsSync(new URL('../../../scripts/release/build_binary.ts', import.meta.url)))
+  assert(existsSync(new URL('../../../scripts/release/smoke_binary.sh', import.meta.url)))
 })

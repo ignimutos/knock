@@ -4,23 +4,20 @@ import { z } from 'zod'
 import { deleteEnv, getEnv, setEnv } from '../../platform/env.ts'
 import { cwd, isNotFoundError, readTextFile, statPath } from '../../platform/fs.ts'
 import { spawnSelf } from '../../platform/process.ts'
-import { isAddrInUseError, serve } from '../../platform/serve.ts'
 import { loadConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import { findConfigFile, parseRawConfigDocument } from '../../config/load_config.ts'
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
 import { loggingSchema, timezoneSchema } from '../../config/schema.ts'
 import type { LoggingConfigResolved } from '../../config/types.ts'
-import { createLogger } from '../../core/logger.ts'
-import { configureLoggingRuntime, shutdownLoggingRuntime } from '../../core/logging_runtime.ts'
 import { createFactsDbClient } from '../../db/client.ts'
 import { parseWithFirstIssue } from '../../zod_utils.ts'
+import {
+  runReadyCheckedWebServer,
+  type StartWebLoggingRuntime,
+  type StartWebOptions,
+} from './web_startup_runtime.ts'
 
-export interface StartWebLoggingRuntime {
-  runtimeDir: string
-  timezone: string
-  timestampFormat: string
-  logging: LoggingConfigResolved
-}
+export type { StartWebLoggingRuntime, StartWebOptions } from './web_startup_runtime.ts'
 
 const WEB_RUNTIME_DIR_ENV = 'KNOCK_WEB_RUNTIME_DIR'
 const WEB_TIMEZONE_ENV = 'KNOCK_WEB_TIMEZONE'
@@ -151,9 +148,9 @@ export function setCurrentWebLoggingRuntime(runtime: StartWebLoggingRuntime | un
   currentWebLoggingRuntime = runtime
 }
 
-export interface StartWebOptions {
-  host: string
-  port: number
+export function applyCurrentWebLoggingRuntime(runtime: StartWebLoggingRuntime | undefined): void {
+  setCurrentWebLoggingRuntime(runtime)
+  applyWebLoggingRuntimeEnv(runtime)
 }
 
 const webLoggingConfigSchema = z.object({
@@ -220,7 +217,7 @@ function assertNoEnvExpansion(value: unknown, path: string): void {
   }
 }
 
-async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | undefined> {
+export async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | undefined> {
   const lookup = getStartWebConfigLookup()
   const configPath = await findStartWebConfigPath(lookup.runtimeDir, lookup.configPath)
   if (!configPath) return undefined
@@ -279,7 +276,7 @@ async function ensureWebBuildExists(): Promise<void> {
   }
 }
 
-async function assertWebRuntimeReady(): Promise<void> {
+export async function assertWebRuntimeReady(): Promise<void> {
   if (getEnv(SKIP_WEB_RUNTIME_READY_CHECK_ENV) === '1') {
     return
   }
@@ -393,64 +390,11 @@ export async function waitForWebReady(host: string, port: number): Promise<void>
 
 export async function startWeb(options: StartWebOptions) {
   const loggingRuntime = await loadStartWebLoggingRuntime()
-  setCurrentWebLoggingRuntime(loggingRuntime)
-  applyWebLoggingRuntimeEnv(loggingRuntime)
-  if (loggingRuntime) {
-    await configureLoggingRuntime(loggingRuntime)
-  }
-
-  await assertWebRuntimeReady()
-
-  const logger = createLogger({
-    enabled: true,
-    level: loggingRuntime?.logging.level ?? 'info',
-    module: 'web.startup',
-    component: 'web',
-    timezone: loggingRuntime?.timezone ?? 'UTC',
-    timestampFormat: loggingRuntime?.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss',
-  })
-
   await ensureWebBuildExists()
   const { handleWebRequest } = await import(pathToFileURL(resolve(cwd(), 'web/main.tsx')).href)
-  const abortController = new AbortController()
-  let server: ReturnType<typeof serve> | undefined
-
-  try {
-    server = serve(
-      {
-        hostname: options.host,
-        port: options.port,
-        signal: abortController.signal,
-      },
-      (request) => handleWebRequest(request),
-    )
-
-    const url = `http://${options.host}:${options.port}/`
-    await waitForWebReady(options.host, options.port)
-    logger.info(`Web 服务开始监听 ${url}`, {
-      'web.operation': 'startup',
-      'web.outcome': 'listening',
-      'web.host': options.host,
-      'web.port': options.port,
-      'web.url': url,
-    })
-    await server.finished
-  } catch (error) {
-    if (isAddrInUseError(error)) {
-      throw new Error('web 子进程异常退出: 1')
-    }
-    throw error
-  } finally {
-    if (server) {
-      abortController.abort()
-      try {
-        await server.shutdown()
-      } catch {
-        // noop
-      }
-    }
-    setCurrentWebLoggingRuntime(undefined)
-    applyWebLoggingRuntimeEnv(undefined)
-    await shutdownLoggingRuntime()
-  }
+  await runReadyCheckedWebServer(options, loggingRuntime, handleWebRequest, {
+    applyRuntime: applyCurrentWebLoggingRuntime,
+    assertReady: assertWebRuntimeReady,
+    waitForReady: waitForWebReady,
+  })
 }
