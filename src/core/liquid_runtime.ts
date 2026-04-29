@@ -1,4 +1,4 @@
-import { Liquid, TokenKind } from '../platform/liquidjs.ts'
+import { Liquid, TokenKind } from 'liquidjs'
 import MarkdownIt from 'markdown-it'
 import sanitizeHtml from 'sanitize-html'
 import TurndownService from 'turndown/lib/turndown.cjs.js'
@@ -624,7 +624,7 @@ function renderTelegramHtml(value: unknown, logger?: Logger): string {
 }
 
 function escapeTelegramMarkdownV2Text(value: string): string {
-  return value.replace(/[*_\[\]()~`>#+\-=|{}.!]/g, '\\$&')
+  return value.replace(/[*_[\]()~`>#+\-=|{}.!]/g, '\\$&')
 }
 
 function convertTelegramMarkdownV2Markup(text: string): string {
@@ -670,7 +670,7 @@ function convertTelegramMarkdownV2Markup(text: string): string {
     changed = true
     return protect(`*${content}*`)
   })
-  result = result.replace(/^\- (.+)$/gm, (_match, content: string) => {
+  result = result.replace(/^- (.+)$/gm, (_match, content: string) => {
     changed = true
     return `•   ${content}`
   })

@@ -68,6 +68,11 @@ async function runRawCommand(args: string[]): Promise<void> {
   exit(status.code)
 }
 
+export interface RunContainerEntrypointDeps {
+  main?: (args: string[]) => Promise<void>
+  runRawCommand?: (args: string[]) => Promise<void>
+}
+
 export function applyContainerDefaults(
   appArgs: string[],
   env: Record<string, string | undefined> = getEnvObject(),
@@ -97,15 +102,18 @@ export function applyContainerDefaults(
   return nextArgs
 }
 
-export async function runContainerEntrypoint(rawArgs: string[] = getArgs()): Promise<void> {
+export async function runContainerEntrypoint(
+  rawArgs: string[] = getArgs(),
+  deps: RunContainerEntrypointDeps = {},
+): Promise<void> {
   const appArgs = normalizeAppArgs(rawArgs)
 
   if (!appArgs) {
-    await runRawCommand(rawArgs)
+    await (deps.runRawCommand ?? runRawCommand)(rawArgs)
     return
   }
 
-  await main(applyContainerDefaults(appArgs))
+  await (deps.main ?? main)(applyContainerDefaults(appArgs))
 }
 
 if (isMainModule(import.meta.url)) {

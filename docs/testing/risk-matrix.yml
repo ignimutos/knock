@@ -24,8 +24,14 @@
   owner_tests:
     - src/config/load_config_test.ts
     - src/interfaces/config/load_definitions_test.ts
+    - src/config/config_example_test.ts
+    - src/interfaces/startup/startup_orchestrator_test.ts
+    - src/interfaces/web/runtime_session_test.ts
+    - src/interfaces/web/config_management_test.ts
+    - src/container_entrypoint_test.ts
     - src/main_test.ts
     - src/core/app_test.ts
+    - web/routes/config_test.ts
     - web/routes/api/config/global_test.ts
     - web/routes/api/config/deliveries_test.ts
 
@@ -132,6 +138,7 @@
   owner_tests:
     - src/application/run_due_sources_use_case_test.ts
     - src/interfaces/daemon/start_daemon_test.ts
+    - src/interfaces/web/source_management_test.ts
     - web/routes/api/sources/run_test.ts
     - web/routes/api/sources/update_test.ts
     - web/routes/api/sources/clear_test.ts
@@ -170,6 +177,7 @@
   expected_guardrail: endpoint returns stable validation error payload
   required_layer: flow+contract
   owner_tests:
+    - src/interfaces/web/web_action_executor_test.ts
     - web/routes/api/syndication/evaluate_test.ts
     - web/routes/api/xquery/evaluate_test.ts
 

@@ -1,4 +1,4 @@
-import type { ComponentChildren } from '../../src/platform/preact_types.ts'
+import type { ComponentChildren } from 'preact'
 
 const themeBootstrapScript = `(() => {
   const STORAGE_KEY = 'knock.theme.mode'

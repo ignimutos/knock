@@ -1,5 +1,5 @@
-import { CronPattern } from '../platform/croner.ts'
-import { TokenKind } from '../platform/liquidjs.ts'
+import { CronPattern } from 'croner'
+import { TokenKind } from 'liquidjs'
 import { z } from 'zod'
 import {
   createInvalidIssueMessage,

@@ -1,4 +1,4 @@
-import { Cron } from '../platform/croner.ts'
+import { Cron } from 'croner'
 import type { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
 import { PruneFactsUseCase } from '../application/prune_facts_use_case.ts'
 import { QueryRunsUseCase } from '../application/query_runs_use_case.ts'

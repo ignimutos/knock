@@ -1,6 +1,6 @@
 import type { LogRecord, TextFormatter } from '../platform/logtape.ts'
 import { createColors } from 'picocolors'
-import { DateTime } from '../platform/luxon.ts'
+import { DateTime } from 'luxon'
 
 const { bold, cyan, dim, gray, green, magenta, red, yellow } = createColors(true)
 import type { LogLevel } from '../config/types.ts'
@@ -52,11 +52,11 @@ export const SENSITIVE_FIELD_NAMES = [
 
 export const SENSITIVE_PATTERNS = [
   {
-    pattern: /(https:\/\/api\.telegram\.org\/bot)([^\/\s]+)(\/)/gi,
+    pattern: /(https:\/\/api\.telegram\.org\/bot)([^/\s]+)(\/)/gi,
     replacement: '$1****$3',
   },
   {
-    pattern: /(https?:\/\/)(?:[^\/@\s:]+(?::[^\/@\s]*)?@)/gi,
+    pattern: /(https?:\/\/)(?:[^/@\s:]+(?::[^/@\s]*)?@)/gi,
     replacement: '$1',
   },
   {
@@ -128,7 +128,7 @@ export function formatRunIdTime(input: Date): string {
 function toSnakeCase(key: string): string {
   return key
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[\s\-]+/g, '_')
+    .replace(/[\s-]+/g, '_')
     .toLowerCase()
 }
 

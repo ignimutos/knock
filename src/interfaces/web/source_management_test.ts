@@ -1,5 +1,5 @@
 import { assertEquals } from '../../testing/assert.ts'
-import YAML from '../../platform/yaml.ts'
+import { parse as parseYaml } from 'yaml'
 import { clearSourceHistory, runSourceNow, updateSourceConfig } from './source_management.ts'
 import { createFactsDbClient } from '../../db/client.ts'
 import { insertDeliveryAttempt } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'
@@ -47,7 +47,7 @@ test('[contract] source management: updateSourceConfig 应写回 source 子树�
     })
 
     assertEquals(result.message, 'source rust 配置已保存')
-    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
       sources?: Record<
         string,
         {
@@ -226,7 +226,7 @@ test('[contract] source management: 应保留未修改的 source override secret
       xqueryEntryId: '',
     })
 
-    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
       sources?: Record<string, { deliveries?: Record<string, { payload?: { token?: string } }> }>
     }
     assertEquals(nextConfig.sources?.rust?.deliveries?.telegram?.payload?.token, 'real-token')

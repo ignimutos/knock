@@ -13,8 +13,11 @@ import {
   type LoadedCompiledConfig,
 } from '../config/load_compiled_config.ts'
 import { readTextFile } from '../platform/fs.ts'
-import { loadConfigRuntimeContext } from '../config/runtime_config_context.ts'
 import { PIPELINE_ITEM_STATUSES, SOURCE_RUN_STATUSES } from '../infrastructure/sqlite/schema.ts'
+import {
+  buildReaderOverviewFromSession,
+  loadRuntimeSession,
+} from '../interfaces/web/runtime_session.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 
 export interface ReaderRunSummary {
@@ -138,20 +141,6 @@ function normalizeReaderIssue(error: unknown): string {
   }
 
   return `读取 Reader 数据失败：${message}`
-}
-
-async function loadReaderConfig(): Promise<{
-  loaded: Pick<LoadedCompiledConfig, 'config' | 'configPath'>
-  rawDocument: Record<string, unknown>
-}> {
-  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
-  return {
-    loaded: {
-      config: context.loaded.config,
-      configPath: context.loaded.configPath,
-    },
-    rawDocument: context.rawDocument.document,
-  }
 }
 
 function parseJsonRecord(value: string | null, fieldName: string): unknown {
@@ -411,11 +400,7 @@ export async function buildCurrentReaderOverview(input: {
 
 export async function loadReaderOverview(): Promise<ReaderOverview> {
   try {
-    const { loaded, rawDocument } = await loadReaderConfig()
-    return await buildCurrentReaderOverview({
-      loaded,
-      rawDocument,
-    })
+    return await buildReaderOverviewFromSession(await loadRuntimeSession())
   } catch (error) {
     return {
       sources: [],

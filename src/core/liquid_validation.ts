@@ -1,4 +1,4 @@
-import { Liquid } from '../platform/liquidjs.ts'
+import { Liquid } from 'liquidjs'
 
 const validationEngine = new Liquid()
 

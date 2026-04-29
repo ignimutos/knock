@@ -1,5 +1,4 @@
 import type { RawConfigDocumentLoadResult } from '../config/raw_config_document.ts'
-import { loadConfigRuntimeContext } from '../config/runtime_config_context.ts'
 import { redactConfigSecrets } from './config_secret_redaction.ts'
 import type {
   AiConfigInput,
@@ -9,7 +8,11 @@ import type {
   PushConfig,
   SqliteConfigInput,
 } from '../config/schema.ts'
-import { buildCurrentReaderOverview, type ReaderOverview } from './reader_overview.ts'
+import type { ReaderOverview } from './reader_overview.ts'
+import {
+  buildWorkbenchOverviewFromSession,
+  loadRuntimeSession,
+} from '../interfaces/web/runtime_session.ts'
 
 export type ConfigWorkbenchDeliveryKind = 'file' | 'push' | 'email'
 export type ConfigWorkbenchDeliveryConfig = FileDeliveryConfig | PushConfig | EmailConfig
@@ -133,18 +136,11 @@ export async function loadConfigWorkbenchContext(): Promise<{
   rawDocument: RawConfigDocumentLoadResult
   workbench: ConfigWorkbenchOverview
 }> {
-  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
-  const reader = await buildCurrentReaderOverview({
-    loaded: context.loaded,
-    rawDocument: context.rawDocument.document,
-  })
+  const session = await loadRuntimeSession()
 
   return {
-    rawDocument: context.rawDocument,
-    workbench: buildConfigWorkbenchOverview({
-      rawDocument: context.rawDocument.document,
-      reader,
-    }),
+    rawDocument: session.context.rawDocument,
+    workbench: await buildWorkbenchOverviewFromSession(session),
   }
 }
 

@@ -1,6 +1,6 @@
 import type { ReaderOverview } from '../../web/reader_overview.ts'
 import type { SourceManagementError } from './source_management.ts'
-import { isSameOriginWriteRequest } from './same_origin_write.ts'
+import { executeWebAction } from './web_action_executor.ts'
 
 export interface SourceActionSuccessResult {
   message: string
@@ -45,79 +45,60 @@ export function createSourceActionHandler(options: CreateSourceActionHandlerOpti
     request: Request,
     deps: SourceActionHandlerDeps = {},
   ): Promise<Response> {
-    const runAction = deps.runAction ?? options.runAction
-
-    if (!isSameOriginWriteRequest(request)) {
-      deps.onLogMeta?.({
+    return executeWebAction(request, {
+      requireSameOrigin: true,
+      run: deps.runAction ?? options.runAction,
+      classifyError: (error) => {
+        const classified = options.classifyError(error)
+        return {
+          ...classified,
+          message:
+            classified.category === 'internal'
+              ? 'source 操作失败，请查看服务端日志。'
+              : classified.message,
+        }
+      },
+      forbidden: {
+        message: 'source 写请求必须来自同源页面',
+        code: 'source_action_forbidden',
+        category: 'forbidden',
+      },
+      invalidJson: {
+        message: 'source 请求非法',
+        code: 'source_request_invalid',
+        category: 'validation',
+      },
+      onLogMeta: deps.onLogMeta,
+      onForbiddenMeta: () => ({
         action: options.action,
         errorCode: 'source_action_forbidden',
         errorCategory: 'forbidden',
         errorMessage: 'source 写请求必须来自同源页面',
-      })
-      return Response.json(
-        {
-          message: 'source 写请求必须来自同源页面',
-          code: 'source_action_forbidden',
-          category: 'forbidden',
-        },
-        { status: 403 },
-      )
-    }
-
-    let payload: unknown
-    try {
-      payload = await request.json()
-    } catch {
-      deps.onLogMeta?.({
+      }),
+      onInvalidJsonMeta: () => ({
         action: options.action,
         errorCode: 'source_request_invalid',
         errorCategory: 'validation',
         errorMessage: 'source 请求非法',
-      })
-      return Response.json(
-        {
-          message: 'source 请求非法',
-          code: 'source_request_invalid',
-          category: 'validation',
-        },
-        { status: 400 },
-      )
-    }
-
-    const sourceId = readSourceId(payload)
-
-    try {
-      const result = await runAction(payload)
-      deps.onLogMeta?.({
-        sourceId,
+      }),
+      onSuccessMeta: (payload, result) => ({
+        sourceId: readSourceId(payload),
         action: options.action,
         started: result.started,
         deletedRuns: result.deletedRuns,
         deletedItems: result.deletedItems,
         deletedAttempts: result.deletedAttempts,
-      })
-      return Response.json(result)
-    } catch (error) {
-      const classified = options.classifyError(error)
-      deps.onLogMeta?.({
-        sourceId,
-        action: options.action,
-        errorCode: classified.code,
-        errorCategory: classified.category,
-        errorMessage: classified.message,
-      })
-      const message =
-        classified.category === 'internal'
-          ? 'source 操作失败，请查看服务端日志。'
-          : classified.message
-      return Response.json(
-        {
-          message,
-          code: classified.code,
-          category: classified.category,
-        },
-        { status: classified.status },
-      )
-    }
+      }),
+      onErrorMeta: (payload, error, classified) => {
+        void error
+        return {
+          sourceId: readSourceId(payload),
+          action: options.action,
+          errorCode: classified.code,
+          errorCategory: classified.category,
+          errorMessage: classified.message,
+        }
+      },
+    })
   }
 }

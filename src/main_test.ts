@@ -495,7 +495,7 @@ test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程', ()
 })
 
 test('[contract] dispatchCliCommand: 应通过 command object 分发 daemon 入口', async () => {
-  const calls: StartAppOptions[] = []
+  const calls: unknown[] = []
 
   await dispatchCliCommand(
     {
@@ -504,40 +504,55 @@ test('[contract] dispatchCliCommand: 应通过 command object 分发 daemon 入�
       immediate: false,
     },
     {
-      env: { KNOCK_RUNTIME_DIR: '/tmp/runtime-from-env' },
-      startApp: (options) => {
-        calls.push(options)
-        return Promise.resolve({ mode: 'daemon' })
+      dispatchStartupCommand: async (command) => {
+        calls.push(command)
       },
     },
   )
 
   assertEquals(calls, [
     {
+      kind: 'daemon',
       configPath: '/tmp/config.yml',
-      runtimeDir: '/tmp/runtime-from-env',
       immediate: false,
     },
   ])
 })
 
+test('[contract] dispatchCliCommand: daemon 命令应委托 startup orchestrator', async () => {
+  const calls: string[] = []
+
+  await dispatchCliCommand(
+    {
+      kind: 'daemon',
+      configPath: '/tmp/config.yml',
+      runtimeDir: '/tmp/runtime',
+      immediate: true,
+    },
+    {
+      dispatchStartupCommand: async () => {
+        calls.push('startup')
+      },
+    },
+  )
+
+  assertEquals(calls, ['startup'])
+})
+
 test('[contract] main: 应通过 command object 分发入口', async () => {
   const calls: string[] = []
-  const originalStartWeb = globalThis.fetch
 
-  try {
-    await dispatchCliCommand(
-      parseCliCommand(['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', '8080']),
-      {
-        startWeb: ({ host, port }) => {
-          calls.push(`${host}:${port}`)
-          return Promise.resolve()
-        },
+  await dispatchCliCommand(
+    parseCliCommand(['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', '8080']),
+    {
+      dispatchStartupCommand: async (command) => {
+        if (command.kind !== 'web') {
+          throw new Error('unexpected command kind')
+        }
+        calls.push(`${command.host}:${command.port}`)
       },
-    )
-  } finally {
-    globalThis.fetch = originalStartWeb
-  }
+    },
+  )
 
   assertEquals(calls, ['127.0.0.1:8080'])
 })
@@ -546,9 +561,8 @@ test('[contract] main: 通过 main(args) 应走同一 dispatch 路径', async ()
   const calls: string[] = []
 
   await main([], {
-    runAllModes: () => {
-      calls.push('all')
-      return Promise.resolve()
+    dispatchStartupCommand: async (command) => {
+      calls.push(command.kind)
     },
   })
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from '../../src/platform/preact_hooks.ts'
+import { useMemo, useState } from 'preact/hooks'
 import type {
   ConfigWorkbenchDeliveryConfig,
   ConfigWorkbenchOverview,
@@ -18,15 +18,6 @@ import type {
 } from '../../src/web/reader_overview.ts'
 import type { SourceDeliveryOverride } from '../../src/config/types.ts'
 
-interface ActionError {
-  message: string
-}
-
-interface ActionResult<T> {
-  data?: T
-  error?: ActionError
-}
-
 interface ConfigActionSuccessResult {
   message: string
   workbench: ConfigWorkbenchOverview
@@ -38,7 +29,6 @@ interface SourceActionSuccessResult {
 }
 
 type DeliveryKind = ConfigWorkbenchOverview['deliveries'][number]['kind']
-type WorkbenchDelivery = ConfigWorkbenchOverview['deliveries'][number]
 
 type DeliveryDraft = {
   id: string

@@ -1,4 +1,4 @@
-import type { JSX } from '../../../src/platform/preact_types.ts'
+import type { JSX } from 'preact'
 
 export function AppShell(props: {
   title: string

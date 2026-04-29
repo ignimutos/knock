@@ -1,7 +1,7 @@
 import type { AppConfigResolved } from '../../config/types.ts'
 import type { LoadedCompiledConfig } from '../../config/load_compiled_config.ts'
-import { loadConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import { parseSourceAction, SourceManagementContractError } from './source_management_contract.ts'
+import { loadRuntimeSession } from './runtime_session.ts'
 
 export interface SourceActionContext {
   request: {
@@ -32,15 +32,15 @@ export async function loadSourceActionContext(input: unknown): Promise<SourceAct
     throw error
   }
 
-  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
-  const source = context.loaded.config.sources.find((item) => item.id === request.sourceId)
+  const session = await loadRuntimeSession()
+  const source = session.context.loaded.config.sources.find((item) => item.id === request.sourceId)
   if (!source) {
     throw new SourceActionContextError(`source 未定义: ${request.sourceId}`, 'not_found')
   }
 
   return {
     request,
-    loaded: context.loaded,
+    loaded: session.context.loaded,
     source,
   }
 }

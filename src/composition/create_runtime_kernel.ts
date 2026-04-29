@@ -1,4 +1,4 @@
-import { Cron } from '../platform/croner.ts'
+import { Cron } from 'croner'
 import { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
 import { RunSourceUseCase, type RunSourceUseCaseDeps } from '../application/run_source_use_case.ts'
 import type { DeliveryAttemptRepository } from '../application/ports/delivery_attempt_repository.ts'

@@ -1,8 +1,5 @@
 import type { SourceDeliveryOverride } from '../../config/types.ts'
-import {
-  loadConfigRuntimeContext,
-  writeConfigRuntimeContext,
-} from '../../config/runtime_config_context.ts'
+import { writeConfigRuntimeContext } from '../../config/runtime_config_context.ts'
 import {
   parseSourceConfigUpdate,
   SourceManagementContractError,
@@ -16,6 +13,7 @@ import { throwConflict, throwNotFound, throwValidation } from './source_manageme
 import { createFactsDbClient, runInTransaction } from '../../db/client.ts'
 import { buildCurrentReaderOverview, type ReaderOverview } from '../../web/reader_overview.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
+import { buildReaderOverviewFromSession, loadRuntimeSession } from './runtime_session.ts'
 
 export { classifySourceManagementError, SourceManagementError } from './source_management_errors.ts'
 
@@ -40,9 +38,9 @@ export async function updateSourceConfig(input: unknown): Promise<{
     }
     throw error
   }
-  const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
+  const session = await loadRuntimeSession()
   const currentSource = cloneRecord(
-    cloneRecord(context.rawDocument.document.sources)[request.sourceId],
+    cloneRecord(session.context.rawDocument.document.sources)[request.sourceId],
   )
   const currentOverrides = cloneRecord(currentSource.deliveries)
   const deliveryOverrides = Object.fromEntries(
@@ -53,7 +51,7 @@ export async function updateSourceConfig(input: unknown): Promise<{
   )
 
   try {
-    applySourceConfigDocumentUpdate(context.rawDocument.document, {
+    applySourceConfigDocumentUpdate(session.context.rawDocument.document, {
       ...request,
       deliveryOverrides,
     })
@@ -68,7 +66,7 @@ export async function updateSourceConfig(input: unknown): Promise<{
   }
   let updatedContext
   try {
-    updatedContext = await writeConfigRuntimeContext(context.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(session.context.rawDocument)
   } catch (error) {
     if (error instanceof Error) {
       throwValidation(error.message)
@@ -78,9 +76,8 @@ export async function updateSourceConfig(input: unknown): Promise<{
 
   return {
     message: `source ${request.sourceId} 配置已保存`,
-    overview: await buildCurrentReaderOverview({
-      loaded: updatedContext.loaded,
-      rawDocument: updatedContext.rawDocument.document,
+    overview: await buildReaderOverviewFromSession({
+      context: updatedContext,
     }),
   }
 }

@@ -1,4 +1,7 @@
-import { writeConfigRuntimeContext } from '../../config/runtime_config_context.ts'
+import {
+  writeConfigRuntimeContext,
+  type ConfigRuntimeContext,
+} from '../../config/runtime_config_context.ts'
 import {
   applyGlobalConfigDocumentUpdate,
   ConfigDocumentUpdateError,
@@ -17,15 +20,11 @@ import {
   throwNotFound,
   throwValidation,
 } from './config_management_errors.ts'
-import {
-  buildConfigWorkbenchOverview,
-  loadConfigWorkbenchContext,
-  type ConfigWorkbenchOverview,
-} from '../../web/config_workbench_overview.ts'
+import type { ConfigWorkbenchOverview } from '../../web/config_workbench_overview.ts'
 import { deliverySchema, loggingSchema, sqliteSchema, aiSchema } from '../../config/schema.ts'
 import { assertRuntimeRelativePath } from '../../config/runtime_semantics.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
-import { buildCurrentReaderOverview } from '../../web/reader_overview.ts'
+import { buildWorkbenchOverviewFromSession, loadRuntimeSession } from './runtime_session.ts'
 
 export { classifyConfigManagementError, ConfigManagementError } from './config_management_errors.ts'
 
@@ -50,7 +49,7 @@ function parseOptionalJsonObject(
   return parsed as Record<string, unknown>
 }
 
-function assertWithSchema<T>(
+function assertWithSchema(
   schema: {
     safeParse: (
       input: unknown,
@@ -269,17 +268,10 @@ function assertManagedDeliveryPaths(
   }
 }
 
-async function buildWorkbenchFromUpdatedContext(input: {
-  loaded: { config: import('../../config/types.ts').AppConfigResolved; configPath: string }
-  rawDocument: { document: Record<string, unknown> }
-}): Promise<ConfigWorkbenchOverview> {
-  return buildConfigWorkbenchOverview({
-    rawDocument: input.rawDocument.document,
-    reader: await buildCurrentReaderOverview({
-      loaded: input.loaded,
-      rawDocument: input.rawDocument.document,
-    }),
-  })
+async function buildWorkbenchFromUpdatedContext(
+  context: ConfigRuntimeContext,
+): Promise<ConfigWorkbenchOverview> {
+  return await buildWorkbenchOverviewFromSession({ context })
 }
 
 function deliveryIsReferenced(rawDocument: Record<string, unknown>, deliveryId: string): string[] {
@@ -459,7 +451,7 @@ export async function updateGlobalConfig(input: unknown): Promise<{
     throw error
   }
 
-  const loaded = await loadConfigWorkbenchContext()
+  const session = await loadRuntimeSession()
   const sqliteJson =
     request.sqliteMode === 'json'
       ? parseOptionalJsonObject(request.sqliteJson, 'sqliteJson')
@@ -471,9 +463,9 @@ export async function updateGlobalConfig(input: unknown): Promise<{
   const aiJson =
     request.aiMode === 'json' ? parseOptionalJsonObject(request.aiJson, 'aiJson') : undefined
 
-  const currentSqlite = cloneRecord(loaded.rawDocument.document.sqlite)
-  const currentLogging = cloneRecord(loaded.rawDocument.document.logging)
-  const currentAi = cloneRecord(loaded.rawDocument.document.ai)
+  const currentSqlite = cloneRecord(session.context.rawDocument.document.sqlite)
+  const currentLogging = cloneRecord(session.context.rawDocument.document.logging)
+  const currentAi = cloneRecord(session.context.rawDocument.document.ai)
 
   const sqlite = mergeGlobalObject(
     sqliteJson,
@@ -500,7 +492,7 @@ export async function updateGlobalConfig(input: unknown): Promise<{
   assertManagedFilesystemPaths({ sqlite, logging })
 
   try {
-    applyGlobalConfigDocumentUpdate(loaded.rawDocument.document, {
+    applyGlobalConfigDocumentUpdate(session.context.rawDocument.document, {
       language: request.language,
       timezone: request.timezone,
       timestampFormat: request.timestampFormat,
@@ -517,7 +509,7 @@ export async function updateGlobalConfig(input: unknown): Promise<{
 
   let updatedContext
   try {
-    updatedContext = await writeConfigRuntimeContext(loaded.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(session.context.rawDocument)
   } catch (error) {
     throw classifyConfigManagementError(error)
   }
@@ -542,9 +534,9 @@ export async function upsertDeliveryConfig(input: unknown): Promise<{
     throw error
   }
 
-  const loaded = await loadConfigWorkbenchContext()
+  const session = await loadRuntimeSession()
   const currentDeliveryValue = cloneRecord(
-    cloneRecord(loaded.rawDocument.document.deliveries)[request.deliveryId],
+    cloneRecord(session.context.rawDocument.document.deliveries)[request.deliveryId],
   )
   const currentConfig = cloneRecord(currentDeliveryValue[request.kind])
   const configJson =
@@ -573,7 +565,7 @@ export async function upsertDeliveryConfig(input: unknown): Promise<{
   )
 
   try {
-    upsertDeliveryConfigDocument(loaded.rawDocument.document, {
+    upsertDeliveryConfigDocument(session.context.rawDocument.document, {
       deliveryId: request.deliveryId,
       enabled: request.enabled,
       kind: request.kind,
@@ -588,7 +580,7 @@ export async function upsertDeliveryConfig(input: unknown): Promise<{
 
   let updatedContext
   try {
-    updatedContext = await writeConfigRuntimeContext(loaded.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(session.context.rawDocument)
   } catch (error) {
     throw classifyConfigManagementError(error)
   }
@@ -613,14 +605,17 @@ export async function deleteDeliveryConfig(input: unknown): Promise<{
     throw error
   }
 
-  const loaded = await loadConfigWorkbenchContext()
-  const referencedBy = deliveryIsReferenced(loaded.rawDocument.document, request.deliveryId)
+  const session = await loadRuntimeSession()
+  const referencedBy = deliveryIsReferenced(
+    session.context.rawDocument.document,
+    request.deliveryId,
+  )
   if (referencedBy.length > 0) {
     throwConflict(`delivery ${request.deliveryId} 仍被 source 引用: ${referencedBy.join(', ')}`)
   }
 
   try {
-    deleteDeliveryConfigDocument(loaded.rawDocument.document, request)
+    deleteDeliveryConfigDocument(session.context.rawDocument.document, request)
   } catch (error) {
     if (error instanceof ConfigDocumentUpdateError) {
       if (error.kind === 'not_found') {
@@ -633,7 +628,7 @@ export async function deleteDeliveryConfig(input: unknown): Promise<{
 
   let updatedContext
   try {
-    updatedContext = await writeConfigRuntimeContext(loaded.rawDocument)
+    updatedContext = await writeConfigRuntimeContext(session.context.rawDocument)
   } catch (error) {
     throw classifyConfigManagementError(error)
   }

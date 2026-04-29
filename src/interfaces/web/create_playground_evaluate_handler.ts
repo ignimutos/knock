@@ -1,3 +1,5 @@
+import { executeWebAction } from './web_action_executor.ts'
+
 export interface EvaluateResult {
   warnings: string[]
   fetchMeta: {
@@ -57,56 +59,41 @@ export function createPlaygroundEvaluateHandler(options: CreatePlaygroundEvaluat
     request: Request,
     deps: EvaluateHandlerDeps = {},
   ): Promise<Response> {
-    const runEvaluate = deps.evaluatePlayground ?? options.evaluatePlayground
-
-    let payload: unknown
-    try {
-      payload = await request.json()
-    } catch {
-      deps.onLogMeta?.({
+    return executeWebAction(request, {
+      requireSameOrigin: false,
+      run: async (payload) =>
+        await (deps.evaluatePlayground ?? options.evaluatePlayground)({ request: payload }),
+      classifyError: options.classifyError,
+      forbidden: {
+        message: 'forbidden',
+        code: 'forbidden',
+        category: 'forbidden',
+      },
+      invalidJson: {
+        message: 'Playground 请求非法',
+        code: 'playground_request_invalid',
+        category: 'validation',
+      },
+      onLogMeta: deps.onLogMeta,
+      onInvalidJsonMeta: () => ({
         errorCode: 'playground_request_invalid',
         errorCategory: 'validation',
         errorMessage: 'Playground 请求非法',
-      })
-      return Response.json(
-        {
-          message: 'Playground 请求非法',
-          code: 'playground_request_invalid',
-          category: 'validation',
-        },
-        { status: 400 },
-      )
-    }
-
-    const targetHost = readTargetHost(payload)
-
-    try {
-      const result = await runEvaluate({ request: payload })
-      deps.onLogMeta?.({
-        targetHost,
+      }),
+      onSuccessMeta: (payload, result) => ({
+        targetHost: readTargetHost(payload),
         parser: result.parser,
         warningCount: result.warnings.length,
         entryCount: result.entries.length,
         fetchDurationMs: result.fetchMeta.fetchDurationMs,
         parseDurationMs: result.fetchMeta.parseDurationMs,
-      })
-      return Response.json(result)
-    } catch (error) {
-      const classified = options.classifyError(error)
-      deps.onLogMeta?.({
-        targetHost,
+      }),
+      onErrorMeta: (payload, error, classified) => ({
+        targetHost: readTargetHost(payload),
         errorCode: classified.code,
         errorCategory: classified.category,
         errorMessage: error instanceof Error ? error.message : classified.message,
-      })
-      return Response.json(
-        {
-          message: classified.message,
-          code: classified.code,
-          category: classified.category,
-        },
-        { status: classified.status },
-      )
-    }
+      }),
+    })
   }
 }

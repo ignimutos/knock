@@ -1,7 +1,7 @@
 import { walk } from './fs.ts'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse } from '../platform/yaml.ts'
+import { parse } from 'yaml'
 import { readTextFile } from '../platform/fs.ts'
 import { z } from 'zod'
 

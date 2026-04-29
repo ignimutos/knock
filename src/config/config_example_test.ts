@@ -1,15 +1,15 @@
 import { assertEquals } from '../testing/assert.ts'
 import { readFileSync } from 'node:fs'
-import YAML from '../platform/yaml.ts'
+import { parse as parseYaml } from 'yaml'
 import { validateConfig } from './validate_config.ts'
 import { test } from '../testing/test_api.ts'
 
 test('[contract] config.example.yml: sources.deliveries keyed map 应通过当前 schema 校验', () => {
   const example = readFileSync(new URL('../../config.example.yml', import.meta.url), 'utf8')
-  const parsed = YAML.parse(example) as Record<string, unknown>
+  const parsed = parseYaml(example) as Record<string, unknown>
   const validated = validateConfig({
     runtimeDir: '/tmp/knock',
-    ...(parsed ?? {}),
+    ...parsed,
   })
 
   assertEquals(validated.language, 'zh-CN')

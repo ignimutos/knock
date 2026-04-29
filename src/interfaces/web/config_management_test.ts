@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from '../../testing/assert.ts'
-import YAML from '../../platform/yaml.ts'
+import { parse as parseYaml } from 'yaml'
 import {
   deleteDeliveryConfig,
   upsertDeliveryConfig,
@@ -38,7 +38,7 @@ test('[contract] config management: updateGlobalConfig 应写回 global 子树',
     })
 
     assertEquals(result.message, 'global 配置已保存')
-    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
       language?: string
       timezone?: string
       timestampFormat?: string
@@ -74,7 +74,7 @@ test('[contract] config management: updateGlobalConfig 结构化保存应保留�
         loggingFilePath: 'logs/app.jsonl',
       })
 
-      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
         sqlite?: { path?: string; retention?: { maxEntriesPerSource?: number } }
         logging?: {
           level?: string
@@ -101,7 +101,7 @@ test('[contract] config management: upsertDeliveryConfig 应写回 canonical del
     })
 
     assertEquals(result.message, 'delivery local 配置已保存')
-    const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+    const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
       deliveries?: Record<string, { enabled?: boolean; file?: { path?: string; content?: string } }>
     }
     assertEquals(nextConfig.deliveries?.local?.enabled, false)
@@ -124,7 +124,7 @@ test('[contract] config management: upsertDeliveryConfig 结构化保存应保�
         fileContent: '{{ entry.link }}',
       })
 
-      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<
           string,
           {
@@ -153,7 +153,7 @@ test('[contract] config management: deleteDeliveryConfig 应删除未被引用�
       })
 
       assertEquals(result.message, 'delivery local 已删除')
-      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<string, unknown>
       }
       assertEquals(nextConfig.deliveries, undefined)
@@ -191,7 +191,7 @@ test('[contract] config management: 结构化保存应保留未修改的 secret'
         emailMessageText: 'body',
       })
 
-      const nextConfig = YAML.parse(await readTextFile(`${runtimeDir}/config.yml`)) as {
+      const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
         deliveries?: Record<string, { email?: { smtp?: { auth?: { password?: string } } } }>
       }
       assertEquals(nextConfig.deliveries?.mailer?.email?.smtp?.auth?.password, 'real-secret')

@@ -1,3 +1,5 @@
+// layer: contract
+// risk-id: R03
 import { assertEquals, assertThrows } from './testing/assert.ts'
 
 import { test } from './testing/test_api.ts'
@@ -52,6 +54,19 @@ test('[contract] container entrypoint: daemon 模式仍应从 KNOCK_CONFIG_PATH 
     }),
     ['--mode', 'daemon', '--config', '/app/runtime/config.yml'],
   )
+})
+
+test('[contract] container entrypoint: 标准化参数后应委托 main', async () => {
+  const { runContainerEntrypoint } = await import(`${moduleUrl.href}?delegate-main`)
+  const calls: string[][] = []
+
+  await runContainerEntrypoint(['bun', 'run', 'start', '--mode', 'daemon'], {
+    main: async (args: string[]) => {
+      calls.push(args)
+    },
+  })
+
+  assertEquals(calls, [['--mode', 'daemon']])
 })
 
 test('[contract] container entrypoint: 显式 daemon immediate 应在当前进程内返回', async () => {
