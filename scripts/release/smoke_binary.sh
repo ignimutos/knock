@@ -4,7 +4,14 @@ set -euo pipefail
 binary="${1:-./dist/knock-linux-x64}"
 workdir="$(mktemp -d)"
 client_tmp="$(mktemp)"
-port="18080"
+port="$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
 web_pid=""
 all_pid=""
 

@@ -118,7 +118,7 @@ baseline = int(${baseline_ms})
 candidate = int(${candidate_ms})
 if baseline <= 0:
     raise SystemExit('baseline median must be positive')
-print(round(((baseline - candidate) / baseline) * 100))
+print(int(((baseline - candidate) / baseline) * 100))
 PY
 )"
 
