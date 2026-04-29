@@ -1,214 +1,139 @@
-# Bun-native CI 收敛设计
+# Bun-owned CLI 执行收敛设计
 
 ## 背景
 
-当前仓库的活跃 CI 面只有 `.github/workflows/docker.yml`，但该 workflow 仍保留 Deno 时代残留：
+仓库从 Deno 路径切到 Bun 之后，`package.json` 中的部分脚本虽然通过 `bun run` 触发，但实际执行的外部 JavaScript CLI 仍可能按 shebang 落到 Node。对普通命令这通常只是实现细节；但对 `vite build --configLoader native` 这类把 TypeScript 配置文件交给底层运行时原生加载的路径，底层到底是 Deno、Bun 还是 Node，会直接决定行为是否稳定。
 
-- `verify` / `image` job 安装的是 Deno，却执行会转入 `bun run ...` 的任务。
-- `paths` 仍监听 `deno.json` / `deno.lock`，却没有覆盖当前真实影响 CI 的 `package.json` / `bun.lock`。
-- 仓库内面向人和 agent 的部分约束仍把 `deno task` 当作默认事实源。
-
-这导致 CI 处于“外层还是 Deno，内层已经是 Bun”的混合态。此次故障的直接表现就是 GitHub Actions 中 `bun: command not found`。
+这次故障的根因就是这个漂移：Deno 时代 `vite` 由 Deno 执行，`vite.config.ts` 可被原生加载；切到 Bun 后，脚本默认落到环境里的 Node，CI 与本地 Node 能力不一致，于是 `vite.config.ts` 在 CI 中报 `Unknown file extension ".ts"`。
 
 ## 目标
 
-1. 让所有活跃 CI / Docker 发布路径只以 Bun 作为唯一运行时。
-2. 让 workflow 触发条件只覆盖 Bun 时代真实会影响结果的文件。
-3. 让 `package.json` 中的脚本名成为 CI 的稳定执行契约。
-4. 让 `README.md`、`docker/README.md`、`CLAUDE.md` 与相关规则文件同步反映真实 CI 行为。
-5. 清理活跃 CI 语义中的 Deno 残留，但不误删把 Deno 当作业务示例或抓取对象的内容。
+1. 让当前会被 `package.json` 调用的外部 JavaScript CLI 明确由 Bun 执行。
+2. 消除本地与 CI 对 shebang / runner 默认 Node 的隐式依赖。
+3. 保持现有脚本名、参数接口与验证编排稳定。
+4. 让 `setup-bun` 成为验证链路唯一需要的 JavaScript 运行时前提。
 
 ## 非目标
 
-1. 不新增双运行时 fallback，不保留 “bun 失败再试 deno”。
-2. 不为了当前只有一条活跃 workflow 的现状而强行抽 reusable workflow / composite action。
-3. 不改动 Docker 镜像构建逻辑本身，只收敛运行时、触发面和契约说明。
-4. 不做全仓文本级 `deno` 全量替换；像 README 中把 Deno 当 feed 示例的内容保留。
+1. 不新增 `setup-node`，不把稳定性建立在额外固定 Node 版本上。
+2. 不修改 workflow 拓扑，不改 `verify:scoped` / `verify:full` / `image:prepare` 的编排。
+3. 不顺手清理与这次运行时归属无关的脚本。
+4. 不增加兼容层、fallback 或双运行时保底。
 
 ## 范围
 
-### 纳入本次收敛的面
+### 纳入本次修改
 
-- `.github/workflows/docker.yml`
-- `package.json` 中被 CI 调用的脚本定义
-- `README.md`
-- `docker/README.md`
-- `CLAUDE.md`
-- `.claude/rules/verification.md`
-- 其他只要仍声明活跃 CI / 发布运行时事实的仓库内文档或规则
+- `package.json`
+  - `build:web`
+  - `check`
+  - `fmt`
+  - `fmt:path`
+  - `fmt:check`
+  - `fmt:check:path`
 
-### 明确保留的内容
+### 明确保持不变
 
-- 把 Deno 当作抓取源、示例 feed、模板示例的数据内容
-- 与 CI 运行时无关的历史说明
-- 已经是 Bun-native 且无失真的文档段落
+- `lint` / `lint:check` / `lint:check:path`
+- `test` / `test:path` / `test:arch` / `test:startup`
+- `verify:scoped` / `verify:full`
+- `.github/workflows/docker.yml` 的 job 拓扑与 `setup-bun` 前提
+
+## 现状与风险扫描
+
+当前主仓库里需要外部 CLI 处理的 TypeScript 配置文件只有 `vite.config.ts`。没有 `prettier.config.ts`、`eslint.config.ts`、`vitest.config.ts` 之类会把同样问题扩散到更多工具的配置文件。因此：
+
+- `vite` 是当前唯一已经证实会踩到“native loader + TypeScript config + 底层运行时漂移”问题的命令。
+- `tsc` 当前读取的是 `tsconfig.json`，不依赖 TypeScript 配置文件的原生执行。
+- `prettier` 当前也没有仓库内 TypeScript 配置文件需要原生加载。
+
+即便如此，这次仍把 `tsc` 和 `prettier` 一并收敛到显式 Bun 执行，因为目标不只是修一个点，而是消除同类隐式运行时归属。
 
 ## 设计原则
 
-### 单一运行时
+### 显式运行时归属
 
-所有活跃 CI job 只安装 Bun。运行时判定只在 workflow setup 层发生一次，后续步骤全部默认运行在 Bun 语义下。
+凡是通过 `package.json` 触发、且本质上由 JavaScript CLI 执行的命令，都应在脚本层显式声明由 Bun 运行，而不是依赖 shebang、PATH 顺序或 runner 自带 Node。
 
-### 单一任务入口
+### 稳定脚本契约
 
-workflow 不内嵌验证细节，只调用 `package.json` 中稳定存在的脚本名，例如：
+只改脚本实现，不改脚本名。workflow、文档、开发者心智模型继续依赖现有脚本入口。
 
-- `bun run verify:full`
-- `bun run image:prepare`
+### 最小完整修复
 
-脚本内部怎么组织可以演进，但 workflow 只依赖这些公开契约。
+只改会暴露运行时漂移的 CLI 入口，不扩大到与本问题无关的命令。
 
-### 单一触发面
+## 方案设计
 
-workflow `paths` 只跟踪真实会改变验证或镜像结果的文件，避免旧路径造成假触发、漏触发或错误心智模型。
+### 脚本收敛
 
-### 单一事实源
+把以下脚本改为 Bun 显式执行：
 
-README、Docker README、CLAUDE 规则与 workflow 的真实行为必须一致；若行为变化，说明层也要同步更新。
+| 脚本             | 现状                                                   | 目标                                                             |
+| ---------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| `build:web`      | `vite build --configLoader native` 或 `vite build`     | `bun --bun vite build --configLoader native`                     |
+| `check`          | `tsc --project tsconfig.json`                          | `bun --bun tsc --project tsconfig.json`                          |
+| `fmt`            | `prettier --write .`                                   | `bun --bun prettier --write .`                                   |
+| `fmt:check`      | `prettier --check .`                                   | `bun --bun prettier --check .`                                   |
+| `fmt:path`       | `bash ./scripts/run-paths.sh prettier --write -- . --` | `bash ./scripts/run-paths.sh bun --bun prettier --write -- . --` |
+| `fmt:check:path` | `bash ./scripts/run-paths.sh prettier --check -- . --` | `bash ./scripts/run-paths.sh bun --bun prettier --check -- . --` |
 
-## 组件设计
+### 为什么不改 lint
 
-### 1. Workflow 组件
+`oxlint` 是独立 CLI，不依赖仓库内 TypeScript 配置文件的原生加载能力，也不是这次已观察到的漂移点。把它纳入不会增加明显价值，反而扩大变更面。
 
-目标文件：`.github/workflows/docker.yml`
+### 为什么不改 workflow
 
-职责：
+一旦外部 JavaScript CLI 的归属在 `package.json` 中被显式声明为 Bun，CI 只需继续提供 `setup-bun` 即可。workflow 不需要再通过 `setup-node` 去兜底 shebang 落到 Node 的路径。
 
-- 定义 `verify -> image -> publish -> notify` 拓扑。
-- 在 `verify` 和 `image` job 中安装 Bun，而不是 Deno。
-- 通过 `bun run verify:full` 和 `bun run image:prepare` 执行门禁。
-- 收敛 `paths` 到 Bun 时代真实依赖集。
+## 执行流
 
-设计决策：
-
-- 保留现有 job 拓扑，不引入新的 workflow 分层。
-- 不在 YAML 中重复写构建、测试细节。
-- `publish` job 继续只负责镜像推送与 Docker Hub README 同步，不承担运行时兼容逻辑。
-
-### 2. 任务契约组件
-
-目标文件：`package.json`
-
-职责：
-
-- 提供 CI 调用的稳定脚本入口。
-- 作为 workflow 唯一依赖的执行契约面。
-
-设计决策：
-
-- 优先复用现有脚本名，避免不必要改名。
-- 若脚本名已经准确表达职责，则只改 workflow，不改脚本层。
-- 若发现脚本与文档描述不一致，以脚本实际行为为准校正文档。
-
-### 3. 发布说明组件
-
-目标文件：`README.md`、`docker/README.md`
-
-职责：
-
-- 说明本地验证入口、Docker 构建入口、CI 发布顺序。
-- 明确当前唯一活跃运行时为 Bun。
-
-设计决策：
-
-- 仅修正文档中仍会影响操作判断的 CI / Docker 事实。
-- 不改动与本次 CI 收敛无关的业务文档。
-- 保留把 Deno 当示例源的内容，不把它误判为运行时残留。
-
-### 4. Agent / 规则组件
-
-目标文件：`CLAUDE.md`、`.claude/rules/verification.md`
-
-职责：
-
-- 更新仓库内对 agent 的默认执行约束。
-- 避免后续 agent 因旧规则再次把验证入口写回 `deno task`。
-
-设计决策：
-
-- 把“优先 `deno task`”收敛到 Bun 时代真实命令。
-- 保持“优先最窄验证、共享高影响边界补全量验证”的原则不变，只替换运行时事实。
-
-## 触发面设计
-
-`docker.yml` 的 `paths` 应只保留当前会影响 Docker 验证与发布结果的文件。期望覆盖至少包括：
-
-- `src/**`
-- `web/**`
-- `package.json`
-- `bun.lock`
-- `tsconfig.json`
-- `vite.config.ts`
-- `Dockerfile`
-- `.dockerignore`
-- `docker/**`
-- `scripts/**`
-- `README.md`
-- `.github/workflows/docker.yml`
-
-是否把 `CLAUDE.md` 或 `.claude/rules/**` 纳入 `paths`，取决于是否把“agent 规则变化”视为应触发 Docker CI 的发布事实变化。默认建议不纳入，因为它们不直接改变镜像或门禁结果。
-
-## 执行流设计
-
-1. 开发者修改源码、构建脚本、Docker 资产或相关说明文件。
-2. `docker.yml` 根据 Bun-era 有效路径决定是否触发。
-3. `verify` job 安装 Bun，执行 `bun run verify:full`。
-4. `image` job 在同一运行时前提下执行 `bun run image:prepare`。
-5. `publish` job 只在 `main` 上推送镜像并同步 `docker/README.md`。
-6. `notify` job 基于前序 job 结果发送通知。
-7. 文档与 agent 规则同步描述上述真实流程，形成单一事实源。
-
-## 错误处理策略
-
-1. 运行时缺失时快速失败，不做兼容补丁。
-2. 路径失配通过收敛修正，不保留旧路径容错。
-3. 文档失真视为契约错误，必须与 workflow 一并修复。
-4. 不引入 “bun / deno 双轨共存” 逻辑。
-
-## 预期修改清单
-
-### 必改
-
-- `.github/workflows/docker.yml`
-- `CLAUDE.md`
-- `.claude/rules/verification.md`
-
-### 条件修改
-
-- `README.md`：若存在仍会误导 CI / Docker 运行时判断的残留描述则修正。
-- `docker/README.md`：若与实际 workflow 行为不完全一致则修正。
-- `package.json`：仅当脚本契约与设计不一致时调整；否则保持不动。
+1. 开发者或 CI 调用 `bun run <script>`。
+2. `package.json` 中的目标脚本再通过 `bun --bun` 显式执行对应 CLI。
+3. `vite` / `tsc` / `prettier` 的底层运行时统一落到 Bun，而不是环境默认 Node。
+4. `verify:scoped` / `verify:full` 继续按现有编排执行，但其内部外部 CLI 的归属已稳定。
 
 ## 验证计划
 
-由于本次设计本身是 docs 产物，写入阶段只做路径与命令一致性检查。后续真正实施时按以下顺序验证：
+### 最窄相关验证
 
-1. 检查活跃 CI / 规则 / 文档中的运行时事实是否统一为 Bun。
-2. 运行最窄相关验证：`bun run verify:full`。
-3. 运行 Docker 相关验证：`bun run image:prepare`。
-4. 若实施中触及共享高影响入口，再补全量 `bun run test`。
-5. 若具备 GitHub 远端验证条件，再观察真实 Actions 结果是否转绿。
+1. `bun run build:web`
+2. `bun run check`
+3. `bun run fmt:check:path -- package.json`
+
+### 共享高影响边界补充验证
+
+由于 `package.json` 属于共享高影响边界，收尾前追加：
+
+1. `bun run verify:full`
+2. `bun run test`
+
+### 直接探针
+
+为确认 CLI 确实可被 Bun 接管，可额外运行：
+
+1. `bun --bun vite --version`
+2. `bun --bun tsc --version`
+3. `bun --bun prettier --version`
 
 ## 风险与取舍
 
 ### 风险
 
-- 只按字符串搜索清理 `deno`，容易误删业务示例内容。
-- 只改 workflow 不改 agent / 规则，后续会再次回流出混合态。
-- `paths` 若漏掉 `package.json` 或 `bun.lock`，会形成新的漏触发。
+1. 某些 CLI 在 Bun 下的输出文案、错误格式可能与 Node 有细微差异。
+2. 若将来新增 `prettier.config.ts` 等 TypeScript 配置文件，相关路径仍应继续保持显式 Bun 归属，不能回退到默认 shebang 行为。
 
 ### 取舍
 
-- 不抽象 reusable workflow：当前只有一条活跃 workflow，抽象收益低于复杂度成本。
-- 不保留兼容层：你要求的是 Bun-native 零残留，失败路径必须显式。
-- 不做全仓文本替换：只清理活跃 CI 语义中的残留，避免伤及真实业务内容。
+1. 不加 `setup-node`：避免把运行时一致性分散到 workflow 环境层，而不是脚本契约层。
+2. 一并收敛 `tsc` / `prettier`：虽然它们当前未复现同类故障，但这样能统一心智模型并减少未来漂移。
+3. 不扩到 `oxlint`：保持最小完整改动。
 
 ## 成功标准
 
-满足以下条件即视为本次设计目标达成：
+满足以下条件即可认为本次收敛完成：
 
-1. 活跃 GitHub Actions workflow 不再安装或调用 Deno。
-2. 活跃 workflow `paths` 不再引用 `deno.json` / `deno.lock`，并覆盖 `package.json` / `bun.lock` 等真实输入。
-3. `README.md`、`docker/README.md`、`CLAUDE.md`、`.claude/rules/verification.md` 不再把 Deno 当作当前 CI 默认事实源。
-4. 业务示例中合法存在的 Deno 文本被保留，没有被误清理。
-5. 实施完成后，相关本地验证与 GitHub Actions 结果能证明 Docker 发布链重新可用。
+1. `package.json` 中纳入范围的脚本都显式通过 Bun 执行对应 CLI。
+2. `build:web` 在本地与 CI 不再依赖 runner 默认 Node 来加载 `vite.config.ts`。
+3. `bun run verify:full` 与 `bun run test` 能在修改后继续通过。
+4. workflow 不需要新增 `setup-node` 也能维持当前验证链路。
