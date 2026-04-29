@@ -16,6 +16,7 @@ import { loadConfigWorkbenchOverview } from '../src/web/config_workbench_overvie
 import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
 import type { SourceActionLogMeta } from '../src/interfaces/web/create_source_action_handler.ts'
 import { getCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
+import { createWebRequestHandler } from './create_web_request_handler.tsx'
 
 const WEB_CLIENT_ASSET_PATH = '/assets/client.js'
 
@@ -255,49 +256,30 @@ const sourcesClearHandler = withApiRequestLogging(
   },
 )
 
-export async function handleWebRequest(request: Request): Promise<Response> {
-  const url = new URL(request.url)
-  const routeKey = `${request.method} ${url.pathname}`
-
-  switch (routeKey) {
-    case `GET ${WEB_CLIENT_ASSET_PATH}`:
-      return await serveClientAsset()
-    case 'GET /':
-      return renderDocument(<IndexPage />)
-    case 'GET /reader': {
-      const overview = await loadReaderOverview()
-      return renderDocument(<ReaderPage overview={overview} />)
-    }
-    case 'GET /config': {
-      const workbench = await loadConfigWorkbenchOverview()
-      return renderDocument(<ConfigPage workbench={workbench} />)
-    }
-    case 'GET /xquery':
-      return renderDocument(<XqueryPage />)
-    case 'GET /syndication':
-      return renderDocument(<SyndicationPage />)
-    case 'GET /api/reader/overview':
-      return await readerOverviewHandler(request)
-    case 'POST /api/xquery/evaluate':
-      return await xqueryEvaluateHandler(request)
-    case 'POST /api/syndication/evaluate':
-      return await syndicationEvaluateHandler(request)
-    case 'POST /api/config/global':
-      return await configGlobalHandler(request)
-    case 'POST /api/config/deliveries':
-      return await configDeliveriesHandler(request)
-    case 'POST /api/config/deliveries/delete':
-      return await configDeliveriesDeleteHandler(request)
-    case 'POST /api/sources/update':
-      return await sourcesUpdateHandler(request)
-    case 'POST /api/sources/run':
-      return await sourcesRunHandler(request)
-    case 'POST /api/sources/clear':
-      return await sourcesClearHandler(request)
-    default:
-      return new Response('Not Found', { status: 404 })
-  }
-}
+export const handleWebRequest = createWebRequestHandler({
+  webClientAssetPath: WEB_CLIENT_ASSET_PATH,
+  serveClientAsset,
+  renderIndexPage: () => renderDocument(<IndexPage />),
+  renderReaderPage: async () => {
+    const overview = await loadReaderOverview()
+    return renderDocument(<ReaderPage overview={overview} />)
+  },
+  renderConfigPage: async () => {
+    const workbench = await loadConfigWorkbenchOverview()
+    return renderDocument(<ConfigPage workbench={workbench} />)
+  },
+  renderXqueryPage: () => renderDocument(<XqueryPage />),
+  renderSyndicationPage: () => renderDocument(<SyndicationPage />),
+  readerOverviewHandler,
+  xqueryEvaluateHandler,
+  syndicationEvaluateHandler,
+  configGlobalHandler,
+  configDeliveriesHandler,
+  configDeliveriesDeleteHandler,
+  sourcesUpdateHandler,
+  sourcesRunHandler,
+  sourcesClearHandler,
+})
 
 const app: WebApp = {
   listen: () => {},
