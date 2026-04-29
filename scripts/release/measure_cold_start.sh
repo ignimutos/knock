@@ -8,9 +8,36 @@ ready_marker="${READY_MARKER:-Knock Config}"
 threshold_pct="${THRESHOLD_PCT:-30}"
 samples="${SAMPLES:-3}"
 
+if [ -z "$ready_path" ]; then
+  echo "READY_PATH must not be empty" >&2
+  exit 1
+fi
+
+if ! [[ "$samples" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SAMPLES must be a positive integer" >&2
+  exit 1
+fi
+
+if ! [[ "$threshold_pct" =~ ^[0-9]+$ ]]; then
+  echo "THRESHOLD_PCT must be an integer" >&2
+  exit 1
+fi
+
 measure_once() {
   local image="$1"
-  local runtime_dir container_name port started ended
+  local runtime_dir=""
+  local container_name=""
+  local port started ended
+  cleanup_measure_once() {
+    if [ -n "${container_name:-}" ]; then
+      docker rm -f "$container_name" >/dev/null 2>&1 || true
+    fi
+    if [ -n "${runtime_dir:-}" ]; then
+      rm -rf "$runtime_dir"
+    fi
+  }
+
+  trap cleanup_measure_once RETURN
   runtime_dir="$(mktemp -d)"
   container_name="knock-measure-$(date +%s)-$RANDOM"
   port="$(python3 - <<'PY'
@@ -50,8 +77,9 @@ import time
 print(int(time.time() * 1000))
 PY
 )"
-      docker rm -f "$container_name" >/dev/null 2>&1 || true
-      rm -rf "$runtime_dir"
+      cleanup_measure_once
+      container_name=""
+      runtime_dir=""
       echo $((ended - started))
       return 0
     fi
@@ -59,8 +87,9 @@ PY
   done
 
   docker logs "$container_name" || true
-  docker rm -f "$container_name" >/dev/null 2>&1 || true
-  rm -rf "$runtime_dir"
+  cleanup_measure_once
+  container_name=""
+  runtime_dir=""
   return 1
 }
 
@@ -87,7 +116,9 @@ candidate_ms="$(median_ms "${candidate_runs[@]}")"
 improvement_pct="$(python3 - <<PY
 baseline = int(${baseline_ms})
 candidate = int(${candidate_ms})
-print(int(((baseline - candidate) / baseline) * 100))
+if baseline <= 0:
+    raise SystemExit('baseline median must be positive')
+print(round(((baseline - candidate) / baseline) * 100))
 PY
 )"
 

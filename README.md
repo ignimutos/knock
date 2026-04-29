@@ -681,7 +681,7 @@ logging:
 - `bun run build:binary`：生成 `dist/knock-linux-x64` 单文件二进制。
 - `bun run smoke:binary`：对二进制跑 `daemon` / `web` / `all` 三条最小 smoke。
 - `bun run smoke:image`：对本地 Docker 镜像跑 `/config` 与 `/assets/client.js` smoke。
-- `bun run measure:cold-start`：对 baseline/candidate 镜像做 cold-start 中位数比较。
+- `bun run measure:cold-start`：对 baseline/candidate 镜像做 cold-start 中位数比较，例如 `BASE_IMAGE=knock:baseline CANDIDATE_IMAGE=knock:local bun run measure:cold-start`。
 - `bun run test:path -- <paths>`：按路径运行测试子集。
 - `bun run lint:check:path -- <paths>`：按路径运行 lint 子集。
 - `bun run fmt:check:path -- <paths>`：按路径运行 Prettier 检查子集。
