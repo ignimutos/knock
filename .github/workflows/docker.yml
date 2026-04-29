@@ -55,6 +55,18 @@ jobs:
       - name: Verify release pipeline inputs
         run: bun run verify:full
 
+      - name: Build compiled binary
+        run: bun run build:binary
+
+      - name: Smoke compiled binary
+        run: bun run smoke:binary
+
+      - name: Upload compiled binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: knock-linux-x64
+          path: dist/knock-linux-x64
+
   image:
     needs: verify
     runs-on: ubuntu-latest

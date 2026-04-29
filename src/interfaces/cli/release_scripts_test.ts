@@ -13,7 +13,17 @@ test('[contract] package.json scripts: binary release entrypoints', () => {
 
   assertEquals(scripts['build:binary'], 'bun run scripts/release/build_binary.ts')
   assertEquals(scripts['smoke:binary'], 'bash ./scripts/release/smoke_binary.sh')
+  assertEquals(scripts['smoke:image'], 'bash ./scripts/release/smoke_image.sh')
+  assertEquals(
+    scripts['image:prepare'],
+    'bun run docker:build && bun run smoke:image && bun run docker:size:check',
+  )
+  assertEquals(
+    scripts['release:prepare'],
+    'bun run verify:full && bun run build:binary && bun run smoke:binary && bun run image:prepare',
+  )
 
   assert(existsSync(new URL('../../../scripts/release/build_binary.ts', import.meta.url)))
   assert(existsSync(new URL('../../../scripts/release/smoke_binary.sh', import.meta.url)))
+  assert(existsSync(new URL('../../../scripts/release/smoke_image.sh', import.meta.url)))
 })
