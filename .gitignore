@@ -24,6 +24,7 @@ __pycache__/
 build/
 coverage/
 dist/
+docs/superpowers/
 node_modules/
 npm/
 runtime/
