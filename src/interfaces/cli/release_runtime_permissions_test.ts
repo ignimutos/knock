@@ -21,6 +21,8 @@ const contracts: ScriptContract[] = [
   },
 ]
 
+const entrypointUrl = new URL('../../../docker/entrypoint.sh', import.meta.url)
+
 test('[contract] release scripts: source-friendly entrypoint', () => {
   for (const contract of contracts) {
     const text = readFileSync(new URL(contract.relativePath, import.meta.url), 'utf8')
@@ -339,4 +341,43 @@ BASE_IMAGE='baseline-image' CANDIDATE_IMAGE='candidate-image' THRESHOLD_PCT='30'
   assertStringIncludes(result.stdout, 'candidate_median_ms=90')
   assertStringIncludes(result.stdout, 'improvement_pct=10')
   assertEquals(result.stderr, '')
+})
+
+test('[contract] Dockerfile: final image uses copy-time ownership instead of post-copy /app chown', () => {
+  const text = readFileSync(new URL('../../../Dockerfile', import.meta.url), 'utf8')
+
+  assertStringIncludes(
+    text,
+    'COPY --from=build --chown=knock:knock /app/dist/knock-linux-x64 /app/knock-linux-x64',
+  )
+  assertStringIncludes(
+    text,
+    'COPY --chown=knock:knock docker/entrypoint.sh /app/docker-entrypoint.sh',
+  )
+  assert(
+    !text.includes('chown -R knock:knock /app'),
+    'Dockerfile should stop doing a post-copy recursive /app chown',
+  )
+})
+
+test('[contract] docker entrypoint: fix_runtime_permissions must repair runtime dir tree directly', () => {
+  const text = readFileSync(entrypointUrl, 'utf8')
+
+  assertStringIncludes(text, 'if [ -d "$runtime_dir" ]; then')
+  assertStringIncludes(text, 'chown -R "${target_uid}:${target_gid}" "$runtime_dir"')
+  assertStringIncludes(text, 'chmod -R u+rwX "$runtime_dir"')
+  assertStringIncludes(text, 'chmod -R g+rwX "$runtime_dir"')
+  assert(!text.includes('for path in'), 'fix_runtime_permissions must not use whitelist path loop')
+  assert(
+    !text.includes('"$runtime_dir/config.yml"'),
+    'fix_runtime_permissions must not hardcode runtime subpaths',
+  )
+})
+
+test('[contract] docker entrypoint: non-root startup must gate permission repair by root and runtime dir existence', () => {
+  const text = readFileSync(entrypointUrl, 'utf8')
+
+  assertStringIncludes(text, 'runtime_dir="$RUNTIME_DIR"')
+  assertStringIncludes(text, 'if [ "$(id -u)" -eq 0 ] && [ -d "$runtime_dir" ]; then')
+  assertStringIncludes(text, 'fix_runtime_permissions "$runtime_dir" "$target_uid" "$target_gid"')
 })

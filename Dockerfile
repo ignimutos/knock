@@ -25,13 +25,12 @@ WORKDIR /app
 
 ENV KNOCK_RUNTIME_DIR=/app/runtime
 
-COPY --from=build /app/dist/knock-linux-x64 /app/knock-linux-x64
-COPY --from=build /app/node_modules/jsdom /app/node_modules/jsdom
-COPY --from=build /app/node_modules/css-tree /app/node_modules/css-tree
-COPY --from=build /app/node_modules/mdn-data /app/node_modules/mdn-data
-COPY docker/entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh \
-  && chown -R knock:knock /app
+COPY --from=build --chown=knock:knock /app/dist/knock-linux-x64 /app/knock-linux-x64
+COPY --from=build --chown=knock:knock /app/node_modules/jsdom /app/node_modules/jsdom
+COPY --from=build --chown=knock:knock /app/node_modules/css-tree /app/node_modules/css-tree
+COPY --from=build --chown=knock:knock /app/node_modules/mdn-data /app/node_modules/mdn-data
+COPY --chown=knock:knock docker/entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8000
 

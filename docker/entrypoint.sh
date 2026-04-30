@@ -42,27 +42,17 @@ fix_runtime_permissions() {
   target_uid="$2"
   target_gid="$3"
 
-  for path in \
-    "$runtime_dir" \
-    "$runtime_dir/config.yml" \
-    "$runtime_dir/config.yaml" \
-    "$runtime_dir/outputs" \
-    "$runtime_dir/logs" \
-    "$runtime_dir/db.sqlite" \
-    "$runtime_dir/knock.db"
-  do
-    if [ -e "$path" ]; then
-      if ! chown -R "${target_uid}:${target_gid}" "$path" 2>/dev/null; then
-        warn "warn: chown failed for $path"
-      fi
-      if ! chmod -R u+rwX "$path" 2>/dev/null; then
-        warn "warn: chmod u+rwX failed for $path"
-      fi
-      if ! chmod -R g+rwX "$path" 2>/dev/null; then
-        warn "warn: chmod g+rwX failed for $path"
-      fi
+  if [ -d "$runtime_dir" ]; then
+    if ! chown -R "${target_uid}:${target_gid}" "$runtime_dir" 2>/dev/null; then
+      warn "warn: chown failed for $runtime_dir"
     fi
-  done
+    if ! chmod -R u+rwX "$runtime_dir" 2>/dev/null; then
+      warn "warn: chmod u+rwX failed for $runtime_dir"
+    fi
+    if ! chmod -R g+rwX "$runtime_dir" 2>/dev/null; then
+      warn "warn: chmod g+rwX failed for $runtime_dir"
+    fi
+  fi
 }
 
 exec_app() {
@@ -79,11 +69,12 @@ exec_app() {
 }
 
 main() {
+  runtime_dir="$RUNTIME_DIR"
   runtime_uid=''
   runtime_gid=''
 
-  if [ -d "$RUNTIME_DIR" ]; then
-    owner="$(read_runtime_owner "$RUNTIME_DIR" 2>/dev/null || true)"
+  if [ -d "$runtime_dir" ]; then
+    owner="$(read_runtime_owner "$runtime_dir" 2>/dev/null || true)"
     if [ -n "$owner" ]; then
       runtime_uid="${owner%%:*}"
       runtime_gid="${owner##*:}"
@@ -96,8 +87,8 @@ main() {
   target_gid="${rest%% *}"
   keep_root="${identity##*keep-root=}"
 
-  if [ "$(id -u)" -eq 0 ] && [ -d "$RUNTIME_DIR" ]; then
-    fix_runtime_permissions "$RUNTIME_DIR" "$target_uid" "$target_gid"
+  if [ "$(id -u)" -eq 0 ] && [ -d "$runtime_dir" ]; then
+    fix_runtime_permissions "$runtime_dir" "$target_uid" "$target_gid"
   fi
 
   exec_app "$target_uid" "$target_gid" "$keep_root" "$@"
