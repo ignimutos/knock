@@ -30,6 +30,27 @@ export interface LoadedCompiledConfig {
   runtimeDir: string
 }
 
+type ErrnoError = Error & {
+  code?: string
+}
+
+function isPermissionDeniedError(error: unknown): error is ErrnoError {
+  return (
+    error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM')
+  )
+}
+
+export function toConfigLoadError(configPath: string, runtimeDir: string, error: unknown): Error {
+  const msg = error instanceof Error ? error.message : String(error)
+  if (!isPermissionDeniedError(error)) {
+    return new Error(`配置文件错误(${configPath}): ${msg}`)
+  }
+
+  return new Error(
+    `配置文件错误(${configPath}): ${msg}。若这是 Docker bind mount，镜像默认以非 root 用户 knock 运行；请保证 ${runtimeDir} 目录可遍历、${configPath} 可读，或用 --user "$(id -u):$(id -g)" / compose user 映射到宿主机 UID/GID。`,
+  )
+}
+
 function getRuntimeDir(options: LoadConfigOptions): string {
   if (options.runtimeDir) return resolve(options.runtimeDir)
 
@@ -251,7 +272,7 @@ async function loadResolvedConfig(
       error_message: msg,
       stack: error instanceof Error ? error.stack : undefined,
     })
-    throw new Error(`配置文件错误(${configPath}): ${msg}`)
+    throw toConfigLoadError(configPath, runtimeDir, error)
   }
 }
 

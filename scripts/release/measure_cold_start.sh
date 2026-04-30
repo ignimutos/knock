@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
 
-prepare_runtime_permissions() {
+prepare_runtime_fixture() {
   local runtime_dir
   runtime_dir="$1"
 
-  chmod 0777 "$runtime_dir"
-  chmod 0666 "$runtime_dir/config.yml"
+  chmod 0700 "$runtime_dir"
+  chmod 0644 "$runtime_dir/config.yml"
 }
 
-assert_runtime_permissions() {
+assert_runtime_fixture() {
   local runtime_dir config_path dir_mode config_mode
   runtime_dir="$1"
   config_path="$runtime_dir/config.yml"
 
   if [ ! -d "$runtime_dir" ]; then
-    echo 'runtime permission check failed: runtime_dir must exist and be a directory' >&2
+    echo 'runtime fixture check failed: runtime_dir must exist and be a directory' >&2
     return 1
   fi
 
   if [ ! -f "$config_path" ]; then
-    echo 'runtime permission check failed: config.yml must exist and be a regular file' >&2
+    echo 'runtime fixture check failed: config.yml must exist and be a regular file' >&2
     return 1
   fi
 
   dir_mode="$(stat -c '%a' "$runtime_dir")"
-  if [ "$dir_mode" != "777" ]; then
-    echo "runtime permission check failed: expected runtime_dir mode 777, got $dir_mode" >&2
+  if [ "$dir_mode" != "700" ]; then
+    echo "runtime fixture check failed: expected runtime_dir mode 700, got $dir_mode" >&2
     return 1
   fi
 
   config_mode="$(stat -c '%a' "$config_path")"
-  if [ "$config_mode" != "666" ]; then
-    echo "runtime permission check failed: expected config.yml mode 666, got $config_mode" >&2
+  if [ "$config_mode" != "644" ]; then
+    echo "runtime fixture check failed: expected config.yml mode 644, got $config_mode" >&2
     return 1
   fi
 }
@@ -40,7 +40,7 @@ measure_once() {
   local image="$1"
   local runtime_dir=""
   local container_name=""
-  local port started ended
+  local port started ended ready_response
   cleanup_measure_once() {
     if [ -n "${container_name:-}" ]; then
       docker rm -f "$container_name" >/dev/null 2>&1 || true
@@ -65,8 +65,8 @@ PY
   cat >"$runtime_dir/config.yml" <<'EOF'
 sources: {}
 EOF
-  prepare_runtime_permissions "$runtime_dir"
-  assert_runtime_permissions "$runtime_dir"
+  prepare_runtime_fixture "$runtime_dir"
+  assert_runtime_fixture "$runtime_dir"
 
   started="$(python3 - <<'PY'
 import time
@@ -84,15 +84,16 @@ PY
     "$image" >/dev/null
 
   for _ in $(seq 1 120); do
-    if curl -fsS "http://127.0.0.1:${port}${ready_path}" | grep -q "$ready_marker"; then
+    ready_response="$(curl -fsS "http://127.0.0.1:${port}${ready_path}")" || {
+      sleep 0.25
+      continue
+    }
+    if grep -Fq -- "$ready_marker" <<<"$ready_response"; then
       ended="$(python3 - <<'PY'
 import time
 print(int(time.time() * 1000))
 PY
 )"
-      cleanup_measure_once
-      container_name=""
-      runtime_dir=""
       echo $((ended - started))
       return 0
     fi
@@ -100,9 +101,6 @@ PY
   done
 
   docker logs "$container_name" || true
-  cleanup_measure_once
-  container_name=""
-  runtime_dir=""
   return 1
 }
 
@@ -125,7 +123,7 @@ main() {
   set -euo pipefail
 
   local baseline_image candidate_image ready_path ready_marker samples
-  local baseline_ms candidate_ms improvement_pct
+  local baseline_ms candidate_ms improvement_pct baseline_output candidate_output
   local -a baseline_runs candidate_runs
 
   baseline_image="${BASE_IMAGE:?BASE_IMAGE is required}"
@@ -144,8 +142,28 @@ main() {
     return 1
   fi
 
-  readarray -t baseline_runs < <(measure_series "$baseline_image")
-  readarray -t candidate_runs < <(measure_series "$candidate_image")
+  if ! baseline_output="$(measure_series "$baseline_image")"; then
+    echo "baseline series failed before collecting $samples samples" >&2
+    return 1
+  fi
+
+  if ! candidate_output="$(measure_series "$candidate_image")"; then
+    echo "candidate series failed before collecting $samples samples" >&2
+    return 1
+  fi
+
+  readarray -t baseline_runs < <(printf '%s' "$baseline_output")
+  readarray -t candidate_runs < <(printf '%s' "$candidate_output")
+
+  if [ "${#baseline_runs[@]}" -ne "$samples" ]; then
+    echo "expected $samples baseline samples, got ${#baseline_runs[@]}" >&2
+    return 1
+  fi
+
+  if [ "${#candidate_runs[@]}" -ne "$samples" ]; then
+    echo "expected $samples candidate samples, got ${#candidate_runs[@]}" >&2
+    return 1
+  fi
 
   baseline_ms="$(median_ms "${baseline_runs[@]}")"
   candidate_ms="$(median_ms "${candidate_runs[@]}")"

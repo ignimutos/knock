@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
 
-prepare_runtime_permissions() {
+prepare_runtime_fixture() {
   local runtime_dir
   runtime_dir="$1"
 
-  chmod 0777 "$runtime_dir"
-  chmod 0666 "$runtime_dir/config.yml"
+  chmod 0700 "$runtime_dir"
+  chmod 0644 "$runtime_dir/config.yml"
 }
 
-assert_runtime_permissions() {
+assert_runtime_fixture() {
   local runtime_dir config_path dir_mode config_mode
   runtime_dir="$1"
   config_path="$runtime_dir/config.yml"
 
   if [ ! -d "$runtime_dir" ]; then
-    echo 'runtime permission check failed: runtime_dir must exist and be a directory' >&2
+    echo 'runtime fixture check failed: runtime_dir must exist and be a directory' >&2
     return 1
   fi
 
   if [ ! -f "$config_path" ]; then
-    echo 'runtime permission check failed: config.yml must exist and be a regular file' >&2
+    echo 'runtime fixture check failed: config.yml must exist and be a regular file' >&2
     return 1
   fi
 
   dir_mode="$(stat -c '%a' "$runtime_dir")"
-  if [ "$dir_mode" != "777" ]; then
-    echo "runtime permission check failed: expected runtime_dir mode 777, got $dir_mode" >&2
+  if [ "$dir_mode" != "700" ]; then
+    echo "runtime fixture check failed: expected runtime_dir mode 700, got $dir_mode" >&2
     return 1
   fi
 
   config_mode="$(stat -c '%a' "$config_path")"
-  if [ "$config_mode" != "666" ]; then
-    echo "runtime permission check failed: expected config.yml mode 666, got $config_mode" >&2
+  if [ "$config_mode" != "644" ]; then
+    echo "runtime fixture check failed: expected config.yml mode 644, got $config_mode" >&2
     return 1
   fi
 }
@@ -40,11 +40,14 @@ main() {
   (
     set -euo pipefail
 
-    local image entrypoint runtime_dir container_name client_tmp port
+    local image entrypoint runtime_dir container_name client_tmp port config_html
 
     image="${KNOCK_IMAGE_TAG:-knock:local}"
     entrypoint="$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')"
-    [ "$entrypoint" = '["/app/knock-linux-x64"]' ]
+    if [ "$entrypoint" != '["/app/docker-entrypoint.sh"]' ]; then
+      echo "unexpected image entrypoint: expected [\"/app/docker-entrypoint.sh\"], got $entrypoint" >&2
+      return 1
+    fi
 
     runtime_dir="$(mktemp -d)"
     container_name="knock-smoke-$(date +%s)-$RANDOM"
@@ -67,8 +70,8 @@ PY
     cat >"$runtime_dir/config.yml" <<'EOF'
 sources: {}
 EOF
-    prepare_runtime_permissions "$runtime_dir"
-    assert_runtime_permissions "$runtime_dir"
+    prepare_runtime_fixture "$runtime_dir"
+    assert_runtime_fixture "$runtime_dir"
 
     docker run -d --rm \
       --name "$container_name" \
@@ -80,7 +83,11 @@ EOF
       "$image" >/dev/null
 
     for _ in $(seq 1 120); do
-      if curl -fsS "http://127.0.0.1:${port}/config" | grep -q 'Knock Config'; then
+      config_html="$(curl -fsS "http://127.0.0.1:${port}/config")" || {
+        sleep 0.25
+        continue
+      }
+      if grep -Fq -- 'Knock Config' <<<"$config_html"; then
         curl -fsS "http://127.0.0.1:${port}/assets/client.js" >"$client_tmp"
         test -s "$client_tmp"
         return 0

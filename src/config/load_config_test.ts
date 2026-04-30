@@ -10,7 +10,11 @@ import {
   writeRuntimeFile,
   writeTextFile,
 } from '../testing/test_helpers.ts'
-import { compileConfigDocument, loadCompiledConfig } from './load_compiled_config.ts'
+import {
+  compileConfigDocument,
+  loadCompiledConfig,
+  toConfigLoadError,
+} from './load_compiled_config.ts'
 import { loadConfig } from './load_config.ts'
 
 const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
@@ -595,6 +599,26 @@ logging:
     assertEquals(config.runtimeDir, explicitRuntime)
     assertEquals(config.logging.sinks.file?.path, join(explicitRuntime, 'logs', 'app.jsonl'))
   })
+})
+
+test('loadConfig: EACCES 时应补充容器 bind mount 排查提示', () => {
+  const configPath = '/app/runtime/config.yml'
+  const runtimeDir = '/app/runtime'
+  const error = Object.assign(new Error(`EACCES: permission denied, open '${configPath}'`), {
+    code: 'EACCES',
+  })
+
+  const wrapped = toConfigLoadError(configPath, runtimeDir, error)
+
+  assertStringIncludes(wrapped.message, `配置文件错误(${configPath}): EACCES: permission denied`)
+  assertStringIncludes(wrapped.message, 'Docker bind mount')
+  assertStringIncludes(wrapped.message, '非 root 用户 knock')
+  assertStringIncludes(wrapped.message, '--user "$(id -u):$(id -g)"')
+})
+
+test('loadConfig: 非权限错误应保持原始错误文案', () => {
+  const wrapped = toConfigLoadError('/tmp/config.yml', '/tmp', new Error('配置非法'))
+  assertEquals(wrapped.message, '配置文件错误(/tmp/config.yml): 配置非法')
 })
 
 test('loadConfig: 应支持 config.yaml fallback', async () => {

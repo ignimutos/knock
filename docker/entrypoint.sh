@@ -1,91 +1,108 @@
 #!/bin/sh
 set -eu
 
-has_flag() {
-  flag="$1"
-  shift
+APP_BIN="${APP_BIN:-/app/knock-linux-x64}"
+RUNTIME_DIR="${KNOCK_RUNTIME_DIR:-/app/runtime}"
+DEFAULT_UID="${APP_UID:-10001}"
+DEFAULT_GID="${APP_GID:-10001}"
 
-  while [ "$#" -gt 0 ]; do
-    if [ "$1" = "$flag" ]; then
-      return 0
-    fi
-    shift
-  done
-
-  return 1
+warn() {
+  printf '%s\n' "$*" >&2
 }
 
-should_enable_immediate() {
-  value="${KNOCK_IMMEDIATE:-}"
-
-  case "$value" in
-    "")
-      return 1
-      ;;
-    1|true|TRUE|yes|YES|on|ON)
-      return 0
-      ;;
-    0|false|FALSE|no|NO|off|OFF)
-      return 1
-      ;;
-    *)
-      printf '%s\n' "KNOCK_IMMEDIATE 非法: $value" >&2
-      exit 1
-      ;;
-  esac
+read_runtime_owner() {
+  runtime_dir="$1"
+  stat -c '%u:%g' "$runtime_dir"
 }
 
-rewrite_start=0
+resolve_target_identity() {
+  default_uid="$1"
+  default_gid="$2"
+  runtime_uid="${3:-}"
+  runtime_gid="${4:-}"
 
-if [ "$#" -eq 0 ]; then
-  rewrite_start=1
-  set --
-fi
+  target_uid="$default_uid"
+  target_gid="$default_gid"
+  keep_root=0
 
-if [ "$#" -ge 3 ] && [ "$1" = "bun" ] && [ "$2" = "run" ] && [ "$3" = "start" ]; then
-  rewrite_start=1
-  shift 3
-fi
-
-if [ "$#" -ge 2 ] && [ "$1" = "bun" ] && [ "$2" = "start" ]; then
-  rewrite_start=1
-  shift 2
-fi
-
-if [ "$rewrite_start" -eq 1 ]; then
-  if ! has_flag --config "$@" && [ -n "${KNOCK_CONFIG_PATH:-}" ]; then
-    set -- "$@" --config "$KNOCK_CONFIG_PATH"
+  if [ -n "$runtime_uid" ] && [ -n "$runtime_gid" ]; then
+    target_uid="$runtime_uid"
+    target_gid="$runtime_gid"
   fi
 
-  target_mode=web
-  index=1
-  while [ "$index" -le "$#" ]; do
-    eval "arg=\${$index}"
-    if [ "$arg" = "--mode" ]; then
-      next_index=$((index + 1))
-      if [ "$next_index" -le "$#" ]; then
-        eval "target_mode=\${$next_index}"
+  if [ "$target_uid" = "0" ] || [ "$target_gid" = "0" ]; then
+    keep_root=1
+  fi
+
+  printf '%s:%s keep-root=%s\n' "$target_uid" "$target_gid" "$keep_root"
+}
+
+fix_runtime_permissions() {
+  runtime_dir="$1"
+  target_uid="$2"
+  target_gid="$3"
+
+  for path in \
+    "$runtime_dir" \
+    "$runtime_dir/config.yml" \
+    "$runtime_dir/config.yaml" \
+    "$runtime_dir/outputs" \
+    "$runtime_dir/logs" \
+    "$runtime_dir/db.sqlite" \
+    "$runtime_dir/knock.db"
+  do
+    if [ -e "$path" ]; then
+      if ! chown -R "${target_uid}:${target_gid}" "$path" 2>/dev/null; then
+        warn "warn: chown failed for $path"
       fi
-      break
+      if ! chmod -R u+rwX "$path" 2>/dev/null; then
+        warn "warn: chmod u+rwX failed for $path"
+      fi
+      if ! chmod -R g+rwX "$path" 2>/dev/null; then
+        warn "warn: chmod g+rwX failed for $path"
+      fi
     fi
-    index=$((index + 1))
   done
+}
 
-  if [ "$target_mode" = "web" ] && ! has_flag --web_host "$@" && [ -n "${KNOCK_WEB_HOST:-}" ]; then
-    set -- "$@" --web_host "$KNOCK_WEB_HOST"
+exec_app() {
+  target_uid="$1"
+  target_gid="$2"
+  keep_root="$3"
+  shift 3
+
+  if [ "$(id -u)" -eq 0 ] && [ "$keep_root" != "1" ] && [ "$target_uid" != "0" ] && [ "$target_gid" != "0" ] && command -v gosu >/dev/null 2>&1; then
+    exec gosu "${target_uid}:${target_gid}" "$APP_BIN" "$@"
   fi
 
-  if [ "$target_mode" = "web" ] && ! has_flag --web_port "$@" && [ -n "${KNOCK_WEB_PORT:-}" ]; then
-    set -- "$@" --web_port "$KNOCK_WEB_PORT"
+  exec "$APP_BIN" "$@"
+}
+
+main() {
+  runtime_uid=''
+  runtime_gid=''
+
+  if [ -d "$RUNTIME_DIR" ]; then
+    owner="$(read_runtime_owner "$RUNTIME_DIR" 2>/dev/null || true)"
+    if [ -n "$owner" ]; then
+      runtime_uid="${owner%%:*}"
+      runtime_gid="${owner##*:}"
+    fi
   fi
 
-  if ! has_flag --immediate "$@" && should_enable_immediate; then
-    set -- "$@" --immediate
+  identity="$(resolve_target_identity "$DEFAULT_UID" "$DEFAULT_GID" "$runtime_uid" "$runtime_gid")"
+  target_uid="${identity%%:*}"
+  rest="${identity#*:}"
+  target_gid="${rest%% *}"
+  keep_root="${identity##*keep-root=}"
+
+  if [ "$(id -u)" -eq 0 ] && [ -d "$RUNTIME_DIR" ]; then
+    fix_runtime_permissions "$RUNTIME_DIR" "$target_uid" "$target_gid"
   fi
 
-  set -- \
-    bun src/main.ts \
-    "$@"
+  exec_app "$target_uid" "$target_gid" "$keep_root" "$@"
+}
+
+if [ "${0##*/}" = "entrypoint.sh" ] || [ "${0##*/}" = "docker-entrypoint.sh" ]; then
+  main "$@"
 fi
-
-exec "$@"

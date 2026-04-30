@@ -10,8 +10,8 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 - 默认运行目录：`/app/runtime`
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
 - 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
-- 容器默认以非 root 用户 `knock` 运行
-- 默认入口：`/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
+- 容器默认通过 `/app/docker-entrypoint.sh` 启动：先执行 runtime 权限自检/修复，再启动主程序
+- 默认主程序：`/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
 - 构建阶段固定使用 `oven/bun:1.3.13`
 - 运行阶段固定使用 `debian:bookworm-slim`，并内置 CA 证书与 `tzdata`
 - 运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录
@@ -61,11 +61,12 @@ sources:
 
 ```bash
 docker run --rm \
-  --user "$(id -u):$(id -g)" \
   -v "$(pwd)/runtime:/app/runtime" \
   -e KNOCK_IMMEDIATE=true \
   <image>
 ```
+
+默认入口会在启动时检查 `/app/runtime` 挂载目录；当容器当前以 root 启动时，会尝试修复该目录及已存在常用路径（`config.yml`/`config.yaml`、`outputs`、`logs`、`db.sqlite`、`knock.db`）的 owner 与 `u+rwX`、`g+rwX` 权限，然后再启动主程序。
 
 这里的 `<image>` 请替换成当前 Docker Hub 仓库名，例如 `<namespace>/knock:latest`。
 
@@ -76,7 +77,6 @@ docker run --rm \
 ```bash
 docker run -d \
   --name knock \
-  --user "$(id -u):$(id -g)" \
   -p 8000:8000 \
   -v "$(pwd)/runtime:/app/runtime" \
   -e KNOCK_WEB_HOST=0.0.0.0 \
@@ -92,7 +92,7 @@ docker run -d \
 - 立即执行一次后退出：`docker run --rm -e KNOCK_IMMEDIATE=true <image>`
 - 显式参数覆盖环境变量：`docker run --rm -e KNOCK_WEB_PORT=8000 <image> --web_port 9000`
 
-如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可；入口脚本只会补齐未显式传入的 CLI 参数。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是像上面的示例一样显式传 `--user "$(id -u):$(id -g)"`。
+如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可；入口脚本只会补齐未显式传入的 CLI 参数。默认建议不传 `--user`，让入口在启动时先自检并尝试修复 `/app/runtime` 挂载目录权限。`--user` 仍可作为高级覆盖：仅在你需要强制指定容器进程 UID/GID 时使用。
 
 本仓库 CI 会先做三层门禁：
 

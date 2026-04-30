@@ -6,6 +6,7 @@ import {
   compileConfigDocument,
   findConfigFile,
   parseRawConfigDocument,
+  toConfigLoadError,
   type LoadedCompiledConfig,
 } from './load_compiled_config.ts'
 
@@ -39,7 +40,13 @@ export async function loadRawConfigDocument(
   lookup: ConfigDocumentLookup,
 ): Promise<RawConfigDocumentLoadResult> {
   const configPath = lookup.configPath ?? (await findConfigFile(lookup.runtimeDir))
-  const raw = await readTextFile(configPath)
+  let raw: string
+
+  try {
+    raw = await readTextFile(configPath)
+  } catch (error) {
+    throw toConfigLoadError(configPath, lookup.runtimeDir, error)
+  }
 
   return {
     runtimeDir: lookup.runtimeDir,
