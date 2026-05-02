@@ -43,6 +43,7 @@ type HttpDeliveryFailureReason =
 
 type AnnotatedHttpDeliveryError = Error & {
   safeLogMessage?: string
+  logMessage?: string
   deliveryReason?: HttpDeliveryFailureReason
   httpStatus?: number
 }
@@ -135,7 +136,7 @@ function buildResponseTemplateContext(
   templateContext?: Record<string, unknown>,
 ): Record<string, unknown> {
   const mergedContext = {
-    ...(templateContext ?? {}),
+    ...templateContext,
     ...response,
   }
   return attachAiEntryRuntime(
@@ -167,6 +168,7 @@ function annotateError(
 
 function createFailureError(params: {
   message: string
+  logMessage?: string
   safeLogMessage: string
   deliveryReason: HttpDeliveryFailureReason
   httpStatus: number
@@ -174,6 +176,7 @@ function createFailureError(params: {
   const error = new Error(params.message) as AnnotatedHttpDeliveryError
   error.name = 'HttpDeliveryError'
   error.safeLogMessage = params.safeLogMessage
+  error.logMessage = params.logMessage
   error.deliveryReason = params.deliveryReason
   error.httpStatus = params.httpStatus
   return error
@@ -253,6 +256,7 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
               : safeMessage
             throw createFailureError({
               message,
+              logMessage: messageTemplate ? message : undefined,
               safeLogMessage: safeMessage,
               deliveryReason: 'response_predicate_false',
               httpStatus: response.status,
@@ -272,6 +276,7 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
             : safeMessage
           throw createFailureError({
             message,
+            logMessage: messageTemplate ? message : undefined,
             safeLogMessage: safeMessage,
             deliveryReason: 'http_status_not_ok',
             httpStatus: response.status,
@@ -298,6 +303,7 @@ export function createHttpDelivery(options: HttpDeliveryFactoryOptions): HttpDel
             : {}),
           error_name: annotatedError.name,
           error_message:
+            annotatedError.logMessage ??
             annotatedError.safeLogMessage ??
             (annotatedError.message.trim() ? annotatedError.message : 'HTTP 推送失败'),
         })

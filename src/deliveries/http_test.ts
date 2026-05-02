@@ -346,7 +346,7 @@ test('[contract] httpDelivery: 配置 socks5 proxy 时应把 client 注入 fetch
   assertEquals(closeCalls, 1)
 })
 
-test('[contract] httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链且日志不泄露模板结果', async () => {
+test('[contract] httpDelivery: response predicate 与 message 应走注入 aiRuntime 的统一渲染链且日志可记录显式失败 message', async () => {
   const aiCalls: Array<Record<string, unknown>> = []
   const logs: string[] = []
   const logger = createLogger({
@@ -454,8 +454,8 @@ test('[contract] httpDelivery: response predicate 与 message 应走注入 aiRun
   const failureAttributes = (failureLog?.attributes ?? {}) as Record<string, unknown>
   assertEquals(Boolean(failureLog), true)
   assertEquals(failureAttributes['delivery.reason'], 'response_predicate_false')
-  assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: status=500')
-  assertEquals(JSON.stringify(failureLog).includes('AI 摘要'), false)
+  assertEquals(failureAttributes['exception.message'], 'AI 摘要')
+  assertEquals(JSON.stringify(failureLog).includes('AI 摘要'), true)
   assertEquals(JSON.stringify(failureLog).includes('需要摘要的正文'), false)
 })
 
@@ -801,4 +801,63 @@ test('[flow] R07 httpDelivery: 非 2xx 响应时应抛错并记录 failure 日�
   assertEquals(JSON.stringify(failureLog).includes("can't parse entities"), false)
   assertEquals(failureAttributes['exception.message'], 'HTTP 推送失败: status=500')
   assertEquals(closeCalls, 1)
+})
+
+test('[contract] httpDelivery: 配置 response.message 时 failure 日志应优先记录渲染后的错误信息', async () => {
+  const logs: string[] = []
+  const logger = createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'delivery.http',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+  const delivery = createHttpDelivery({
+    logger,
+    httpClient: createHttpClient({
+      fetcher: () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ ok: false, description: 'Bad Request: message is too long' }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          ),
+        ),
+    }),
+  })
+
+  await assertRejects(
+    () =>
+      delivery.push({
+        deliveryId: 'telegram',
+        http: {
+          method: 'POST',
+          url: 'https://api.telegram.org/bot123:secret/sendMessage',
+        },
+        request: {
+          type: 'body',
+          payload: {
+            text: 'Hello',
+          },
+        },
+        response: {
+          message: 'status={{ status }} detail={{ body.description }}',
+        },
+      }),
+    Error,
+    'status=400 detail=Bad Request: message is too long',
+  )
+
+  const failureLog = findHttpFailureLog(parseLogs(logs))
+  const failureAttributes = getAttributes(failureLog)
+  assertEquals(Boolean(failureLog), true)
+  assertEquals(failureAttributes['http.response.status_code'], 400)
+  assertEquals(
+    failureAttributes['exception.message'],
+    'status=400 detail=Bad Request: message is too long',
+  )
 })
