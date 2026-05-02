@@ -151,6 +151,25 @@ function createProxySchema() {
   })
 }
 
+function validateHttpUrl(value: string, ctx: z.RefinementCtx, path: Array<string | number>) {
+  try {
+    const parsed = new URL(value)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  } catch {
+    ctx.addIssue({
+      path,
+      code: 'custom',
+      message: createInvalidIssueMessage(value),
+    })
+  }
+}
+
 export const httpPayloadSchema: z.ZodType<
   string | number | boolean | null | Array<unknown> | Record<string, unknown>
 > = z.lazy(() =>
@@ -1150,6 +1169,7 @@ const aiProviderSchema = z
     }
     if (value.baseURL !== undefined) {
       validateLiquidTemplate(value.baseURL, ctx, ['baseURL'], 'ai.providers.*.baseURL')
+      validateHttpUrl(value.baseURL, ctx, ['baseURL'])
     }
     if (value.headers) {
       for (const [key, headerValue] of Object.entries(value.headers)) {

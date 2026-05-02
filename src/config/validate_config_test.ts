@@ -2180,6 +2180,30 @@ test('[contract] validateConfig: model 必须是静态字面量，不允许 ENV 
   )
 })
 
+test('[contract] validateConfig: ai.providers.*.baseURL 非法 URL 时应报错', () => {
+  assertThrows(
+    () =>
+      validateConfig({
+        runtimeDir: '/tmp/runtime',
+        ai: {
+          providers: {
+            main: {
+              type: 'openai',
+              baseURL: '"https://ap.904527.xyz/v1"',
+              models: {
+                default: {
+                  model: 'gpt-4o-mini',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as AppConfigInput),
+    Error,
+    'ai.providers.main.baseURL 配置非法: "https://ap.904527.xyz/v1"',
+  )
+})
+
 test('[contract] validateConfig: sources.filter 字符串字面量里的 AI filter 文本不应误报', () => {
   const validated = validateConfig({
     runtimeDir: '/tmp/runtime',

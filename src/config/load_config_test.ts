@@ -732,3 +732,33 @@ sources:
   assertEquals(loaded.definitions.sources[0]?.sourceId, 'rust')
   assertEquals(loaded.definitions.bindings[0]?.deliveryId, 'archive')
 })
+
+test('loadCompiledConfig: ai.providers.*.baseURL 展开为带引号 URL 时应在加载期失败', async () => {
+  await withEnv(
+    {
+      KNOCK_TEST_AI_BASE_URL: '"https://ap.904527.xyz/v1"',
+    },
+    async () => {
+      await writeRuntimeFile(
+        TEST_RUNTIME,
+        'config.yml',
+        `
+ai:
+  providers:
+    main:
+      type: openai
+      baseURL: ${'${KNOCK_TEST_AI_BASE_URL}'}
+      models:
+        default:
+          model: gpt-4o-mini
+
+sources: {}
+`,
+      )
+
+      const err = await assertRejects(() => loadCompiledConfig({ runtimeDir: TEST_RUNTIME }), Error)
+      assertStringIncludes(err.message, 'ai.providers.main.baseURL 配置非法')
+      assertStringIncludes(err.message, '"https://ap.904527.xyz/v1"')
+    },
+  )
+})
