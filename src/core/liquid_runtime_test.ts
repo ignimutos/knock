@@ -600,7 +600,7 @@ test('[contract] liquidRuntime: ai filter 命名参数支持字符串与数字�
     context,
   )
   const summarized = await runtime.render(
-    "{{ item.content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', length: 80 }}",
+    "{{ item.content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', summary_length: 80 }}",
     context,
   )
 
@@ -733,7 +733,7 @@ test('[contract] liquidRuntime: ai filter 命名参数不允许变量值', async
   )
 })
 
-test('[contract] liquidRuntime: ai_summarize 的 length 支持字符串数字字面量', async () => {
+test('[contract] liquidRuntime: ai_summarize 的 summary_length 支持字符串数字字面量', async () => {
   const calls: Array<Record<string, unknown>> = []
   const aiRuntime = createAiRuntime({
     ai: {
@@ -785,10 +785,129 @@ test('[contract] liquidRuntime: ai_summarize 的 length 支持字符串数字字
     entryRuntime,
   )
 
-  const out = await runtime.render("{{ item.content | ai_summarize: length: '80' }}", context)
+  const out = await runtime.render(
+    "{{ item.content | ai_summarize: summary_length: '80' }}",
+    context,
+  )
 
   assertEquals(out, '摘要')
   assertEquals(String(calls[0].system).includes('80 字以内'), true)
+})
+
+test('[contract] liquidRuntime: ai_summarize 的 trigger_length 支持字符串数字字面量', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: (input) => {
+      calls.push(input as unknown as Record<string, unknown>)
+      return Promise.resolve({ text: '摘要' })
+    },
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+    },
+    entryRuntime,
+  )
+
+  const out = await runtime.render(
+    "{{ item.content | ai_summarize: trigger_length: '6' }}",
+    context,
+  )
+
+  assertEquals(out, 'Hello')
+  assertEquals(calls.length, 0)
+})
+
+test('[contract] liquidRuntime: ai_summarize 不再支持旧 length 参数', async () => {
+  const aiRuntime = createAiRuntime({
+    ai: {
+      providers: [
+        {
+          id: 'openai_main',
+          type: 'openai',
+          apiKey: 'test-key',
+          models: [
+            {
+              id: 'default',
+              providerId: 'openai_main',
+              providerType: 'openai',
+              ref: 'openai_main/default',
+              model: 'gpt-4o-mini',
+              context: 8192,
+              maxOutputTokens: 400,
+              variants: {},
+            },
+          ],
+        },
+      ],
+      defaultModel: {
+        ref: 'openai_main/default',
+        providerId: 'openai_main',
+        modelId: 'default',
+      },
+      modelRefs: {
+        'openai_main/default': {
+          ref: 'openai_main/default',
+          providerId: 'openai_main',
+          modelId: 'default',
+        },
+      },
+    },
+    defaultLanguage: 'zh-CN',
+    generateText: () => Promise.resolve({ text: 'never' }),
+  })
+  const runtime = createLiquidRuntime({ aiRuntime })
+  const entryRuntime = aiRuntime.createEntryRuntime('source-a', 'entry-a')
+  const context = attachAiEntryRuntime(
+    {
+      item: { content: 'Hello' },
+      entry: { id: 'entry-a', content: 'Hello' },
+    },
+    entryRuntime,
+  )
+
+  await assertRejects(
+    () => runtime.render("{{ item.content | ai_summarize: length: '80' }}", context),
+    Error,
+    'ai_summarize 不支持命名参数 length',
+  )
 })
 
 test('[contract] liquidRuntime: 字符串字面量中的 ai filter 文本不应误报', async () => {

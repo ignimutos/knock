@@ -409,7 +409,7 @@ logging:
 | `to_telegram_html` | 转成 Telegram HTML 可发送子集 | 无 |
 | `to_telegram_markdown_v2` | 转成 Telegram MarkdownV2 可发送文本 | 无 |
 | `ai_translate` | 调用 AI 翻译输入文本 | `model?`, `variant?`, `language?` |
-| `ai_summarize` | 调用 AI 生成摘要 | `model?`, `variant?`, `language?`, `length?` |
+| `ai_summarize` | 调用 AI 生成摘要 | `model?`, `variant?`, `language?`, `summary_length?`, `trigger_length?` |
 
 #### 匹配 / 提取
 
@@ -674,12 +674,13 @@ logging:
 - **用途**：调用已配置 AI 模型生成摘要。
 - **签名**：
   - `value | ai_summarize`
-  - `value | ai_summarize: model: '...', variant: '...', language: '...', length: 80`
+  - `value | ai_summarize: model: '...', variant: '...', language: '...', summary_length: 80, trigger_length: 500`
 - **参数**：
   - `model`：可选；模型引用。推荐直接写 `providerId/modelId`，例如 `openai_main/default`。
   - `variant`：可选；模型下已配置的 variant ID。
   - `language`：可选；目标摘要语言。未传时默认保持输入文本的主语言。
-  - `length`：可选；摘要长度约束。必须是正整数，或可解析为正整数的字符串字面量；未传时默认 200。
+  - `summary_length`：可选；摘要长度约束。必须是正整数，或可解析为正整数的字符串字面量；未传时默认 200。
+  - `trigger_length`：可选；触发摘要的输入阈值。必须是正整数，或可解析为正整数的字符串字面量；按原始输入字符串长度判断，只有输入长度 `>= trigger_length` 时才调用 AI；未传时保持现有行为，即始终摘要。
 - **返回值**：`string`。
 - **前提**：
   - 需要可用的 `ai` 配置。
@@ -693,7 +694,7 @@ logging:
 - **示例 2（组合）**：
 
   ```liquid
-  {{ item.content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', length: 80 }}
+  {{ item.content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', summary_length: 80, trigger_length: 500 }}
   ```
 
 - **常见报错**：
@@ -702,7 +703,7 @@ logging:
   - 在 sync 渲染中无法使用。
   - 只支持命名参数。
   - `model` / `variant` / `language` 必须是非空字符串字面量。
-  - `length` 必须是正整数，或可解析为正整数的字符串字面量。
+  - `summary_length` / `trigger_length` 必须是正整数，或可解析为正整数的字符串字面量。
 
 ## AI 配置
 

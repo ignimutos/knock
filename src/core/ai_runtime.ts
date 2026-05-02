@@ -72,7 +72,8 @@ export interface AiSummarizeOptions {
   model?: string
   variant?: string
   language?: string
-  length?: number
+  summaryLength?: number
+  triggerLength?: number
 }
 
 export interface CreateAiRuntimeOptions {
@@ -453,19 +454,19 @@ function buildSummarizeLanguageInstruction(language?: string): string {
   return '默认保持输入文本的主语言；专有名词、代码、标识符与固定术语保持原样，不要隐式翻译。'
 }
 
-function buildSummarizeLengthInstruction(length: number): string {
-  return `最终摘要限制在 ${length} 字以内。`
+function buildSummarizeLengthInstruction(summaryLength: number): string {
+  return `最终摘要限制在 ${summaryLength} 字以内。`
 }
 
 function buildSummarizeSinglePrompt(
   text: string,
-  options: { language?: string; length: number },
+  options: { language?: string; summaryLength: number },
 ): { system: string; prompt: string } {
   return {
     system: [
       '请提炼用户提供文本的核心信息，只输出摘要，不要解释。',
       buildSummarizeLanguageInstruction(options.language),
-      buildSummarizeLengthInstruction(options.length),
+      buildSummarizeLengthInstruction(options.summaryLength),
     ].join(' '),
     prompt: `<TEXT>\n${text}\n</TEXT>`,
   }
@@ -491,13 +492,13 @@ function buildSummarizeChunkPrompt(
 
 function buildSummarizeReducePrompt(
   text: string,
-  options: { language?: string; length: number },
+  options: { language?: string; summaryLength: number },
 ): { system: string; prompt: string } {
   return {
     system: [
       '请基于这些分段摘要生成统一总摘要，只输出最终摘要，不要解释。',
       buildSummarizeLanguageInstruction(options.language),
-      buildSummarizeLengthInstruction(options.length),
+      buildSummarizeLengthInstruction(options.summaryLength),
     ].join(' '),
     prompt: `<CHUNK_SUMMARIES>\n${text}\n</CHUNK_SUMMARIES>`,
   }
@@ -834,9 +835,19 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     const modelRefValue = toTrimmedString('model', summarizeOptions.model)
     const variantValue = toTrimmedString('variant', summarizeOptions.variant)
     const languageValue = toTrimmedString('language', summarizeOptions.language)
-    const lengthValue = summarizeOptions.length ?? DEFAULT_SUMMARIZE_LENGTH
-    if (!Number.isSafeInteger(lengthValue) || lengthValue < 1) {
-      throw new Error('length 参数必须是正整数')
+    const summaryLengthValue = summarizeOptions.summaryLength ?? DEFAULT_SUMMARIZE_LENGTH
+    if (!Number.isSafeInteger(summaryLengthValue) || summaryLengthValue < 1) {
+      throw new Error('summaryLength 参数必须是正整数')
+    }
+
+    const triggerLengthValue = summarizeOptions.triggerLength
+    if (triggerLengthValue !== undefined) {
+      if (!Number.isSafeInteger(triggerLengthValue) || triggerLengthValue < 1) {
+        throw new Error('triggerLength 参数必须是正整数')
+      }
+      if (text.length < triggerLengthValue) {
+        return text
+      }
     }
 
     const invocation = resolveInvocation(modelRefValue, variantValue)
@@ -851,7 +862,7 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
     if (!needsChunk) {
       const prompt = buildSummarizeSinglePrompt(text, {
         language: languageValue,
-        length: lengthValue,
+        summaryLength: summaryLengthValue,
       })
       return await callAiText({
         entryRuntime,
@@ -862,7 +873,7 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
         invocation,
         system: prompt.system,
         prompt: prompt.prompt,
-        promptFingerprint: hashAiFingerprint([text, languageValue, lengthValue]),
+        promptFingerprint: hashAiFingerprint([text, languageValue, summaryLengthValue]),
       })
     }
 
@@ -911,7 +922,7 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
       if (reduceInputs.length === 1) {
         const reducePrompt = buildSummarizeReducePrompt(reduceInputs[0], {
           language: languageValue,
-          length: lengthValue,
+          summaryLength: summaryLengthValue,
         })
         return await callAiText({
           entryRuntime,
@@ -922,7 +933,11 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
           invocation,
           system: reducePrompt.system,
           prompt: reducePrompt.prompt,
-          promptFingerprint: hashAiFingerprint([reduceInputs[0], languageValue, lengthValue]),
+          promptFingerprint: hashAiFingerprint([
+            reduceInputs[0],
+            languageValue,
+            summaryLengthValue,
+          ]),
           chunkCount: chunks.length,
           truncated: false,
         })
@@ -932,7 +947,7 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
       for (const reduceInput of reduceInputs) {
         const reducePrompt = buildSummarizeReducePrompt(reduceInput, {
           language: languageValue,
-          length: lengthValue,
+          summaryLength: summaryLengthValue,
         })
         reduceSummaries.push(
           await callAiText({
@@ -944,7 +959,7 @@ export function createAiRuntime(options: CreateAiRuntimeOptions): AiRuntime {
             invocation,
             system: reducePrompt.system,
             prompt: reducePrompt.prompt,
-            promptFingerprint: hashAiFingerprint([reduceInput, languageValue, lengthValue]),
+            promptFingerprint: hashAiFingerprint([reduceInput, languageValue, summaryLengthValue]),
             chunkCount: chunks.length,
             truncated: false,
           }),

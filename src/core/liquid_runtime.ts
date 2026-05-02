@@ -193,9 +193,21 @@ function parseTranslateArgs(
 function parseSummarizeArgs(
   args: unknown[],
   filterThis: unknown,
-): { model?: string; variant?: string; language?: string; length?: number } {
+): {
+  model?: string
+  variant?: string
+  language?: string
+  summaryLength?: number
+  triggerLength?: number
+} {
   const namedArgs = getAiFilterNamedArguments('ai_summarize', args, filterThis)
-  const parsed: { model?: string; variant?: string; language?: string; length?: number } = {}
+  const parsed: {
+    model?: string
+    variant?: string
+    language?: string
+    summaryLength?: number
+    triggerLength?: number
+  } = {}
   const seen = new Set<string>()
 
   for (const { key, value, valueToken } of namedArgs) {
@@ -214,8 +226,11 @@ function parseSummarizeArgs(
       case 'language':
         parsed.language = parseAiStringLiteralArg('ai_summarize', key, value, valueToken)
         break
-      case 'length':
-        parsed.length = parseAiPositiveIntegerArg('ai_summarize', key, value, valueToken)
+      case 'summary_length':
+        parsed.summaryLength = parseAiPositiveIntegerArg('ai_summarize', key, value, valueToken)
+        break
+      case 'trigger_length':
+        parsed.triggerLength = parseAiPositiveIntegerArg('ai_summarize', key, value, valueToken)
         break
       default:
         throw new Error(`ai_summarize 不支持命名参数 ${key}`)
