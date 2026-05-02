@@ -393,13 +393,316 @@ logging:
 - 上游汇总对象包含 `sources.<id>.name`、`sources.<id>.feed`、`sources.<id>.entries`。
 - 当前实现里的 `sources.<id>.name` 也来自最近保存的 `feed.title`，若缺失则为空串。
 
-### 高频 Liquid 过滤器
+### 自定义 Liquid filters
 
-- `match_regex`：正则匹配，适合 source 侧 `filter`。
-- `extract_regex`：提取正则命中或捕获组，适合先抽值再比较；例如 `{% assign amount = title | extract_regex: "([0-9]+)(?=元)" %}{% if amount > 1800 %}true{% else %}false{% endif %}`。
-- `strip_html`：去标签与空白归一，适合生成文本摘要。
-- `to_telegram_html`：将 HTML 规范化为 Telegram HTML 可发送子集。
-- `to_telegram_markdown_v2`：将 Markdown/纯文本转换为 Telegram MarkdownV2 可发送文本。
+自定义 Liquid filter 可用于 `sources.<id>.filter`、`sources.<id>.syndication.entry.*`、`deliveries.*` 等模板位点。下表先给出速查，后文再按使用场景展开每个 filter 的签名、参数、返回值、示例与常见报错。
+
+| filter | 用途 | 参数概览 |
+| --- | --- | --- |
+| `match_exact` | 精确比较输入值与目标值 | `target`, `invert?` |
+| `match_fuzzy` | 做包含/前缀/后缀匹配 | `needle`, `mode?`, `invert?` |
+| `match_regex` | 用正则表达式匹配文本 | `pattern`, `flags?`, `invert?` |
+| `extract_regex` | 提取正则命中或捕获组 | `pattern`, `flags?`, `group?` |
+| `strip_html` | 去掉 HTML 标签并归一空白 | 无 |
+| `to_html` | 把输入规范化为 HTML | 无 |
+| `to_markdown` | 把输入规范化为 Markdown | 无 |
+| `to_telegram_html` | 转成 Telegram HTML 可发送子集 | 无 |
+| `to_telegram_markdown_v2` | 转成 Telegram MarkdownV2 可发送文本 | 无 |
+| `ai_translate` | 调用 AI 翻译输入文本 | `model?`, `variant?`, `language?` |
+| `ai_summarize` | 调用 AI 生成摘要 | `model?`, `variant?`, `language?`, `length?` |
+
+#### 匹配 / 提取
+
+适合 `sources.<id>.filter`、`if` 条件和“先抽值再比较”的模板逻辑。`match_*` 返回布尔结果，`extract_regex` 返回字符串结果。
+
+##### `match_exact`
+
+- **用途**：比较输入值与目标值字符串化后的结果是否完全一致。
+- **签名**：`value | match_exact: target, invert?`
+- **参数**：
+  - `target`：必填；比较目标。
+  - `invert`：可选布尔值；为 `true` 时反转结果。
+- **返回值**：`boolean`；直接渲染时输出 `true` / `false`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.title | match_exact: 'Rust' }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  filter: "{% if title | match_exact: 'Go', true %}true{% else %}false{% endif %}"
+  ```
+
+- **常见报错**：`invert` 不是布尔值时会报错。
+
+##### `match_fuzzy`
+
+- **用途**：对输入文本做包含、前缀或后缀匹配。
+- **签名**：
+  - `value | match_fuzzy: needle`
+  - `value | match_fuzzy: needle, mode`
+  - `value | match_fuzzy: needle, invert`
+  - `value | match_fuzzy: needle, mode, invert`
+- **参数**：
+  - `needle`：必填；待匹配文本。
+  - `mode`：可选；`both`（默认，包含匹配）、`left`（前缀匹配）、`right`（后缀匹配）。
+  - `invert`：可选布尔值；为 `true` 时反转结果。
+- **返回值**：`boolean`；直接渲染时输出 `true` / `false`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.title | match_fuzzy: 'amp' }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  filter: "{% if title | match_fuzzy: 'Ex', 'left', true %}false{% else %}true{% endif %}"
+  ```
+
+- **常见报错**：
+  - `mode` 不是 `both` / `left` / `right` 时会报错。
+  - `invert` 不是布尔值时会报错。
+
+##### `match_regex`
+
+- **用途**：用正则表达式匹配输入文本。
+- **签名**：`value | match_regex: pattern, flags?, invert?`
+- **参数**：
+  - `pattern`：必填；正则表达式字符串。
+  - `flags`：可选；传给 JavaScript `RegExp` 的 flags，如 `i`。
+  - `invert`：可选布尔值；为 `true` 时反转结果。省略 `flags` 时，第二个位置可以直接写 `invert`。
+- **返回值**：`boolean`；直接渲染时输出 `true` / `false`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.title | match_regex: '^example$', 'i' }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  filter: "{% if title | match_regex: '^Ex', true %}false{% else %}true{% endif %}"
+  ```
+
+- **常见报错**：
+  - `invert` 不是布尔值时会报错。
+  - regex 非法时会报错。
+
+##### `extract_regex`
+
+- **用途**：提取正则命中内容或指定捕获组，适合先抽值再比较。
+- **签名**：`value | extract_regex: pattern, flags?, group?`
+- **参数**：
+  - `pattern`：必填；正则表达式字符串。
+  - `flags`：可选；传给 JavaScript `RegExp` 的 flags，如 `i`。
+  - `group`：可选；非负整数。省略时：有捕获组则返回第一个捕获组，无捕获组则返回整个 match。省略 `flags` 时，第二个位置可以直接写 `group`。
+- **返回值**：`string`；未匹配时返回空串。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.title | extract_regex: '([0-9]+)(?=元)' }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  filter: "{% assign release = title | extract_regex: '(release) +([0-9]+)', 'i', 2 %}{% if release == '42' %}true{% else %}false{% endif %}"
+  ```
+
+- **常见报错**：
+  - `group` 不是非负整数时会报错。
+  - `group` 超出可用捕获组范围时会报错。
+  - regex 非法时会报错。
+
+#### 内容转换
+
+适合把 HTML、Markdown 或混合文本转换成更稳定的下游输入，再继续做渲染、过滤或摘要。
+
+##### `strip_html`
+
+- **用途**：去掉 HTML 标签并把连续空白归一成单个空格。
+- **签名**：`value | strip_html`
+- **参数**：无。
+- **返回值**：`string`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | strip_html }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  filter: "{% assign amount = entry.content | strip_html | extract_regex: '([0-9]+)(?=元)' %}{% if amount == '1999' %}true{% else %}false{% endif %}"
+  ```
+
+- **常见报错**：无。
+
+##### `to_html`
+
+- **用途**：把输入文本按当前 Markdown-to-HTML 规则转换为 HTML。
+- **签名**：`value | to_html`
+- **参数**：无。
+- **返回值**：`string`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | to_html }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  message: "{{ entry.content | to_html | to_telegram_html }}"
+  ```
+
+- **常见报错**：传入任何额外参数时会报错。
+
+##### `to_markdown`
+
+- **用途**：把输入 HTML 按当前 HTML-to-Markdown 规则转换为 Markdown。
+- **签名**：`value | to_markdown`
+- **参数**：无。
+- **返回值**：`string`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | to_markdown }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  message: "{{ entry.content | to_markdown | to_telegram_markdown_v2 }}"
+  ```
+
+- **常见报错**：传入任何额外参数时会报错。
+
+#### Telegram
+
+适合在 Telegram delivery 之前，把现有文本或 HTML 收敛到 Telegram 当前可发送的格式。
+
+##### `to_telegram_html`
+
+- **用途**：把输入收敛为 Telegram 当前可发送的 HTML 子集，并清理不被允许的标签、属性或危险内容。
+- **签名**：`value | to_telegram_html`
+- **参数**：无。
+- **返回值**：`string`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | to_telegram_html }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  message: "{{ entry.content | to_html | to_telegram_html }}"
+  ```
+
+- **常见报错**：传入任何额外参数时会报错。
+- **补充说明**：
+  - 相对链接不会保留为 `<a>`，只保留可发送的文本内容。
+  - `tg-emoji`、`blockquote expandable`、`<pre><code class="language-...">` 这类 Telegram 可接受写法会被保留或规范化。
+
+##### `to_telegram_markdown_v2`
+
+- **用途**：把输入文本转换为 Telegram MarkdownV2 可发送文本，并对特殊字符做必要转义。
+- **签名**：`value | to_telegram_markdown_v2`
+- **参数**：无。
+- **返回值**：`string`。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | to_telegram_markdown_v2 }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```yml
+  message: "{{ entry.content | to_markdown | to_telegram_markdown_v2 }}"
+  ```
+
+- **常见报错**：传入任何额外参数时会报错。
+- **补充说明**：
+  - 纯文本中的 Telegram 特殊字符会被转义。
+  - 已有的 Markdown / HTML 兼容语法会按当前转换器行为做规范化后输出。
+
+#### AI
+
+适合在 entry 级异步渲染上下文里调用已配置模型做翻译或摘要。模板命中 AI filter 时，配置校验阶段就要求能解析到可用模型。详细模型与 provider 配置见下方 `AI 配置` 一节。
+
+##### `ai_translate`
+
+- **用途**：调用已配置 AI 模型把输入文本翻译到目标语言。
+- **签名**：
+  - `value | ai_translate`
+  - `value | ai_translate: model: '...', variant: '...', language: '...'`
+- **参数**：
+  - `model`：可选；模型引用。推荐直接写 `providerId/modelId`，例如 `openai_main/default`。
+  - `variant`：可选；模型下已配置的 variant ID。
+  - `language`：可选；目标语言。未传时使用顶层 `language` 默认值；两者都缺失时会报错。
+- **返回值**：`string`。
+- **前提**：
+  - 需要可用的 `ai` 配置。
+  - 需要 entry 级异步渲染上下文。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | ai_translate }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```liquid
+  {{ item.content | ai_translate: model: 'openai_main/default', variant: 'creative', language: 'ja' }}
+  ```
+
+- **常见报错**：
+  - 未配置 `ai` 时无法使用。
+  - 缺少 entry 级 AI runtime 时无法执行。
+  - 在 sync 渲染中无法使用。
+  - 只支持命名参数。
+  - `model` / `variant` / `language` 必须是非空字符串字面量。
+  - 未传 `language` 且顶层 `language` 默认值也缺失时会报错。
+
+##### `ai_summarize`
+
+- **用途**：调用已配置 AI 模型生成摘要。
+- **签名**：
+  - `value | ai_summarize`
+  - `value | ai_summarize: model: '...', variant: '...', language: '...', length: 80`
+- **参数**：
+  - `model`：可选；模型引用。推荐直接写 `providerId/modelId`，例如 `openai_main/default`。
+  - `variant`：可选；模型下已配置的 variant ID。
+  - `language`：可选；目标摘要语言。未传时默认保持输入文本的主语言。
+  - `length`：可选；摘要长度约束。必须是正整数，或可解析为正整数的字符串字面量；未传时默认 200。
+- **返回值**：`string`。
+- **前提**：
+  - 需要可用的 `ai` 配置。
+  - 需要 entry 级异步渲染上下文。
+- **示例 1（最小）**：
+
+  ```liquid
+  {{ item.content | ai_summarize }}
+  ```
+
+- **示例 2（组合）**：
+
+  ```liquid
+  {{ item.content | ai_summarize: model: 'openai_main/default', variant: 'creative', language: 'ja', length: 80 }}
+  ```
+
+- **常见报错**：
+  - 未配置 `ai` 时无法使用。
+  - 缺少 entry 级 AI runtime 时无法执行。
+  - 在 sync 渲染中无法使用。
+  - 只支持命名参数。
+  - `model` / `variant` / `language` 必须是非空字符串字面量。
+  - `length` 必须是正整数，或可解析为正整数的字符串字面量。
 
 ## AI 配置
 
