@@ -34,6 +34,14 @@ test('[contract] container entrypoint: web 模式默认值不应把 KNOCK_CONFIG
   )
 })
 
+test('[contract] container entrypoint: web 模式不应从 KNOCK_IMMEDIATE 注入 CLI --immediate', async () => {
+  const { applyContainerDefaults } = await import(`${moduleUrl.href}?web-ignore-immediate`)
+  assertEquals(applyContainerDefaults(['--mode', 'web'], { KNOCK_IMMEDIATE: '1' }), [
+    '--mode',
+    'web',
+  ])
+})
+
 test('[contract] container entrypoint: 空参数默认值应同时保留 daemon config 与 web host/port 注入', async () => {
   const { applyContainerDefaults } = await import(`${moduleUrl.href}?all-defaults`)
   assertEquals(

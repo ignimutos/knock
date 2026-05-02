@@ -77,7 +77,11 @@ export function applyContainerDefaults(
     if (webPort) nextArgs.push('--web_port', webPort)
   }
 
-  if (!hasFlag('--immediate', nextArgs) && shouldEnableImmediate(env.KNOCK_IMMEDIATE)) {
+  if (
+    targetMode !== 'web' &&
+    !hasFlag('--immediate', nextArgs) &&
+    shouldEnableImmediate(env.KNOCK_IMMEDIATE)
+  ) {
     nextArgs.push('--immediate')
   }
 
