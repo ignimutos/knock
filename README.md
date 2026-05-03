@@ -8,6 +8,8 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 
 - 输入能力：RSS / Atom / JSON Feed、XQuery 页面提取、summary 窗口汇总。
 - Web `/config`：结构化 / JSON 双模式编辑；secret 字段不回显，未修改时保留原值；写操作要求同源请求。
+- 配置文件更新后，daemon 会自动尝试热重载后续调度、source、delivery、AI 与 logging 行为；Web `/config` 保存也会触发当前 web 进程的本地 reload。
+- 当前 `sqlite.*` 仍不支持热重载；修改后需要重启进程才能生效。
 - 处理链路：字段统一、Liquid 过滤、模板渲染。
 - 投递通道：file、push、email。
 - 运行模式：`all`、`web`、`daemon`，支持 `--immediate` 一次性执行。

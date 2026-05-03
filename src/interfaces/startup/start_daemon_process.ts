@@ -4,8 +4,8 @@ import type { Fetcher, ProxyClientFactory } from '../../core/http_client.ts'
 import { loadCompiledConfig } from '../../config/load_compiled_config.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from '../../core/logging_runtime.ts'
 import { createProductionRuntime } from '../../composition/create_production_runtime.ts'
-import { startDaemon } from '../daemon/start_daemon.ts'
 import { parseWithFirstIssue } from '../../zod_utils.ts'
+import { createDaemonReloadController } from './daemon_reload_controller.ts'
 
 export interface StartDaemonProcessOptions {
   runtimeDir?: string
@@ -31,6 +31,13 @@ interface StartDaemonProcessInput {
 
 export interface StartDaemonProcessResult {
   mode: 'daemon'
+}
+
+export interface StartDaemonProcessDeps {
+  createReloadController?: (options: StartDaemonProcessOptions) => {
+    start(): Promise<void>
+    stop(): Promise<void>
+  }
 }
 
 const startDaemonProcessOptionsSchema = z.object({
@@ -74,47 +81,60 @@ function normalizeStartDaemonProcessInput(
 
 export async function startDaemonProcess(
   options: StartDaemonProcessOptions = {},
+  deps: StartDaemonProcessDeps = {},
 ): Promise<StartDaemonProcessResult> {
   const input = normalizeStartDaemonProcessInput(options)
-  const loaded = await loadCompiledConfig({
-    runtimeDir: input.runtimeDir,
-    configPath: input.configPath,
-  })
-  const { config, definitions } = loaded
 
-  await configureLoggingRuntime({
-    logging: config.logging,
-    runtimeDir: config.runtimeDir,
-    timezone: config.timezone,
-    timestampFormat: config.timestampFormat,
-  })
+  if (input.immediate) {
+    const loaded = await loadCompiledConfig({
+      runtimeDir: input.runtimeDir,
+      configPath: input.configPath,
+    })
+    const { config, definitions } = loaded
 
-  const daemon = createProductionRuntime({
-    config,
-    definitions,
-    httpFetcher: input.httpFetcher,
-    httpProxyClientFactory: input.httpProxyClientFactory,
-    emailTransportFactory: input.emailTransportFactory,
-    keepAlive: input.keepAlive,
-    keepAliveSignal: input.keepAliveSignal,
-  })
+    await configureLoggingRuntime({
+      logging: config.logging,
+      runtimeDir: config.runtimeDir,
+      timezone: config.timezone,
+      timestampFormat: config.timestampFormat,
+    })
 
-  try {
-    await daemon.recoverInterruptedAttempts()
+    const daemon = createProductionRuntime({
+      config,
+      definitions,
+      httpFetcher: input.httpFetcher,
+      httpProxyClientFactory: input.httpProxyClientFactory,
+      emailTransportFactory: input.emailTransportFactory,
+      keepAlive: input.keepAlive,
+      keepAliveSignal: input.keepAliveSignal,
+    })
 
-    if (input.immediate) {
+    try {
+      await daemon.recoverInterruptedAttempts()
       await daemon.runImmediate()
       return { mode: 'daemon' }
+    } finally {
+      daemon.stop()
+      await shutdownLoggingRuntime()
     }
+  }
 
-    await startDaemon({
-      runDueSourcesUseCase: daemon.runDueSourcesUseCase,
-      recoverInterruptedAttempts: async () => {},
+  const controller =
+    deps.createReloadController?.(options) ??
+    createDaemonReloadController({
+      runtimeDir: input.runtimeDir,
+      configPath: input.configPath,
+      httpFetcher: input.httpFetcher,
+      httpProxyClientFactory: input.httpProxyClientFactory,
+      emailTransportFactory: input.emailTransportFactory,
+      keepAlive: input.keepAlive,
+      keepAliveSignal: input.keepAliveSignal,
     })
-    await daemon.enterDaemon()
+
+  try {
+    await controller.start()
     return { mode: 'daemon' }
   } finally {
-    daemon.stop()
-    await shutdownLoggingRuntime()
+    await controller.stop()
   }
 }

@@ -217,10 +217,20 @@ function assertNoEnvExpansion(value: unknown, path: string): void {
   }
 }
 
-export async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | undefined> {
+export interface LoadedStartWebLoggingRuntimeContext {
+  configPath?: string
+  runtime: StartWebLoggingRuntime | undefined
+}
+
+export async function loadStartWebLoggingRuntimeContext(): Promise<LoadedStartWebLoggingRuntimeContext> {
   const lookup = getStartWebConfigLookup()
   const configPath = await findStartWebConfigPath(lookup.runtimeDir, lookup.configPath)
-  if (!configPath) return undefined
+  if (!configPath) {
+    return {
+      configPath: undefined,
+      runtime: undefined,
+    }
+  }
 
   const raw = await readTextFile(configPath)
   const parsed = parseRawConfigDocument(raw)
@@ -240,11 +250,18 @@ export async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRunti
   )
 
   return {
-    runtimeDir: lookup.runtimeDir,
-    timezone: config.timezone ?? 'UTC',
-    timestampFormat: config.timestampFormat,
-    logging: resolveLoggingConfig(lookup.runtimeDir, config.logging),
+    configPath,
+    runtime: {
+      runtimeDir: lookup.runtimeDir,
+      timezone: config.timezone ?? 'UTC',
+      timestampFormat: config.timestampFormat,
+      logging: resolveLoggingConfig(lookup.runtimeDir, config.logging),
+    },
   }
+}
+
+export async function loadStartWebLoggingRuntime(): Promise<StartWebLoggingRuntime | undefined> {
+  return (await loadStartWebLoggingRuntimeContext()).runtime
 }
 
 function buildWebBuildArgs(): string[] {
@@ -388,13 +405,58 @@ export async function waitForWebReady(host: string, port: number): Promise<void>
   )
 }
 
-export async function startWeb(options: StartWebOptions) {
-  const loggingRuntime = await loadStartWebLoggingRuntime()
-  await ensureWebBuildExists()
-  const { handleWebRequest } = await import(pathToFileURL(resolve(cwd(), 'web/main.tsx')).href)
-  await runReadyCheckedWebServer(options, loggingRuntime, handleWebRequest, {
-    applyRuntime: applyCurrentWebLoggingRuntime,
-    assertReady: assertWebRuntimeReady,
-    waitForReady: waitForWebReady,
-  })
+interface StartWebDeps {
+  loadRuntimeContext?: () => Promise<LoadedStartWebLoggingRuntimeContext>
+  createReloadController?: () => {
+    start(initial: LoadedStartWebLoggingRuntimeContext): Promise<void>
+    stop(): Promise<void>
+  }
+  ensureWebBuildExists?: () => Promise<void>
+  loadWebRequestHandler?: () => Promise<(request: Request) => Promise<Response>>
+  runReadyCheckedWebServer?: typeof runReadyCheckedWebServer
+}
+
+export async function startWeb(options: StartWebOptions, deps: StartWebDeps = {}) {
+  const loadRuntimeContext = deps.loadRuntimeContext ?? loadStartWebLoggingRuntimeContext
+  const loadedRuntime = await loadRuntimeContext()
+  const createReloadController =
+    deps.createReloadController ??
+    (() => {
+      const controllerPromise = import('./web_reload_controller.ts').then(
+        ({ createWebReloadController }) => createWebReloadController(),
+      )
+      return {
+        async start(initial: LoadedStartWebLoggingRuntimeContext) {
+          const controller = await controllerPromise
+          await controller.start(initial)
+        },
+        async stop() {
+          const controller = await controllerPromise
+          await controller.stop()
+        },
+      }
+    })
+  const reloadController = createReloadController()
+  const ensureBuild = deps.ensureWebBuildExists ?? ensureWebBuildExists
+  const loadWebRequestHandler =
+    deps.loadWebRequestHandler ??
+    (async () => {
+      const { handleWebRequest } = await import(pathToFileURL(resolve(cwd(), 'web/main.tsx')).href)
+      return handleWebRequest
+    })
+  const runServer = deps.runReadyCheckedWebServer ?? runReadyCheckedWebServer
+
+  try {
+    await reloadController.start(loadedRuntime)
+    await ensureBuild()
+    const handleWebRequest = await loadWebRequestHandler()
+    const refreshedRuntime = await loadRuntimeContext()
+    await runServer(options, refreshedRuntime.runtime, handleWebRequest, {
+      applyRuntime: applyCurrentWebLoggingRuntime,
+      assertReady: assertWebRuntimeReady,
+      waitForReady: waitForWebReady,
+    })
+  } finally {
+    await reloadController.stop()
+  }
 }

@@ -145,6 +145,36 @@ test('[contract] production composition: runImmediate 应通过 RunDueSourcesUse
   ])
 })
 
+test('[contract] production composition: runScheduledTick 应委托 RunDueSourcesUseCase 统一判定 due source', async () => {
+  const runtimeDir = '/tmp/knock-production-composition-run-scheduled-tick'
+  const commands: RunDueSourcesCommand[] = []
+
+  const runtime = createProductionRuntime({
+    config: createTestConfig(runtimeDir),
+    now: () => '2026-04-18T12:00:00.000Z',
+    keepAlive: false,
+    runDueSourcesUseCase: {
+      execute: (command) => {
+        commands.push(command)
+        return Promise.resolve([])
+      },
+    },
+  })
+
+  try {
+    await runtime.runScheduledTick('2026-04-18T12:00:05.000Z')
+  } finally {
+    runtime.stop()
+  }
+
+  assertEquals(commands, [
+    {
+      trigger: 'scheduled',
+      scheduledAt: '2026-04-18T12:00:05.000Z',
+    },
+  ])
+})
+
 test('[contract] production composition: scheduled cron tick 应委托 RunDueSourcesUseCase 统一判定 due source', async () => {
   const runtimeDir = '/tmp/knock-production-composition-enter-daemon'
   const commands: RunDueSourcesCommand[] = []

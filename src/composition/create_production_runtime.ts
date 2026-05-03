@@ -19,6 +19,7 @@ export interface ProductionRuntime {
   pruneFactsUseCase: PruneFactsUseCase
   recoverInterruptedAttempts: () => Promise<void>
   runImmediate: () => Promise<ProductionRuntimeRunResult>
+  runScheduledTick: (scheduledAt?: string) => Promise<ProductionRuntimeRunResult>
   runSourceNow: (sourceId: string) => Promise<ProductionRuntimeRunResult>
   enterDaemon: () => Promise<void>
   stop: () => void
@@ -58,6 +59,15 @@ export function createProductionRuntime(
     ((task: () => Promise<void>) =>
       new Cron('* * * * * *', { protect: true, timezone: options.config.timezone }, task))
 
+  const runScheduledTick = async (scheduledAt?: string) => {
+    return await services.scheduler.runSource('__run_due_sources__', async () => {
+      await runDueSourcesUseCase.execute({
+        trigger: 'scheduled',
+        scheduledAt,
+      })
+    })
+  }
+
   return {
     runDueSourcesUseCase,
     queryRunsUseCase: services.queryRunsUseCase,
@@ -80,15 +90,11 @@ export function createProductionRuntime(
         })
       })
     },
+    runScheduledTick,
     async enterDaemon() {
       scheduledJobs.push(
         scheduleDueSources(async () => {
-          await services.scheduler.runSource('__run_due_sources__', async () => {
-            await runDueSourcesUseCase.execute({
-              trigger: 'scheduled',
-              scheduledAt: now(),
-            })
-          })
+          await runScheduledTick()
         }),
       )
 

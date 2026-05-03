@@ -25,6 +25,7 @@ import { deliverySchema, loggingSchema, sqliteSchema, aiSchema } from '../../con
 import { assertRuntimeRelativePath } from '../../config/runtime_semantics.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
 import { buildWorkbenchOverviewFromSession, loadRuntimeSession } from './runtime_session.ts'
+import { requestConfigReload } from './config_reload_signal.ts'
 
 export { classifyConfigManagementError, ConfigManagementError } from './config_management_errors.ts'
 
@@ -514,6 +515,8 @@ export async function updateGlobalConfig(input: unknown): Promise<{
     throw classifyConfigManagementError(error)
   }
 
+  void requestConfigReload('web_save').catch(() => {})
+
   return {
     message: 'global 配置已保存',
     workbench: await buildWorkbenchFromUpdatedContext(updatedContext),
@@ -585,6 +588,8 @@ export async function upsertDeliveryConfig(input: unknown): Promise<{
     throw classifyConfigManagementError(error)
   }
 
+  void requestConfigReload('web_save').catch(() => {})
+
   return {
     message: `delivery ${request.deliveryId} 配置已保存`,
     workbench: await buildWorkbenchFromUpdatedContext(updatedContext),
@@ -632,6 +637,8 @@ export async function deleteDeliveryConfig(input: unknown): Promise<{
   } catch (error) {
     throw classifyConfigManagementError(error)
   }
+
+  void requestConfigReload('web_save').catch(() => {})
 
   return {
     message: `delivery ${request.deliveryId} 已删除`,

@@ -5,6 +5,7 @@ import {
   upsertDeliveryConfig,
   updateGlobalConfig,
 } from './config_management.ts'
+import { setConfigReloadRequester } from './config_reload_signal.ts'
 import { readTextFile } from '../../platform/fs.ts'
 import { test } from '../../testing/test_api.ts'
 import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../../testing/test_helpers.ts'
@@ -49,6 +50,110 @@ test('[contract] config management: updateGlobalConfig 应写回 global 子树',
     assertEquals(nextConfig.timestampFormat, 'yyyy/MM/dd HH:mm:ss')
     assertEquals(nextConfig.logging?.level, 'debug')
   })
+})
+
+test('[contract] config management: updateGlobalConfig 保存成功后应请求 web_save reload', async () => {
+  const triggers: string[] = []
+  setConfigReloadRequester(async (trigger) => {
+    triggers.push(trigger)
+  })
+
+  try {
+    await withRuntimeDir(CONFIG_YML, async () => {
+      await updateGlobalConfig({
+        language: 'zh-CN',
+        timezone: 'Asia/Shanghai',
+        timestampFormat: 'yyyy/MM/dd HH:mm:ss',
+        sqliteMode: 'json',
+        sqliteJson:
+          '{"path":"knock.db","busyTimeout":"5s","journalMode":"WAL","retention":{"maxAge":"7d","maxEntriesPerSource":10,"vacuum":"off"}}',
+        loggingMode: 'json',
+        loggingJson: '{"level":"debug","sinks":{}}',
+        aiMode: 'json',
+        aiJson: '',
+      })
+    })
+  } finally {
+    setConfigReloadRequester(undefined)
+  }
+
+  assertEquals(triggers, ['web_save'])
+})
+
+test('[contract] config management: reload 失败不应让已成功写盘的 updateGlobalConfig 失败', async () => {
+  setConfigReloadRequester(async () => {
+    throw new Error('reload failed')
+  })
+
+  try {
+    await withRuntimeDir(CONFIG_YML, async (runtimeDir) => {
+      const result = await updateGlobalConfig({
+        language: 'zh-CN',
+        timezone: 'Asia/Shanghai',
+        timestampFormat: 'yyyy/MM/dd HH:mm:ss',
+        sqliteMode: 'json',
+        sqliteJson:
+          '{"path":"knock.db","busyTimeout":"5s","journalMode":"WAL","retention":{"maxAge":"7d","maxEntriesPerSource":10,"vacuum":"off"}}',
+        loggingMode: 'json',
+        loggingJson: '{"level":"debug","sinks":{}}',
+        aiMode: 'json',
+        aiJson: '',
+      })
+
+      assertEquals(result.message, 'global 配置已保存')
+      const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
+        language?: string
+      }
+      assertEquals(nextConfig.language, 'zh-CN')
+    })
+  } finally {
+    setConfigReloadRequester(undefined)
+  }
+})
+
+test('[contract] config management: updateGlobalConfig 不应等待 web_save reload 完成', async () => {
+  let releaseReload: (() => void) | undefined
+  const reloadGate = new Promise<void>((resolve) => {
+    releaseReload = resolve
+  })
+
+  setConfigReloadRequester(async () => {
+    await reloadGate
+  })
+
+  try {
+    await withRuntimeDir(CONFIG_YML, async (runtimeDir) => {
+      const pending = updateGlobalConfig({
+        language: 'zh-CN',
+        timezone: 'Asia/Shanghai',
+        timestampFormat: 'yyyy/MM/dd HH:mm:ss',
+        sqliteMode: 'json',
+        sqliteJson:
+          '{"path":"knock.db","busyTimeout":"5s","journalMode":"WAL","retention":{"maxAge":"7d","maxEntriesPerSource":10,"vacuum":"off"}}',
+        loggingMode: 'json',
+        loggingJson: '{"level":"debug","sinks":{}}',
+        aiMode: 'json',
+        aiJson: '',
+      })
+
+      const result = await Promise.race([
+        pending.then((value) => ({ kind: 'resolved' as const, value })),
+        new Promise<{ kind: 'timeout' }>((resolve) => {
+          setTimeout(() => resolve({ kind: 'timeout' }), 200)
+        }),
+      ])
+
+      assertEquals(result.kind, 'resolved')
+      const nextConfig = parseYaml(await readTextFile(`${runtimeDir}/config.yml`)) as {
+        language?: string
+      }
+      assertEquals(nextConfig.language, 'zh-CN')
+      releaseReload?.()
+      await pending
+    })
+  } finally {
+    setConfigReloadRequester(undefined)
+  }
 })
 
 test('[contract] config management: updateGlobalConfig 结构化保存应保留合法未编辑键', async () => {
