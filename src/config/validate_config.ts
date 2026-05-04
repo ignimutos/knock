@@ -2,7 +2,6 @@ import { z } from 'zod'
 import {
   ISSUE_BODY_PAYLOAD_FORBIDDEN,
   ISSUE_BOOLEAN,
-  ISSUE_DEPRECATED_DELIVERY_HTTP,
   ISSUE_ILLEGAL,
   ISSUE_INTEGER,
   ISSUE_OBJECT,
@@ -84,10 +83,6 @@ function formatCustomIssue(issue: z.ZodIssue): string | undefined {
   }
   if (message === ISSUE_SOURCE_TRANSPORT_REQUIRED && path) {
     return `${path} 必须配置 http 或 byparr`
-  }
-  if (message === ISSUE_DEPRECATED_DELIVERY_HTTP && path) {
-    const parentPath = path.split('.').slice(0, -1).join('.')
-    return `${path} 已废弃，请改用 ${parentPath}.push.http`
   }
   if (message === ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED && path) {
     return `${path} 必须至少配置 text 或 html`

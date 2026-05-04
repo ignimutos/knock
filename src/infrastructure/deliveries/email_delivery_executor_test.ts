@@ -72,7 +72,7 @@ test('[unit] emailDeliveryExecutor: 应只消费 rendered plan 的 smtp/message'
   ])
 })
 
-test('[unit] emailDeliveryExecutor: legacy payload shape 不应再被当作 message fallback 接受', async () => {
+test('[unit] emailDeliveryExecutor: rendered payload 缺少 smtp/message 时应拒绝执行', async () => {
   const executor = createEmailDeliveryExecutor({
     delivery: {
       push: () => Promise.resolve(),
@@ -82,7 +82,7 @@ test('[unit] emailDeliveryExecutor: legacy payload shape 不应再被当作 mess
   await assertRejects(
     () =>
       executor.execute({
-        attemptId: 'attempt-legacy',
+        attemptId: 'attempt-missing-message',
         sourceRunId: 'run-1',
         itemId: 'item-1',
         deliveryId: 'mailer',

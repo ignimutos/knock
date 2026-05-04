@@ -38,8 +38,10 @@ interface RiskCoverage {
 const nonEmptyStringSchema = z.string().trim().min(1)
 const testLayerSchema = z.enum(['unit', 'contract', 'flow'])
 
+const riskIdSchema = nonEmptyStringSchema.regex(/^R\d+$/)
+
 const riskRuleSchema = z.object({
-  id: nonEmptyStringSchema,
+  id: riskIdSchema,
   domain: nonEmptyStringSchema,
   trigger: nonEmptyStringSchema,
   expected_guardrail: nonEmptyStringSchema,
@@ -47,21 +49,29 @@ const riskRuleSchema = z.object({
   owner_tests: z.array(nonEmptyStringSchema).min(1),
 })
 
-const riskMatrixSchema = z.array(riskRuleSchema).superRefine((matrix, ctx) => {
-  matrix.forEach((entry, index) => {
-    const expectedId = `R${String(index + 1).padStart(2, '0')}`
-    if (entry.id !== expectedId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [index, 'id'],
-        message: `风险矩阵ID必须按顺序固定为R01..R20，索引${index}期望${expectedId}，实际${entry.id}`,
-      })
-    }
+const riskMatrixSchema = z
+  .array(riskRuleSchema)
+  .min(1, '风险矩阵必须至少包含1条当前风险')
+  .superRefine((matrix, ctx) => {
+    const seen = new Map<string, number>()
+
+    matrix.forEach((rule, index) => {
+      const previousIndex = seen.get(rule.id)
+      if (previousIndex !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `风险矩阵包含重复风险 ID: ${rule.id}`,
+          path: [index, 'id'],
+        })
+        return
+      }
+
+      seen.set(rule.id, index)
+    })
   })
-})
 
 const testTitlePattern = /\btest\((?:\s|\n)*(['"`])([\s\S]*?)\1/g
-const riskIdPattern = /\bR\d{2}\b/g
+const riskIdPattern = /\bR\d+\b/g
 const riskCommentPattern = /^\s*\/\/\s*risk-id:\s*(.+)$/gm
 const layerCommentPattern = /^\s*\/\/\s*layer:\s*(unit|contract|flow)\s*$/m
 const helperDefaultLayerPattern =
@@ -203,6 +213,48 @@ function validateFlowTestsHaveRiskIds(testCases: TestCaseRef[]): string[] {
     .map((testCase) => `${testCase.filePath}::${testCase.title}`)
 }
 
+function validateKnownRiskIds(input: {
+  matrix: RiskRule[]
+  testCases: TestCaseRef[]
+  fileAnnotations: FileRiskAnnotation[]
+}): void {
+  const knownRiskIds = new Set(input.matrix.map((rule) => rule.id))
+  const unknownRiskRefs = new Map<string, string[]>()
+
+  const addReference = (riskId: string, source: string): void => {
+    if (knownRiskIds.has(riskId)) return
+
+    const current = unknownRiskRefs.get(riskId)
+    if (current) {
+      current.push(source)
+      return
+    }
+
+    unknownRiskRefs.set(riskId, [source])
+  }
+
+  for (const testCase of input.testCases) {
+    for (const riskId of testCase.riskIds) {
+      addReference(riskId, `${testCase.filePath}::${testCase.title}`)
+    }
+  }
+
+  for (const annotation of input.fileAnnotations) {
+    for (const riskId of annotation.riskIds) {
+      addReference(riskId, `${annotation.filePath}::file annotation`)
+    }
+  }
+
+  if (unknownRiskRefs.size === 0) return
+
+  const lines = ['以下测试引用了未知风险 ID：']
+  for (const riskId of Array.from(unknownRiskRefs.keys()).sort()) {
+    lines.push(`- ${riskId}: ${unknownRiskRefs.get(riskId)?.join(', ')}`)
+  }
+
+  throw new Error(lines.join('\n'))
+}
+
 function buildRiskCoverage(input: {
   testCases: TestCaseRef[]
   fileAnnotations: FileRiskAnnotation[]
@@ -291,8 +343,8 @@ export async function loadRiskMatrix(path: string): Promise<RiskRule[]> {
   const text = await readTextFile(path)
   const parsed = parse(text)
 
-  if (!Array.isArray(parsed) || parsed.length !== 20) {
-    throw new Error('风险矩阵必须固定为20条')
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('风险矩阵必须是非空数组')
   }
 
   return riskMatrixSchema.parse(parsed)
@@ -304,6 +356,12 @@ export async function validateRiskMatrix(
 ): Promise<RiskRule[]> {
   const matrix = await loadRiskMatrix(path)
   const metadata = await collectTestMetadata(projectRoot)
+
+  validateKnownRiskIds({
+    matrix,
+    testCases: metadata.testCases,
+    fileAnnotations: metadata.fileAnnotations,
+  })
 
   validateRiskCoverage({
     matrix,

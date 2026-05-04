@@ -5,6 +5,8 @@ import { cwd, mkdirPath, writeTextFile } from '../platform/fs.ts'
 import { withRuntimeHarness } from './runtime_harness.ts'
 import { test } from './test_api.ts'
 
+// layer: unit
+
 test('runtime-harness: 应自动 prepare 与 cleanup', async () => {
   let runtimeDirFromRun = ''
 
@@ -18,8 +20,8 @@ test('runtime-harness: 应自动 prepare 与 cleanup', async () => {
   assertEquals(await exists(runtimeDirFromRun), false)
 })
 
-test('runtime-harness: 兼容传入 runtimeDir 的旧调用形式', async () => {
-  const runtimeDir = join(cwd(), '.tmp', 'runtime-harness-compat')
+test('runtime-harness: 显式 runtimeDir 调用应先清空目录并最终 cleanup', async () => {
+  const runtimeDir = join(cwd(), '.tmp', 'runtime-harness-explicit')
   const stalePath = join(runtimeDir, 'stale.txt')
 
   await mkdirPath(runtimeDir, { recursive: true })

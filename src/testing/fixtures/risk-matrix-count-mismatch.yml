@@ -1,7 +1,0 @@
-- id: R01
-  domain: source
-  trigger: source fetch timeout
-  expected_guardrail: run marked failed with actionable reason
-  required_layer: flow+contract
-  owner_tests:
-    - src/sources/syndication_test.ts

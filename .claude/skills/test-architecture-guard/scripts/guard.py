@@ -22,10 +22,19 @@ class GuardReport(TypedDict):
 
 RiskCheck = Callable[[List[str]], CheckResult]
 SharedEntrypointCheck = Callable[[List[str]], CheckResult]
+LegacyAssertionCheck = Callable[[List[str]], CheckResult]
 CommandRunner = Callable[[List[str]], Tuple[int, str]]
 
 
 RISK_ID_PATTERN = re.compile(r"\bR\d{2}\b")
+TEST_TITLE_PATTERN = re.compile(r"^\s*test\((?:\s|\n)*(['\"`])([\s\S]*?)\1", re.MULTILINE)
+COMMENT_PATTERN = re.compile(r"^\s*//\s*(.+)$")
+LAYER_COMMENT_PATTERN = re.compile(r"^\s*//\s*layer:\s*(unit|contract|flow)\s*$")
+LEGACY_ASSERTION_PATTERNS = (
+    re.compile(r"\blegacy\b", re.IGNORECASE),
+    re.compile(r"\bdeprecated\b", re.IGNORECASE),
+    re.compile(r"兼容|已迁移|旧 delivery\.http|旧 push\.http|旧字符串数组|旧结构|旧入口"),
+)
 SHARED_RUNTIME_PATTERN = re.compile(
     r"\bprepareOwnedRuntime\b|\bcleanupOwnedRuntime\b|\bDeno\.makeTempDir(?:Sync)?\b",
 )
@@ -191,6 +200,14 @@ def validate_owner_test_paths(matrix_path: Optional[Path] = None) -> List[str]:
     return sorted(set(missing))
 
 
+def _detect_file_layer(content: str) -> Optional[str]:
+    for line in content.splitlines():
+        match = LAYER_COMMENT_PATTERN.match(line)
+        if match:
+            return match.group(1)
+    return None
+
+
 def _default_risk_mapping_check(changed_paths: List[str]) -> CheckResult:
     test_files = [path for path in changed_paths if _is_test_file(path)]
     if not test_files:
@@ -209,6 +226,10 @@ def _default_risk_mapping_check(changed_paths: List[str]) -> CheckResult:
             continue
 
         content = full_path.read_text(encoding="utf-8")
+        file_layer = _detect_file_layer(content)
+        if file_layer == "unit":
+            continue
+
         has_risk_marker = bool(RISK_ID_PATTERN.search(content))
         covered_by_owner = path in owner_set
 
@@ -216,6 +237,52 @@ def _default_risk_mapping_check(changed_paths: List[str]) -> CheckResult:
             missing.append(path)
 
     return {"ok": len(missing) == 0, "missing": missing}
+
+
+def _extract_test_intent_text(content: str) -> List[str]:
+    intents: List[str] = []
+    lines = content.splitlines()
+
+    for index, line in enumerate(lines):
+        title_match = TEST_TITLE_PATTERN.match(line)
+        if not title_match:
+            continue
+
+        intents.append(title_match.group(2))
+
+        comment_index = index - 1
+        while comment_index >= 0:
+            comment_match = COMMENT_PATTERN.match(lines[comment_index])
+            if comment_match:
+                intents.append(comment_match.group(1))
+                comment_index -= 1
+                continue
+            if lines[comment_index].strip() == "":
+                comment_index -= 1
+                continue
+            break
+
+    return intents
+
+
+def _default_legacy_assertion_check(changed_paths: List[str]) -> CheckResult:
+    test_files = [path for path in changed_paths if _is_test_file(path)]
+    if not test_files:
+        return {"ok": True, "missing": []}
+
+    violations: List[str] = []
+    root = _repo_root()
+
+    for path in test_files:
+        full_path = root / path
+        if not full_path.exists():
+            continue
+
+        intents = _extract_test_intent_text(full_path.read_text(encoding="utf-8"))
+        if any(pattern.search(text) for text in intents for pattern in LEGACY_ASSERTION_PATTERNS):
+            violations.append(path)
+
+    return {"ok": len(violations) == 0, "missing": violations}
 
 
 def _default_shared_entrypoint_check(changed_paths: List[str]) -> CheckResult:
@@ -319,11 +386,13 @@ def run_guard(
     changed_paths: List[str],
     check_risk_mapping: Optional[RiskCheck] = None,
     check_shared_entrypoint: Optional[SharedEntrypointCheck] = None,
+    check_legacy_assertions: Optional[LegacyAssertionCheck] = None,
     command_runner: Optional[CommandRunner] = None,
     check_risk_files: bool = False,
 ) -> GuardReport:
     risk_checker = check_risk_mapping or _default_risk_mapping_check
     shared_checker = check_shared_entrypoint or _default_shared_entrypoint_check
+    legacy_checker = check_legacy_assertions or _default_legacy_assertion_check
 
     failed_checks: List[str] = []
     actionable_fix: List[str] = []
@@ -351,6 +420,14 @@ def run_guard(
             actionable_fix.append(f"改用共享测试组件并移除本地 runtime 搭建: {', '.join(missing)}")
         else:
             actionable_fix.append("改用共享测试组件")
+
+    legacy_result = legacy_checker(changed_paths)
+    if not legacy_result.get("ok", False):
+        failed_checks.append("historical_test_intent")
+        missing = legacy_result.get("missing", [])
+        actionable_fix.append(
+            "删除历史兼容型测试标题/注释并改写为当前事实契约: " + ", ".join(missing)
+        )
 
     if check_risk_files:
         missing_owner_tests = validate_owner_test_paths()

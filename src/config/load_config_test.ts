@@ -197,6 +197,33 @@ sources:
   )
 })
 
+test('loadCompiledConfig: source.deliveries 数组输入应按当前对象契约拒绝且不返回迁移提示', async () => {
+  await writeRuntimeFile(
+    TEST_RUNTIME,
+    'config.yml',
+    `
+deliveries:
+  webhook:
+    push:
+      http:
+        url: https://example.com/hook
+
+sources:
+  rust:
+    http:
+      url: https://example.com/feed.xml
+    deliveries:
+      - webhook
+`,
+  )
+
+  const err = await assertRejects(() => loadCompiledConfig({ runtimeDir: TEST_RUNTIME }), Error)
+  assertStringIncludes(err.message, 'source.rust.deliveries')
+  assertStringIncludes(err.message, '必须是对象')
+  assertEquals(err.message.includes('已迁移'), false)
+  assertEquals(err.message.includes('已废弃'), false)
+})
+
 test('R04 loadConfig: 缺失环境变量时应报出配置路径', async () => {
   await withEnv({ KNOCK_TEST_MISSING_TOKEN: undefined }, async () => {
     await writeRuntimeFile(

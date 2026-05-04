@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from 'node:path'
 import { parse } from 'yaml'
+import { z } from 'zod'
 import type { Logger } from '../core/logger.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
@@ -8,7 +9,7 @@ import { cwd, isNotFoundError, readTextFile, statPath } from '../platform/fs.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import { isEnvExpansionAllowed } from './capabilities.ts'
 import { resolveConfig } from './resolve_config.ts'
-import { phase1ConfigSchema, rawConfigSyntaxSchema, type AppConfigValidated } from './schema.ts'
+import { rawConfigSyntaxSchema, type AppConfigValidated } from './schema.ts'
 import type { AppConfigResolved } from './types.ts'
 import { validateConfig } from './validate_config.ts'
 
@@ -141,14 +142,11 @@ function expandEnvInConfig(
   return expandEnvValue(parsed, '', envMode) as Record<string, unknown>
 }
 
+const rawConfigDocumentSchema = z.record(z.string(), z.unknown())
+
 export function parseRawConfigDocument(raw: string): Record<string, unknown> {
   parseWithFirstIssue(rawConfigSyntaxSchema, raw, '配置文件格式非法')
-
-  return parseWithFirstIssue(
-    phase1ConfigSchema,
-    (parse(raw) ?? {}) as Record<string, unknown>,
-    '配置非法',
-  )
+  return parseWithFirstIssue(rawConfigDocumentSchema, parse(raw) ?? {}, '配置非法')
 }
 
 function validateCompiledConfigDocument(input: {

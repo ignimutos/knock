@@ -5,7 +5,6 @@ import {
   createInvalidIssueMessage,
   ISSUE_BODY_PAYLOAD_FORBIDDEN,
   ISSUE_BOOLEAN,
-  ISSUE_DEPRECATED_DELIVERY_HTTP,
   ISSUE_ILLEGAL,
   ISSUE_INTEGER,
   ISSUE_OBJECT,
@@ -882,7 +881,6 @@ export const deliverySchema = z
   .object({
     enabled: optionalBoolean(),
     file: fileSchema.optional(),
-    http: z.unknown().optional(),
     push: pushSchema.optional(),
     email: emailSchema.optional(),
   })
@@ -904,14 +902,6 @@ export const deliverySchema = z
         message: 'delivery 未配置投递目标',
       })
       return
-    }
-
-    if (value.http !== undefined) {
-      ctx.addIssue({
-        path: ['http'],
-        code: 'custom',
-        message: ISSUE_DEPRECATED_DELIVERY_HTTP,
-      })
     }
   })
 
@@ -1600,39 +1590,6 @@ export const rawConfigSyntaxSchema = z.string().superRefine((raw, ctx) => {
   }
 })
 
-export const phase1ConfigSchema = z.record(z.string(), z.unknown()).superRefine((parsed, ctx) => {
-  if (parsed.templates !== undefined) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'templates 已迁移到 deliveries.*.(file|push).content',
-    })
-    return
-  }
-  if (parsed.destinations !== undefined) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'destinations 已迁移到 deliveries',
-    })
-    return
-  }
-
-  const sources = parsed.sources
-  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) {
-    return
-  }
-
-  for (const [sourceId, value] of Object.entries(sources)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-    const deliveries = (value as Record<string, unknown>).deliveries
-    if (!Array.isArray(deliveries)) continue
-    ctx.addIssue({
-      code: 'custom',
-      message: `source.${sourceId}.deliveries 已迁移为 keyed map，对象 key 必须是 delivery id`,
-    })
-    return
-  }
-})
-
 export type LogLevel = NonNullable<z.output<typeof loggingSchema>['level']>
 export type LogConsoleFormat = NonNullable<z.output<typeof loggingConsoleSchema>['format']>
 export type LogFileFormat = NonNullable<z.output<typeof loggingFileSchema>['format']>
@@ -1667,11 +1624,6 @@ export type SourceHttpConfig = z.output<typeof sourceHttpSchema>
 export type SourceByparrConfig = z.output<typeof byparrSchema>
 export type PushHttpConfig = z.output<typeof pushHttpSchema>
 export type PushRequestConfig = z.output<typeof pushRequestSchema>
-
-/**
- * @deprecated 仅供 runtime helper 使用；配置契约统一使用 HttpTransportConfig。
- */
-export type HttpConfig = HttpTransportConfig
 
 export type AiProviderType = z.output<typeof aiProviderTypeSchema>
 export type AiModelVariantConfig = z.output<typeof aiModelVariantSchema>
