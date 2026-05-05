@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
 import { createContentRuntime } from '../core/content_runtime.ts'
-import { createFactsDbClient } from '../db/client.ts'
+import { createDbClient } from '../db/client.ts'
 import {
   insertSourceRun,
   setSourceRunFeedSnapshot,
@@ -48,7 +48,7 @@ function createSummarySource(overrides: Partial<ResolvedSourceConfig> = {}): Res
 
 test('[contract] summarySource: 首次运行无 checkpoint 时应返回默认 feed 与空 entries', async () => {
   await withOwnedRuntime(TEST_RUNTIME, async () => {
-    const db = createFactsDbClient({ sqlite: createSqliteConfig('summary-first-run.db') })
+    const db = createDbClient({ sqlite: createSqliteConfig('summary-first-run.db') })
     const summaryQueryService = createSummaryQueryService(db)
     const contentRuntime = createContentRuntime()
     const scheduledAt = '2026-04-12T10:00:00.000Z'
@@ -97,7 +97,7 @@ test('[contract] summarySource: 首次运行无 checkpoint 时应返回默认 fe
 
 test('[flow] R17 summarySource: 有 checkpoint 时应从 v2 facts query 读取 feed 与 delivered items', async () => {
   await withOwnedRuntime(TEST_RUNTIME, async () => {
-    const db = createFactsDbClient({ sqlite: createSqliteConfig('summary-with-facts.db') })
+    const db = createDbClient({ sqlite: createSqliteConfig('summary-with-facts.db') })
     const summaryQueryService = createSummaryQueryService(db)
     const contentRuntime = createContentRuntime()
 
@@ -204,7 +204,7 @@ test('[flow] R17 summarySource: 有 checkpoint 时应从 v2 facts query 读取 f
 
 test('[contract] summarySource: summary 模板中的 ai_summarize 应可通过 contentRuntime 工作', async () => {
   await withOwnedRuntime(TEST_RUNTIME, async () => {
-    const db = createFactsDbClient({ sqlite: createSqliteConfig('summary-ai.db') })
+    const db = createDbClient({ sqlite: createSqliteConfig('summary-ai.db') })
     const summaryQueryService = createSummaryQueryService(db)
     const aiRuntime = createAiRuntime({
       ai: {
@@ -334,3 +334,16 @@ test('[contract] summarySource: summary 模板中的 ai_summarize 应可通过 c
     db.$client.close()
   })
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R17'],
+  },
+  {
+    title:
+      '[flow] R17 summarySource: 有 checkpoint 时应从 v2 facts query 读取 feed 与 delivered items',
+    layer: 'flow',
+    risks: ['R17'],
+  },
+] as const

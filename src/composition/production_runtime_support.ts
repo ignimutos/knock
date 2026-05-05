@@ -5,7 +5,7 @@ import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts
 import type { Fetcher, ProxyClientFactory } from '../core/http_client.ts'
 import { createLogger, type Logger } from '../core/logger.ts'
 import { createScheduler } from '../core/scheduler.ts'
-import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
+import { createDbClient, type FactsDbClient } from '../db/client.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
 import { createEmailDelivery } from '../deliveries/email.ts'
@@ -187,7 +187,7 @@ export function createProductionRuntimeServices(
   const loggers = createProductionRuntimeLoggers(input.config)
   const factsDb =
     input.factsDb ??
-    createFactsDbClient({
+    createDbClient({
       sqlite: input.config.sqlite,
       logger: loggers.db,
     })

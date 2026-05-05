@@ -49,3 +49,10 @@ test('[unit] fileDeliveryExecutor: 应只消费 rendered plan 并透传 rotation
     },
   ])
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'unit',
+    risks: ['R09'],
+  },
+] as const

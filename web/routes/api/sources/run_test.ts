@@ -102,3 +102,10 @@ test('[contract] sources run api: internal error 应返回通用文案', async (
   assertEquals(payload.category, 'internal')
   assertEquals(payload.message, 'source 操作失败，请查看服务端日志。')
 })
+export const testMeta = [
+  {
+    title: '[flow] R15 sources run api: 应返回 started 状态并记录日志元数据',
+    layer: 'flow',
+    risks: ['R15'],
+  },
+] as const

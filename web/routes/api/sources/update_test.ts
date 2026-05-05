@@ -122,3 +122,10 @@ test('[contract] sources update api: 跨源写请求应返回 403', async () => 
   assertEquals(payload.category, 'forbidden')
   assertEquals(logs[0]?.errorCode, 'source_action_forbidden')
 })
+export const testMeta = [
+  {
+    title: '[flow] R15 sources update api: 应转发 payload 并返回 overview',
+    layer: 'flow',
+    risks: ['R15'],
+  },
+] as const

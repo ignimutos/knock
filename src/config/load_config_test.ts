@@ -789,3 +789,15 @@ sources: {}
     },
   )
 })
+export const testMeta = [
+  {
+    title: 'R04 loadConfig: 缺失环境变量时应报出配置路径',
+    layer: 'contract',
+    risks: ['R04'],
+  },
+  {
+    title: 'R03 loadConfig: 加载成功和失败都应记录结构化日志',
+    layer: 'contract',
+    risks: ['R03'],
+  },
+] as const

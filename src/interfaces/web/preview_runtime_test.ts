@@ -80,3 +80,10 @@ test('[contract] R18 previewRuntime: 应走 preview profile 并落 preview domai
   assertEquals(result.warnings, ['script 模式下 namespaces 不生效'])
   assertEquals('plan' in result, false)
 })
+export const testMeta = [
+  {
+    title: '[contract] R18 previewRuntime: 应走 preview profile 并落 preview domain facts',
+    layer: 'contract',
+    risks: ['R18'],
+  },
+] as const

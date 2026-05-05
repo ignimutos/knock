@@ -322,3 +322,11 @@ test('[contract] xquery_playground: evaluatePlayground 遇到 xquery 执行失�
     'Expected XPath 1 + 1 to resolve to a map',
   )
 })
+export const testMeta = [
+  {
+    title:
+      '[flow] R18 xquery_playground: 应将解析后的 request 委托给 preview runtime 并透传 rawContent',
+    layer: 'flow',
+    risks: ['R18'],
+  },
+] as const

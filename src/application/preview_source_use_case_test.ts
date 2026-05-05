@@ -197,3 +197,10 @@ test('[contract] previewRunUseCase: collect 应预留 preview collect 包装层'
   assertEquals(result.plan.runId, 'run-preview-collect')
   assertEquals(result.parsed.sourceKind, 'fetch')
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R18'],
+  },
+] as const

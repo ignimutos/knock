@@ -456,3 +456,15 @@ test('[contract] sqlite v2: delivery attempt 不应允许引用不同 effect_dom
     }),
   )
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R12'],
+  },
+  {
+    title: '[contract] R12 sqlite v2: deduplication repository 应按 effectDomain + scope 判定重复',
+    layer: 'contract',
+    risks: ['R12'],
+  },
+] as const

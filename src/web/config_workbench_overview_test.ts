@@ -1,5 +1,5 @@
 import { assertEquals } from '../testing/assert.ts'
-import { loadConfigWorkbenchContext } from './config_workbench_overview.ts'
+import { loadConfigWorkbenchContext } from '../interfaces/web/runtime_session.ts'
 import { test } from '../testing/test_api.ts'
 import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../testing/test_helpers.ts'
 
@@ -33,7 +33,7 @@ test('[contract] config workbench overview: 加载失败时应返回通用 issue
     const { workbench } = await loadConfigWorkbenchContext().catch(async () => ({
       rawDocument: undefined,
       workbench: await (
-        await import('./config_workbench_overview.ts')
+        await import('../interfaces/web/runtime_session.ts')
       ).loadConfigWorkbenchOverview(),
     }))
 

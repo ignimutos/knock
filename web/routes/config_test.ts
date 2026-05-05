@@ -1,3 +1,11 @@
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R03'],
+  },
+] as const
+
 // layer: contract
 // risk-id: R03
 import { assertEquals, assertStringIncludes } from '../../src/testing/assert.ts'

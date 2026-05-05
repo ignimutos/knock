@@ -98,3 +98,15 @@ sources: {}
     assertEquals(stat.isFile, true)
   })
 })
+export const testMeta = [
+  {
+    title: '[flow] R03 app: 未传 immediate 时入口模型应显式视为 false',
+    layer: 'flow',
+    risks: ['R03'],
+  },
+  {
+    title: '[flow] R03 app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果',
+    layer: 'flow',
+    risks: ['R03'],
+  },
+] as const

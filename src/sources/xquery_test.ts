@@ -295,3 +295,15 @@ test('[contract] xquery: 脚本模式不使用 namespaces', () => {
     Error,
   )
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R13'],
+  },
+  {
+    title: '[contract] R13 xquery: 原生表达式映射应产出 entry.id',
+    layer: 'contract',
+    risks: ['R13'],
+  },
+] as const

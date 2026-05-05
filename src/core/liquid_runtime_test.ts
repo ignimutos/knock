@@ -935,3 +935,15 @@ test('[contract] R16 liquidRuntime: ai filter 在 sync 渲染中直接报错', (
     '仅支持异步渲染',
   )
 })
+export const testMeta = [
+  {
+    title: '[contract] R08 liquidRuntime: to_telegram_html 不再接受额外参数',
+    layer: 'contract',
+    risks: ['R08'],
+  },
+  {
+    title: '[contract] R16 liquidRuntime: ai filter 在 sync 渲染中直接报错',
+    layer: 'contract',
+    risks: ['R16'],
+  },
+] as const

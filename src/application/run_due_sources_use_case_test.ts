@@ -216,3 +216,15 @@ test('[contract] runDueSourcesUseCase: 无 sourceId 时应并发执行 due sourc
   releaseFirst?.()
   await execution
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'flow',
+    risks: ['R15'],
+  },
+  {
+    title: '[flow] R15 runDueSourcesUseCase: due 判定时刻应原样传入 RunSourceUseCase.scheduledAt',
+    layer: 'flow',
+    risks: ['R15'],
+  },
+] as const

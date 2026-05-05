@@ -14,8 +14,15 @@ async function withTempProject(name: string, run: (projectRoot: string) => Promi
   const projectRoot = join(TMP_ROOT, name)
   await removePath(projectRoot, { recursive: true, force: true })
   await mkdirPath(join(projectRoot, 'src'), { recursive: true })
+  await mkdirPath(join(projectRoot, 'src', 'testing'), { recursive: true })
   await mkdirPath(join(projectRoot, 'web'), { recursive: true })
+  await mkdirPath(join(projectRoot, 'testing'), { recursive: true })
   await mkdirPath(join(projectRoot, 'docs', 'testing'), { recursive: true })
+  await writeTextFile(join(projectRoot, 'testing', 'test_api.ts'), 'export function test() {}\n')
+  await writeTextFile(
+    join(projectRoot, 'src', 'testing', 'test_api.ts'),
+    'export function test() {}\n',
+  )
 
   try {
     await run(projectRoot)
@@ -24,21 +31,19 @@ async function withTempProject(name: string, run: (projectRoot: string) => Promi
   }
 }
 
-const fixtureTestCall = ['te', 'st'].join('')
-
-function createFixtureTestSource(input: {
+function createFixtureTestMetaSource(input: {
   title: string
-  comments?: string[]
-  importPath?: string
+  layer: 'unit' | 'contract' | 'flow'
+  risks: string[]
 }): string {
-  const comments = input.comments ?? []
-
   return [
-    `import { test } from '${input.importPath ?? '../testing/test_api.ts'}'`,
-    '',
-    ...comments,
-    ...(comments.length > 0 ? [''] : []),
-    `${fixtureTestCall}(${JSON.stringify(input.title)}, () => {})`,
+    'export const testMeta = [',
+    '  {',
+    `    title: ${JSON.stringify(input.title)},`,
+    `    layer: ${JSON.stringify(input.layer)},`,
+    `    risks: ${JSON.stringify(input.risks)},`,
+    '  },',
+    '] as const',
     '',
   ].join('\n')
 }
@@ -160,8 +165,50 @@ test('[contract] risk-mapping: flow 测试应接受任意位数风险 ID', async
 
     await writeTextFile(
       join(projectRoot, 'src', 'flow_risk_test.ts'),
-      createFixtureTestSource({
+      createFixtureTestMetaSource({
         title: '[flow] risk mapping uses R123 current fact',
+        layer: 'flow',
+        risks: ['R123'],
+      }),
+    )
+
+    await validateRiskMatrix(matrixPath, projectRoot)
+  })
+})
+
+test('[contract] risk-mapping: exported testMeta 应驱动风险覆盖校验', async () => {
+  await withTempProject('module-meta', async (projectRoot) => {
+    const matrixPath = join(projectRoot, 'docs', 'testing', 'risk-matrix.yml')
+
+    await writeTextFile(
+      matrixPath,
+      `
+- id: R1
+  domain: config
+  trigger: config parse failure
+  expected_guardrail: explicit testMeta should be the only coverage source
+  required_layer: flow+contract
+  owner_tests:
+    - src/config_contract_test.ts
+    - web/config_flow_test.ts
+`.trim() + '\n',
+    )
+
+    await writeTextFile(
+      join(projectRoot, 'src', 'config_contract_test.ts'),
+      createFixtureTestMetaSource({
+        title: 'config contract covers R1',
+        layer: 'contract',
+        risks: ['R1'],
+      }),
+    )
+
+    await writeTextFile(
+      join(projectRoot, 'web', 'config_flow_test.ts'),
+      createFixtureTestMetaSource({
+        title: 'R1 config flow covers same risk',
+        layer: 'flow',
+        risks: ['R1'],
       }),
     )
 
@@ -188,9 +235,10 @@ test('[contract] risk-mapping: 测试引用未知风险 ID 时应报错', async 
 
     await writeTextFile(
       join(projectRoot, 'src', 'unknown_risk_test.ts'),
-      createFixtureTestSource({
+      createFixtureTestMetaSource({
         title: '[contract] risk mapping rejects unknown R99',
-        comments: ['// layer: contract', '// risk-id: R99'],
+        layer: 'contract',
+        risks: ['R99'],
       }),
     )
 
@@ -229,8 +277,10 @@ test('[contract] risk-mapping: owner_tests 引用不存在文件时应报错', a
 
     await writeTextFile(
       join(projectRoot, 'src', 'config_contract_test.ts'),
-      createFixtureTestSource({
+      createFixtureTestMetaSource({
         title: '[contract] risk-mapping: R1 owner coverage',
+        layer: 'contract',
+        risks: ['R1'],
       }),
     )
 

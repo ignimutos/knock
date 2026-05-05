@@ -858,3 +858,15 @@ test('[contract] runSourceUseCase: item 落库失败时应回写 failed run', as
 
   assertEquals(runStatuses, ['failed'])
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[flow] R07 runSourceUseCase: 应在边界处收口 run/item/attempt 聚合与失败终态',
+    layer: 'flow',
+    risks: ['R07'],
+  },
+] as const

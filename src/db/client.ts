@@ -5,7 +5,6 @@ import type { Logger } from '../core/logger.ts'
 import { initializeSqliteFactsSchema } from '../infrastructure/sqlite/schema.ts'
 import { mkdirPathSync } from '../platform/fs.ts'
 import { openSqliteDatabase, type SqliteDatabase } from '../platform/sqlite.ts'
-import { initializeSqliteRuntimeSchema } from './schema.ts'
 
 export interface CreateDbClientOptions {
   sqlite: SqliteConfigResolved
@@ -16,9 +15,7 @@ export interface DbClient {
   $client: SqliteDatabase
 }
 
-export interface FactsDbClient {
-  $client: SqliteDatabase
-}
+export type FactsDbClient = DbClient
 
 interface TransactionCapableDb {
   $client: SqliteDatabase
@@ -76,7 +73,7 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
   const client = openSqliteDatabase(databasePath)
   client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
   client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
-  initializeSqliteRuntimeSchema(client)
+  initializeSqliteFactsSchema(client)
 
   logger?.info('sqlite 初始化完成', {
     module: 'db.sqlite',
@@ -88,35 +85,7 @@ export function createDbClient(options: CreateDbClientOptions): DbClient {
   return { $client: client }
 }
 
-export function createFactsDbClient(options: CreateDbClientOptions): FactsDbClient {
-  const { sqlite } = options
-  const { logger } = options
-  const databasePath = sqlite.path
-
-  logger?.info('开始初始化 sqlite facts', {
-    module: 'db.sqlite',
-    'db.operation': 'init_facts_db',
-    'db.outcome': 'start',
-    'db.path': databasePath,
-  })
-
-  mkdirPathSync(dirname(databasePath), { recursive: true })
-  const client = openSqliteDatabase(databasePath)
-  client.exec(`PRAGMA busy_timeout=${parseDurationMs(sqlite.busyTimeout, 'sqlite.busyTimeout')}`)
-  client.exec(`PRAGMA journal_mode=${sqlite.journalMode}`)
-  initializeSqliteFactsSchema(client)
-
-  logger?.info('sqlite facts 初始化完成', {
-    module: 'db.sqlite',
-    'db.operation': 'init_facts_db',
-    'db.outcome': 'success',
-    'db.path': databasePath,
-  })
-
-  return { $client: client }
-}
-
-export function createInMemoryDb(): FactsDbClient {
+export function createInMemoryDb(): DbClient {
   const client = openSqliteDatabase(':memory:')
   initializeSqliteFactsSchema(client)
   return { $client: client }

@@ -1,7 +1,7 @@
 import { assertEquals } from '../../testing/assert.ts'
 import { parse as parseYaml } from 'yaml'
 import { clearSourceHistory, runSourceNow, updateSourceConfig } from './source_management.ts'
-import { createFactsDbClient } from '../../db/client.ts'
+import { createDbClient } from '../../db/client.ts'
 import { insertDeliveryAttempt } from '../../infrastructure/sqlite/delivery_attempt_repository.ts'
 import { insertPipelineItem } from '../../infrastructure/sqlite/item_repository.ts'
 import { insertSourceRun } from '../../infrastructure/sqlite/run_repository.ts'
@@ -75,7 +75,7 @@ test('[contract] source management: updateSourceConfig 应写回 source 子树�
 
 test('[contract] source management: clearSourceHistory 应只删除指定 source 的 production facts', async () => {
   await withRuntimeDir(async (runtimeDir) => {
-    const factsDb = createFactsDbClient({
+    const factsDb = createDbClient({
       sqlite: {
         path: `${runtimeDir}/facts.db`,
         busyTimeout: '5s',

@@ -206,3 +206,35 @@ test('[contract] R11 logging_runtime: 不应输出 logtape meta startup 提示',
     false,
   )
 })
+export const testMeta = [
+  {
+    title: '[contract] R11 logging_runtime: 不配置 sinks 时不应输出',
+    layer: 'contract',
+    risks: ['R11'],
+  },
+  {
+    title: '[contract] R11 logging_runtime: 只配置 file sink 时应只写 jsonl 文件',
+    layer: 'contract',
+    risks: ['R11'],
+  },
+  {
+    title: '[contract] R11 logging_runtime: size rotation 应委托 rotating file sink',
+    layer: 'contract',
+    risks: ['R11'],
+  },
+  {
+    title: '[contract] R11 logging_runtime: shutdown 应 flush file sink 尾日志',
+    layer: 'contract',
+    risks: ['R11'],
+  },
+  {
+    title: '[contract] R11 logging_runtime: trace 级别应输出 trace 记录到 console sink',
+    layer: 'contract',
+    risks: ['R11'],
+  },
+  {
+    title: '[contract] R11 logging_runtime: 不应输出 logtape meta startup 提示',
+    layer: 'contract',
+    risks: ['R11'],
+  },
+] as const

@@ -7,7 +7,7 @@ import type {
 } from '../config/types.ts'
 import { redactConfigSecrets } from './config_secret_redaction.ts'
 import { getRawSourceDeliveryOverrides } from '../config/source_delivery_overrides.ts'
-import { createFactsDbClient, type FactsDbClient } from '../db/client.ts'
+import { createDbClient, type FactsDbClient } from '../db/client.ts'
 import {
   parseRawConfigDocument,
   type LoadedCompiledConfig,
@@ -386,7 +386,7 @@ export async function buildCurrentReaderOverview(input: {
     })
   }
 
-  const factsDb = createFactsDbClient({ sqlite: input.loaded.config.sqlite })
+  const factsDb = createDbClient({ sqlite: input.loaded.config.sqlite })
   try {
     return buildReaderOverview({
       config: input.loaded.config,

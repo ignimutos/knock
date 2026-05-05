@@ -69,3 +69,10 @@ test('[contract] sources clear api: 跨源写请求应返回 403', async () => {
   assertEquals(payload.code, 'source_action_forbidden')
   assertEquals(payload.category, 'forbidden')
 })
+export const testMeta = [
+  {
+    title: '[flow] R15 sources clear api: 应返回删除计数并记录日志元数据',
+    layer: 'flow',
+    risks: ['R15'],
+  },
+] as const

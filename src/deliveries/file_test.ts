@@ -426,3 +426,30 @@ test('[flow] R09 fileDelivery: 写入失败时应记录 failure 日志并抛错'
   assertEquals(failureAttributes['delivery.path'], targetPath)
   assertEquals(failureAttributes['exception.message'], error.message)
 })
+export const testMeta = [
+  {
+    title: '[flow] R09 fileDelivery: size 达到阈值时应触发 rotation',
+    layer: 'flow',
+    risks: ['R09'],
+  },
+  {
+    title: '[flow] R09 fileDelivery: age 达到阈值时应触发 rotation',
+    layer: 'flow',
+    risks: ['R09'],
+  },
+  {
+    title: '[flow] R09 fileDelivery: backups 超限时应清理最老轮转文件',
+    layer: 'flow',
+    risks: ['R09'],
+  },
+  {
+    title: '[flow] R09 fileDelivery: rotation 失败时也应记录 failure 日志并抛错',
+    layer: 'flow',
+    risks: ['R09'],
+  },
+  {
+    title: '[flow] R09 fileDelivery: 写入失败时应记录 failure 日志并抛错',
+    layer: 'flow',
+    risks: ['R09'],
+  },
+] as const

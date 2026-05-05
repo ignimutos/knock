@@ -129,3 +129,15 @@ test('[flow] R07 emailDelivery: transporter 失败时应记录失败日志并抛
     true,
   )
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[flow] R07 emailDelivery: transporter 失败时应记录失败日志并抛错',
+    layer: 'flow',
+    risks: ['R07'],
+  },
+] as const

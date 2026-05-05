@@ -8,12 +8,19 @@ import {
   applySourceConfigDocumentUpdate,
   SourceConfigDocumentUpdateError,
 } from '../../config/update_source_document.ts'
-import { loadSourceActionContext, SourceActionContextError } from './source_management_context.ts'
 import { throwConflict, throwNotFound, throwValidation } from './source_management_errors.ts'
-import { createFactsDbClient, runInTransaction } from '../../db/client.ts'
-import { buildCurrentReaderOverview, type ReaderOverview } from '../../web/reader_overview.ts'
+import { type ReaderOverview } from '../../web/reader_overview.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
 import { buildReaderOverviewFromSession, loadRuntimeSession } from './runtime_session.ts'
+import { loadSourceActionContext } from './source_management_context.ts'
+import {
+  RunSourceNowUseCase,
+  RunSourceNowUseCaseError,
+} from '../../application/source_actions/run_source_now_use_case.ts'
+import {
+  ClearSourceHistoryUseCase,
+  ClearSourceHistoryUseCaseError,
+} from '../../application/source_actions/clear_source_history_use_case.ts'
 
 export { classifySourceManagementError, SourceManagementError } from './source_management_errors.ts'
 
@@ -82,47 +89,33 @@ export async function updateSourceConfig(input: unknown): Promise<{
   }
 }
 
+type SourceActionUseCaseError = RunSourceNowUseCaseError | ClearSourceHistoryUseCaseError
+
+function rethrowSourceActionUseCaseError(error: SourceActionUseCaseError): never {
+  if (error.kind === 'not_found') {
+    throwNotFound(error.message)
+  }
+  if (error.kind === 'conflict') {
+    throwConflict(error.message)
+  }
+  throwValidation(error.message)
+}
+
+const runSourceNowUseCase = new RunSourceNowUseCase(loadSourceActionContext)
+const clearSourceHistoryUseCase = new ClearSourceHistoryUseCase(loadSourceActionContext)
+
 export async function runSourceNow(input: unknown): Promise<{
   started: boolean
   message: string
   overview: ReaderOverview
 }> {
-  let context
   try {
-    context = await loadSourceActionContext(input)
+    return await runSourceNowUseCase.execute(input)
   } catch (error) {
-    if (error instanceof SourceActionContextError) {
-      if (error.kind === 'not_found') {
-        throwNotFound(error.message)
-      }
-      throwValidation(error.message)
+    if (error instanceof RunSourceNowUseCaseError) {
+      rethrowSourceActionUseCaseError(error)
     }
     throw error
-  }
-  if (!context.source.enabled) {
-    throwConflict(`source ${context.request.sourceId} 已停用，不能强制获取`)
-  }
-
-  const { createProductionRuntime } = await import(
-    new URL('../../composition/create_production_runtime.ts', import.meta.url).href
-  )
-  const runtime = createProductionRuntime({
-    config: context.loaded.config,
-    definitions: context.loaded.definitions,
-    keepAlive: false,
-  })
-
-  try {
-    const result = await runtime.runSourceNow(context.request.sourceId)
-    return {
-      started: result.started,
-      message: result.started
-        ? `source ${context.request.sourceId} 强制获取完成`
-        : `source ${context.request.sourceId} 正在运行，已跳过本次强制获取`,
-      overview: await buildCurrentReaderOverview({ loaded: context.loaded }),
-    }
-  } finally {
-    runtime.stop()
   }
 }
 
@@ -133,83 +126,12 @@ export async function clearSourceHistory(input: unknown): Promise<{
   deletedAttempts: number
   overview: ReaderOverview
 }> {
-  let context
   try {
-    context = await loadSourceActionContext(input)
+    return await clearSourceHistoryUseCase.execute(input)
   } catch (error) {
-    if (error instanceof SourceActionContextError) {
-      if (error.kind === 'not_found') {
-        throwNotFound(error.message)
-      }
-      throwValidation(error.message)
+    if (error instanceof ClearSourceHistoryUseCaseError) {
+      rethrowSourceActionUseCaseError(error)
     }
     throw error
-  }
-
-  const factsDb = createFactsDbClient({ sqlite: context.loaded.config.sqlite })
-  try {
-    const effectDomain = 'production'
-    const running = factsDb.$client
-      .prepare(
-        `
-          SELECT run_id AS runId
-          FROM source_runs
-          WHERE source_id = ?
-            AND effect_domain = ?
-            AND status = 'running'
-          LIMIT 1
-        `,
-      )
-      .get(context.request.sourceId, effectDomain)
-    if (running) {
-      throwConflict(`source ${context.request.sourceId} 正在运行，不能清空历史`)
-    }
-
-    const deleteAttempts = factsDb.$client.prepare(`
-      DELETE FROM delivery_attempts
-      WHERE effect_domain = ?
-        AND source_run_id IN (
-          SELECT run_id
-          FROM source_runs
-          WHERE source_id = ? AND effect_domain = ?
-        )
-    `)
-    const deleteItems = factsDb.$client.prepare(`
-      DELETE FROM pipeline_items
-      WHERE effect_domain = ?
-        AND source_run_id IN (
-          SELECT run_id
-          FROM source_runs
-          WHERE source_id = ? AND effect_domain = ?
-        )
-    `)
-    const deleteRuns = factsDb.$client.prepare(`
-      DELETE FROM source_runs
-      WHERE source_id = ? AND effect_domain = ?
-    `)
-
-    const result = runInTransaction(factsDb, () => {
-      const deletedAttempts = Number(
-        deleteAttempts.run(effectDomain, context.request.sourceId, effectDomain).changes,
-      )
-      const deletedItems = Number(
-        deleteItems.run(effectDomain, context.request.sourceId, effectDomain).changes,
-      )
-      const deletedRuns = Number(deleteRuns.run(context.request.sourceId, effectDomain).changes)
-
-      return {
-        deletedRuns,
-        deletedItems,
-        deletedAttempts,
-      }
-    })
-
-    return {
-      ...result,
-      message: `source ${context.request.sourceId} 历史已清空`,
-      overview: await buildCurrentReaderOverview({ loaded: context.loaded, factsDb }),
-    }
-  } finally {
-    factsDb.$client.close()
   }
 }

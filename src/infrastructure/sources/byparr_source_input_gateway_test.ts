@@ -212,3 +212,10 @@ test('[contract] byparrSourceInputGateway: 200 非法 JSON 失败日志必须使
   assertEquals(JSON.stringify(record).includes(secretFragment), false)
   assertEquals(attributes['exception.message'], 'byparr source fetch failed')
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R01'],
+  },
+] as const

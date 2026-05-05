@@ -14,13 +14,18 @@ import {
   parseGlobalConfigUpdate,
   ConfigManagementContractError,
 } from './config_management_contract.ts'
+import type {
+  ConfigWorkbenchOverview,
+  DeliveryConfigDeleteInput,
+  DeliveryConfigUpdateInput,
+  GlobalConfigUpdateInput,
+} from '../../application/config_workbench/workbench_contract.ts'
 import {
   classifyConfigManagementError,
   throwConflict,
   throwNotFound,
   throwValidation,
 } from './config_management_errors.ts'
-import type { ConfigWorkbenchOverview } from '../../web/config_workbench_overview.ts'
 import { deliverySchema, loggingSchema, sqliteSchema, aiSchema } from '../../config/schema.ts'
 import { assertRuntimeRelativePath } from '../../config/runtime_semantics.ts'
 import { restoreConfigSecrets } from '../../web/config_secret_redaction.ts'
@@ -95,7 +100,7 @@ function pruneUndefined<T extends Record<string, unknown>>(value: T): T {
 }
 
 function buildStructuredSqlite(
-  request: ReturnType<typeof parseGlobalConfigUpdate>,
+  request: GlobalConfigUpdateInput,
   current: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   const next = cloneRecord(current)
@@ -127,7 +132,7 @@ function buildStructuredSqlite(
 }
 
 function buildStructuredLogging(
-  request: ReturnType<typeof parseGlobalConfigUpdate>,
+  request: GlobalConfigUpdateInput,
   current: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   const next = cloneRecord(current)
@@ -213,7 +218,7 @@ function buildStructuredLogging(
 }
 
 function buildStructuredAi(
-  request: ReturnType<typeof parseGlobalConfigUpdate>,
+  request: GlobalConfigUpdateInput,
   current: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   const hasStructuredFields =
@@ -288,7 +293,7 @@ function deliveryIsReferenced(rawDocument: Record<string, unknown>, deliveryId: 
 }
 
 function buildStructuredDeliveryConfig(
-  request: ReturnType<typeof parseDeliveryConfigUpdate>,
+  request: DeliveryConfigUpdateInput,
   current: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   const next = cloneRecord(current)
@@ -442,7 +447,7 @@ export async function updateGlobalConfig(input: unknown): Promise<{
   message: string
   workbench: ConfigWorkbenchOverview
 }> {
-  let request
+  let request: GlobalConfigUpdateInput
   try {
     request = parseGlobalConfigUpdate(input)
   } catch (error) {
@@ -527,7 +532,7 @@ export async function upsertDeliveryConfig(input: unknown): Promise<{
   message: string
   workbench: ConfigWorkbenchOverview
 }> {
-  let request
+  let request: DeliveryConfigUpdateInput
   try {
     request = parseDeliveryConfigUpdate(input)
   } catch (error) {
@@ -600,7 +605,7 @@ export async function deleteDeliveryConfig(input: unknown): Promise<{
   message: string
   workbench: ConfigWorkbenchOverview
 }> {
-  let request
+  let request: DeliveryConfigDeleteInput
   try {
     request = parseDeliveryConfigDelete(input)
   } catch (error) {

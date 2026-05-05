@@ -1,3 +1,16 @@
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R03'],
+  },
+  {
+    title: '[contract] R03 runtime session: workbench overview 应复用同一 runtime context',
+    layer: 'contract',
+    risks: ['R03'],
+  },
+] as const
+
 // layer: contract
 // risk-id: R03
 import { assertEquals } from '../../testing/assert.ts'

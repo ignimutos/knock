@@ -16,7 +16,7 @@ function test(name: string, fn: () => Promise<void> | void): void {
   })
 }
 
-test('createDbClient: 使用 sqlite runtime 初始化并可执行查询', () => {
+test('createDbClient: 使用 sqlite facts 初始化并可执行查询', () => {
   const db = createDbClient({
     sqlite: {
       path: join(TEST_RUNTIME, 'knock.db'),
@@ -122,7 +122,7 @@ test('createDbClient: 应在 sqlite.path 指定位置创建数据库并应用 pr
   db.$client.close()
 })
 
-test('createDbClient: 应初始化 feeds 与 entries 表', () => {
+test('createDbClient: 应初始化 facts 表', () => {
   const databasePath = join(TEST_RUNTIME, 'schema.db')
   const db = createDbClient({
     sqlite: {
@@ -138,17 +138,35 @@ test('createDbClient: 应初始化 feeds 与 entries 表', () => {
   })
 
   assertEquals(
-    db.$client.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='feeds'").get(),
+    db.$client
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='source_runs'")
+      .get(),
     {
-      name: 'feeds',
+      name: 'source_runs',
     },
   )
   assertEquals(
     db.$client
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entries'")
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_items'")
       .get(),
     {
-      name: 'entries',
+      name: 'pipeline_items',
+    },
+  )
+  assertEquals(
+    db.$client
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='delivery_attempts'")
+      .get(),
+    {
+      name: 'delivery_attempts',
+    },
+  )
+  assertEquals(
+    db.$client
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='deduplications'")
+      .get(),
+    {
+      name: 'deduplications',
     },
   )
   db.$client.close()
@@ -173,7 +191,7 @@ test('createDbClient: vacuum=afterPrune 时应保持数据库可初始化', () =
   db.$client.close()
 })
 
-test('createDbClient: 应初始化 deliveries 唯一索引与 entries 检索索引', () => {
+test('createDbClient: 应初始化 facts 索引', () => {
   const databasePath = join(TEST_RUNTIME, 'indexes.db')
   const db = createDbClient({
     sqlite: {
@@ -195,35 +213,24 @@ test('createDbClient: 应初始化 deliveries 唯一索引与 entries 检索索�
   }>
 
   assertEquals(
-    indexes.some((item) => item.name === 'idx_entries_source_last_seen_at'),
+    indexes.some((item) => item.name === 'idx_source_runs_source_started_at'),
     true,
   )
   assertEquals(
-    indexes.some((item) => item.name.includes('deliveries')),
+    indexes.some((item) => item.name === 'idx_pipeline_items_run_id'),
     true,
   )
-  db.$client.close()
-})
-
-test('createDbClient: 应通过 Drizzle migration 初始化数据库结构', () => {
-  const db = createDbClient({
-    sqlite: {
-      path: join(TEST_RUNTIME, 'migrate.db'),
-      busyTimeout: '5s',
-      journalMode: 'WAL',
-      retention: {
-        maxAge: '180d',
-        maxEntriesPerSource: 1000,
-        vacuum: 'off',
-      },
-    },
-  })
-
-  const migrationTable = db.$client
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
-    .get()
-
-  assertExists(migrationTable)
-  assertEquals(migrationTable, { name: '__drizzle_migrations' })
+  assertEquals(
+    indexes.some((item) => item.name === 'idx_delivery_attempts_run_id'),
+    true,
+  )
+  assertEquals(
+    indexes.some((item) => item.name === 'idx_delivery_attempts_item_id'),
+    true,
+  )
+  assertEquals(
+    indexes.some((item) => item.name === 'idx_deduplications_lookup'),
+    true,
+  )
   db.$client.close()
 })

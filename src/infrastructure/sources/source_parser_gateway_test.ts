@@ -410,3 +410,15 @@ test('[contract] sourceParserGateway: summary 上游列表应以 RunPlan.source.
 
   assertEquals(seenSourceIds, ['rust', 'bun'])
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R14'],
+  },
+  {
+    title: '[flow] R14 sourceParserGateway: xquery 结果应归一化为统一 feed/item 字段',
+    layer: 'flow',
+    risks: ['R14'],
+  },
+] as const

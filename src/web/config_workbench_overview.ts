@@ -1,44 +1,15 @@
-import type { RawConfigDocumentLoadResult } from '../config/raw_config_document.ts'
-import { redactConfigSecrets } from './config_secret_redaction.ts'
-import type {
-  AiConfigInput,
-  EmailConfig,
-  FileDeliveryConfig,
-  LoggingConfigInput,
-  PushConfig,
-  SqliteConfigInput,
-} from '../config/schema.ts'
-import type { ReaderOverview } from './reader_overview.ts'
 import {
-  buildWorkbenchOverviewFromSession,
-  loadRuntimeSession,
-} from '../interfaces/web/runtime_session.ts'
+  type ConfigWorkbenchDeliveryConfig,
+  type ConfigWorkbenchDeliveryKind,
+  type ConfigWorkbenchOverview,
+} from '../application/config_workbench/workbench_contract.ts'
+import { redactConfigSecrets } from './config_secret_redaction.ts'
 
-export type ConfigWorkbenchDeliveryKind = 'file' | 'push' | 'email'
-export type ConfigWorkbenchDeliveryConfig = FileDeliveryConfig | PushConfig | EmailConfig
-
-export interface ConfigWorkbenchOverview {
-  reader: ReaderOverview
-  global: {
-    language: string
-    timezone: string
-    timestampFormat: string
-    sqlite?: SqliteConfigInput
-    sqliteJson: string
-    logging?: LoggingConfigInput
-    loggingJson: string
-    ai?: AiConfigInput
-    aiJson: string
-  }
-  deliveries: Array<{
-    id: string
-    enabled: boolean
-    kind: ConfigWorkbenchDeliveryKind
-    config: ConfigWorkbenchDeliveryConfig
-    configJson: string
-  }>
-  issue?: string
-}
+export type {
+  ConfigWorkbenchDeliveryConfig,
+  ConfigWorkbenchDeliveryKind,
+  ConfigWorkbenchOverview,
+} from '../application/config_workbench/workbench_contract.ts'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -53,7 +24,7 @@ function cloneRedacted<T>(value: T): T {
   return redactConfigSecrets(structuredClone(value))
 }
 
-function normalizeWorkbenchIssue(error: unknown): string {
+export function normalizeWorkbenchIssue(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   if (message.includes('配置文件不存在:')) {
     return '未找到 runtime 配置，Config Workbench 暂时无法加载。'
@@ -112,57 +83,26 @@ function buildGlobal(rawDocument: Record<string, unknown>): ConfigWorkbenchOverv
     timezone: typeof rawDocument.timezone === 'string' ? rawDocument.timezone : '',
     timestampFormat:
       typeof rawDocument.timestampFormat === 'string' ? rawDocument.timestampFormat : '',
-    sqlite: redactedSqlite ? (redactedSqlite as SqliteConfigInput) : undefined,
+    sqlite: redactedSqlite
+      ? (redactedSqlite as ConfigWorkbenchOverview['global']['sqlite'])
+      : undefined,
     sqliteJson: toPrettyJson(redactedSqlite),
-    logging: redactedLogging ? (redactedLogging as LoggingConfigInput) : undefined,
+    logging: redactedLogging
+      ? (redactedLogging as ConfigWorkbenchOverview['global']['logging'])
+      : undefined,
     loggingJson: toPrettyJson(redactedLogging),
-    ai: redactedAi ? (redactedAi as AiConfigInput) : undefined,
+    ai: redactedAi ? (redactedAi as ConfigWorkbenchOverview['global']['ai']) : undefined,
     aiJson: toPrettyJson(redactedAi),
   }
 }
 
 export function buildConfigWorkbenchOverview(input: {
   rawDocument: Record<string, unknown>
-  reader: ReaderOverview
+  reader: ConfigWorkbenchOverview['reader']
 }): ConfigWorkbenchOverview {
   return {
     reader: input.reader,
     global: buildGlobal(input.rawDocument),
     deliveries: buildDeliveries(input.rawDocument),
-  }
-}
-
-export async function loadConfigWorkbenchContext(): Promise<{
-  rawDocument: RawConfigDocumentLoadResult
-  workbench: ConfigWorkbenchOverview
-}> {
-  const session = await loadRuntimeSession()
-
-  return {
-    rawDocument: session.context.rawDocument,
-    workbench: await buildWorkbenchOverviewFromSession(session),
-  }
-}
-
-export async function loadConfigWorkbenchOverview(): Promise<ConfigWorkbenchOverview> {
-  try {
-    return (await loadConfigWorkbenchContext()).workbench
-  } catch (error) {
-    return {
-      reader: { sources: [], deliveries: [] },
-      global: {
-        language: '',
-        timezone: '',
-        timestampFormat: '',
-        sqlite: undefined,
-        sqliteJson: '',
-        logging: undefined,
-        loggingJson: '',
-        ai: undefined,
-        aiJson: '',
-      },
-      deliveries: [],
-      issue: normalizeWorkbenchIssue(error),
-    }
   }
 }

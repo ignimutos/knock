@@ -861,3 +861,15 @@ test('[contract] httpDelivery: 配置 response.message 时 failure 日志应优�
     'status=400 detail=Bad Request: message is too long',
   )
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[flow] R07 httpDelivery: 非 2xx 响应时应抛错并记录 failure 日志',
+    layer: 'flow',
+    risks: ['R07'],
+  },
+] as const

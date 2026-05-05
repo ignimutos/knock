@@ -124,3 +124,10 @@ test('[contract] httpSourceInputGateway: 抓取失败应记录失败日志且不
   assertEquals(typeof attributes['source.fetch_duration_ms'], 'number')
   assertEquals(JSON.stringify(record).includes(payload), false)
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R01'],
+  },
+] as const

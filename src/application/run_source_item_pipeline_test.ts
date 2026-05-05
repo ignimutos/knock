@@ -712,3 +712,65 @@ test('[contract] R07 runSourceItemPipeline: item duplicate 时不应进入 deliv
   ])
   assertEquals(result.counts.duplicateItemCount, 1)
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title:
+      '[flow] R07 runSourceItemPipeline: 双层 dedupe、rendered snapshot 与 attempt 失败归属应串成最小主链',
+    layer: 'flow',
+    risks: ['R07'],
+  },
+  {
+    title:
+      '[contract] R07 runSourceItemPipeline: email delivery 应把 canonical rendered payload 贯通到 attempt plan',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title:
+      '[contract] R06 runSourceItemPipeline: filter 命中时应把 item 标记为 filtered 且不给 skippedReason',
+    layer: 'contract',
+    risks: ['R06'],
+  },
+  {
+    title: '[flow] R06 runSourceItemPipeline: filter 命中时应短路 dedupe 与 delivery',
+    layer: 'flow',
+    risks: ['R06'],
+  },
+  {
+    title:
+      '[contract] R07 runSourceItemPipeline: owner-scoped item 日志应覆盖 filter/dedupe/dispatch',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title:
+      '[contract] R07 runSourceItemPipeline: item 为 new 但全部 delivery duplicate 时应落 skipped',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[contract] R07 runSourceItemPipeline: no bindings 时应落 skipped/no_deliveries',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[contract] R07 runSourceItemPipeline: delivered 后应注册 item fingerprint',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[contract] R07 runSourceItemPipeline: summary item 也应接入 filter 主链',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+  {
+    title: '[contract] R07 runSourceItemPipeline: item duplicate 时不应进入 delivery 计划与发送',
+    layer: 'contract',
+    risks: ['R07'],
+  },
+] as const

@@ -146,3 +146,16 @@ test('[contract] sqlite v2: recovery 失败时应回滚 attempt 更新，避免 
   assertEquals(view.attempts[0]?.reason, undefined)
   assertEquals(view.attempts[0]?.finishedAt, undefined)
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R10'],
+  },
+  {
+    title:
+      '[contract] R10 sqlite v2: recovery 应将 planned/running attempts 标记为 interrupted 并终结受影响 run',
+    layer: 'contract',
+    risks: ['R10'],
+  },
+] as const

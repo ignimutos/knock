@@ -80,3 +80,20 @@ test('[contract] R05 scheduler: 重入跳过时应记录结构化日志', async 
   assertEquals('outcome' in attributes, false)
   assertEquals('reason' in attributes, false)
 })
+export const testMeta = [
+  {
+    title: '[contract] R05 scheduler: 同一 source 不允许重入',
+    layer: 'contract',
+    risks: ['R05'],
+  },
+  {
+    title: '[contract] R05 scheduler: 首次执行结束后允许同一 source 再次执行',
+    layer: 'contract',
+    risks: ['R05'],
+  },
+  {
+    title: '[contract] R05 scheduler: 重入跳过时应记录结构化日志',
+    layer: 'contract',
+    risks: ['R05'],
+  },
+] as const

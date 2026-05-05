@@ -188,3 +188,15 @@ test('[contract] config deliveries api: 跨源写请求应返回 403', async () 
   assertEquals(payload.code, 'config_action_forbidden')
   assertEquals(payload.category, 'forbidden')
 })
+export const testMeta = [
+  {
+    title: '[flow] R03 config deliveries api: 应返回 workbench',
+    layer: 'flow',
+    risks: ['R03'],
+  },
+  {
+    title: '[flow] R03 config deliveries delete api: 应返回 workbench',
+    layer: 'flow',
+    risks: ['R03'],
+  },
+] as const

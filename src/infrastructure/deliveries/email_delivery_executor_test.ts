@@ -108,3 +108,10 @@ test('[unit] emailDeliveryExecutor: rendered payload 缺少 smtp/message 时应�
     'email executor 缺少 smtp/message rendered payload',
   )
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'unit',
+    risks: ['R07'],
+  },
+] as const

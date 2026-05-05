@@ -103,3 +103,10 @@ test('[contract] daemon logger: emitted attributes 不应包含 app.runtime_dir'
     consoleProxy.error = originalConsole.error
   }
 })
+export const testMeta = [
+  {
+    title: '[flow] R15 startDaemon: 应通过 RunDueSourcesUseCase 驱动 source runs',
+    layer: 'flow',
+    risks: ['R15'],
+  },
+] as const

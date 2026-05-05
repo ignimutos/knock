@@ -2,7 +2,9 @@ import {
   loadConfigRuntimeContext,
   type ConfigRuntimeContext,
 } from '../../config/runtime_config_context.ts'
-import type { ConfigWorkbenchOverview } from '../../web/config_workbench_overview.ts'
+import type { RawConfigDocumentLoadResult } from '../../config/raw_config_document.ts'
+import type { ConfigWorkbenchOverview } from '../../application/config_workbench/workbench_contract.ts'
+import { normalizeWorkbenchIssue } from '../../web/config_workbench_overview.ts'
 import type { ReaderOverview } from '../../web/reader_overview.ts'
 
 export interface RuntimeSession {
@@ -33,4 +35,39 @@ export async function buildWorkbenchOverviewFromSession(
     rawDocument: session.context.rawDocument.document,
     reader: await buildReaderOverviewFromSession(session),
   })
+}
+
+export async function loadConfigWorkbenchContext(): Promise<{
+  rawDocument: RawConfigDocumentLoadResult
+  workbench: ConfigWorkbenchOverview
+}> {
+  const session = await loadRuntimeSession()
+
+  return {
+    rawDocument: session.context.rawDocument,
+    workbench: await buildWorkbenchOverviewFromSession(session),
+  }
+}
+
+export async function loadConfigWorkbenchOverview(): Promise<ConfigWorkbenchOverview> {
+  try {
+    return (await loadConfigWorkbenchContext()).workbench
+  } catch (error) {
+    return {
+      reader: { sources: [], deliveries: [] },
+      global: {
+        language: '',
+        timezone: '',
+        timestampFormat: '',
+        sqlite: undefined,
+        sqliteJson: '',
+        logging: undefined,
+        loggingJson: '',
+        ai: undefined,
+        aiJson: '',
+      },
+      deliveries: [],
+      issue: normalizeWorkbenchIssue(error),
+    }
+  }
 }

@@ -3,7 +3,6 @@
 import { join } from 'node:path'
 import type { ComponentChildren } from 'preact'
 import renderToString from 'preact-render-to-string'
-import { createLogger, type Logger } from '../src/core/logger.ts'
 import { cwd, isNotFoundError, readTextFile } from '../src/platform/fs.ts'
 import AppDocument from './routes/_app.tsx'
 import IndexPage from './routes/index.tsx'
@@ -12,141 +11,17 @@ import ConfigPage from './routes/config.tsx'
 import XqueryPage from './routes/xquery.tsx'
 import SyndicationPage from './routes/syndication.tsx'
 import { loadReaderOverview } from '../src/web/reader_overview.ts'
-import { loadConfigWorkbenchOverview } from '../src/web/config_workbench_overview.ts'
-import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
-import type { SourceActionLogMeta } from '../src/interfaces/web/create_source_action_handler.ts'
-import { getCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
+import { loadConfigWorkbenchOverview } from '../src/interfaces/web/runtime_session.ts'
 import { createWebRequestHandler } from './create_web_request_handler.tsx'
+import { createWebRoutes, type LoggedApiRouteDefinition } from './route_manifest.ts'
+import { withApiRequestLogging } from './api_request_logging.ts'
+export { withApiRequestLogging } from './api_request_logging.ts'
 
 const WEB_CLIENT_ASSET_PATH = '/assets/client.js'
-
-type LoggedRequest = Request | { req: Request }
 
 export interface WebApp {
   listen: () => void
   handler: () => (request: Request) => Promise<Response>
-}
-
-function createWebRequestId(now: number = Date.now()): string {
-  return `web.${now.toString(36)}.${crypto.randomUUID()}`
-}
-
-function createDefaultWebLogger(): Logger {
-  const loggingRuntime = getCurrentWebLoggingRuntime()
-  return createLogger({
-    enabled: true,
-    level: loggingRuntime?.logging.level ?? 'info',
-    module: 'web.api',
-    component: 'web',
-    timezone: loggingRuntime?.timezone ?? 'UTC',
-    timestampFormat: loggingRuntime?.timestampFormat ?? 'yyyy-MM-dd HH:mm:ss',
-  })
-}
-
-function isEvaluateLogMeta(meta: EvaluateLogMeta | SourceActionLogMeta): meta is EvaluateLogMeta {
-  return (
-    'targetHost' in meta ||
-    'parser' in meta ||
-    'warningCount' in meta ||
-    'entryCount' in meta ||
-    'fetchDurationMs' in meta ||
-    'parseDurationMs' in meta
-  )
-}
-
-function isSourceActionLogMeta(
-  meta: EvaluateLogMeta | SourceActionLogMeta,
-): meta is SourceActionLogMeta {
-  return (
-    'sourceId' in meta ||
-    'action' in meta ||
-    'started' in meta ||
-    'deletedRuns' in meta ||
-    'deletedItems' in meta ||
-    'deletedAttempts' in meta
-  )
-}
-
-function normalizeLoggedRequest(input: LoggedRequest): Request {
-  return input instanceof Request ? input : input.req
-}
-
-export function withApiRequestLogging(
-  route: string,
-  module: string,
-  handler: (
-    request: Request,
-    onLogMeta: (meta: EvaluateLogMeta | SourceActionLogMeta) => void,
-  ) => Promise<Response>,
-  logger?: Logger,
-) {
-  return async (input: LoggedRequest) => {
-    const request = normalizeLoggedRequest(input)
-    const routeLogger = (logger ?? createDefaultWebLogger()).child({ module, route })
-    const startedAt = Date.now()
-    const requestId = createWebRequestId(startedAt)
-    let logMeta: EvaluateLogMeta | SourceActionLogMeta = {}
-
-    routeLogger.debug('API 请求开始', {
-      'web.operation': 'request',
-      'web.outcome': 'start',
-      method: request.method,
-      'web.request_id': requestId,
-    })
-
-    const response = await handler(request, (meta) => {
-      logMeta = meta
-    })
-    const evaluateMeta = isEvaluateLogMeta(logMeta) ? logMeta : undefined
-    const sourceActionMeta = isSourceActionLogMeta(logMeta) ? logMeta : undefined
-    const fields = {
-      'web.operation': 'request',
-      'web.outcome': response.ok ? 'success' : 'failure',
-      method: request.method,
-      'web.duration_ms': Date.now() - startedAt,
-      http_status: response.ok ? undefined : response.status,
-      'web.request_id': requestId,
-      ...(evaluateMeta?.targetHost ? { 'web.target_host': evaluateMeta.targetHost } : {}),
-      ...(evaluateMeta?.parser ? { 'source.parser': evaluateMeta.parser } : {}),
-      ...(evaluateMeta?.warningCount !== undefined
-        ? { 'pipeline.warning_count': evaluateMeta.warningCount }
-        : {}),
-      ...(evaluateMeta?.entryCount !== undefined
-        ? { 'pipeline.entry_count': evaluateMeta.entryCount }
-        : {}),
-      ...(evaluateMeta?.fetchDurationMs !== undefined
-        ? { 'source.fetch_duration_ms': evaluateMeta.fetchDurationMs }
-        : {}),
-      ...(evaluateMeta?.parseDurationMs !== undefined
-        ? { 'source.parse_duration_ms': evaluateMeta.parseDurationMs }
-        : {}),
-      ...(sourceActionMeta?.sourceId ? { 'source.id': sourceActionMeta.sourceId } : {}),
-      ...(sourceActionMeta?.action ? { 'web.action': sourceActionMeta.action } : {}),
-      ...(sourceActionMeta?.started !== undefined
-        ? { 'scheduler.started': sourceActionMeta.started }
-        : {}),
-      ...(sourceActionMeta?.deletedRuns !== undefined
-        ? { 'db.deleted_runs': sourceActionMeta.deletedRuns }
-        : {}),
-      ...(sourceActionMeta?.deletedItems !== undefined
-        ? { 'db.deleted_items': sourceActionMeta.deletedItems }
-        : {}),
-      ...(sourceActionMeta?.deletedAttempts !== undefined
-        ? { 'db.deleted_attempts': sourceActionMeta.deletedAttempts }
-        : {}),
-      ...(logMeta.errorCode ? { 'web.error_code': logMeta.errorCode } : {}),
-      ...(logMeta.errorCategory ? { 'web.error_category': logMeta.errorCategory } : {}),
-      ...(logMeta.errorMessage ? { 'exception.message': logMeta.errorMessage } : {}),
-    }
-
-    if (response.ok) {
-      routeLogger.info('API 请求完成', fields)
-    } else {
-      routeLogger.error('API 请求失败', fields)
-    }
-
-    return response
-  }
 }
 
 function renderDocument(content: ComponentChildren, title: string = 'Knock Web'): Response {
@@ -175,88 +50,79 @@ async function serveClientAsset(): Promise<Response> {
   }
 }
 
-const readerOverviewHandler = withApiRequestLogging(
-  '/api/reader/overview',
-  'web.api.reader.overview',
-  async (request) => {
+const readerOverviewRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.reader.overview',
+  handle: async (request: Request) => {
     const { handler } = await import('./routes/api/reader/overview.ts')
     return await handler(request)
   },
-)
+}
 
-const xqueryEvaluateHandler = withApiRequestLogging(
-  '/api/xquery/evaluate',
-  'web.api.xquery.evaluate',
-  async (request, onLogMeta) => {
+const xqueryEvaluateRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.xquery.evaluate',
+  handle: async (request, onLogMeta) => {
     const { handler } = await import('./routes/api/xquery/evaluate.ts')
     return await handler(request, { onLogMeta })
   },
-)
+}
 
-const syndicationEvaluateHandler = withApiRequestLogging(
-  '/api/syndication/evaluate',
-  'web.api.syndication.evaluate',
-  async (request, onLogMeta) => {
+const syndicationEvaluateRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.syndication.evaluate',
+  handle: async (request, onLogMeta) => {
     const { handler } = await import('./routes/api/syndication/evaluate.ts')
     return await handler(request, { onLogMeta })
   },
-)
+}
 
-const configGlobalHandler = withApiRequestLogging(
-  '/api/config/global',
-  'web.api.config.global',
-  async (request) => {
+const configGlobalRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.config.global',
+  handle: async (request: Request) => {
     const { handler } = await import('./routes/api/config/global.ts')
     return await handler(request)
   },
-)
+}
 
-const configDeliveriesHandler = withApiRequestLogging(
-  '/api/config/deliveries',
-  'web.api.config.deliveries',
-  async (request) => {
+const configDeliveriesRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.config.deliveries',
+  handle: async (request: Request) => {
     const { handler } = await import('./routes/api/config/deliveries.ts')
     return await handler(request)
   },
-)
+}
 
-const configDeliveriesDeleteHandler = withApiRequestLogging(
-  '/api/config/deliveries/delete',
-  'web.api.config.deliveries.delete',
-  async (request) => {
+const configDeliveriesDeleteRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.config.deliveries.delete',
+  handle: async (request: Request) => {
     const { handler } = await import('./routes/api/config/deliveries_delete.ts')
     return await handler(request)
   },
-)
+}
 
-const sourcesUpdateHandler = withApiRequestLogging(
-  '/api/sources/update',
-  'web.api.sources.update',
-  async (request, onLogMeta) => {
+const sourcesUpdateRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.sources.update',
+  handle: async (request, onLogMeta) => {
     const { handler } = await import('./routes/api/sources/update.ts')
     return await handler(request, { onLogMeta })
   },
-)
+}
 
-const sourcesRunHandler = withApiRequestLogging(
-  '/api/sources/run',
-  'web.api.sources.run',
-  async (request, onLogMeta) => {
+const sourcesRunRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.sources.run',
+  handle: async (request, onLogMeta) => {
     const { handler } = await import('./routes/api/sources/run.ts')
     return await handler(request, { onLogMeta })
   },
-)
+}
 
-const sourcesClearHandler = withApiRequestLogging(
-  '/api/sources/clear',
-  'web.api.sources.clear',
-  async (request, onLogMeta) => {
+const sourcesClearRoute: LoggedApiRouteDefinition = {
+  module: 'web.api.sources.clear',
+  handle: async (request, onLogMeta) => {
     const { handler } = await import('./routes/api/sources/clear.ts')
     return await handler(request, { onLogMeta })
   },
-)
+}
 
-export const handleWebRequest = createWebRequestHandler({
+const routes = createWebRoutes({
   webClientAssetPath: WEB_CLIENT_ASSET_PATH,
   serveClientAsset,
   renderIndexPage: () => renderDocument(<IndexPage />),
@@ -270,16 +136,19 @@ export const handleWebRequest = createWebRequestHandler({
   },
   renderXqueryPage: () => renderDocument(<XqueryPage />),
   renderSyndicationPage: () => renderDocument(<SyndicationPage />),
-  readerOverviewHandler,
-  xqueryEvaluateHandler,
-  syndicationEvaluateHandler,
-  configGlobalHandler,
-  configDeliveriesHandler,
-  configDeliveriesDeleteHandler,
-  sourcesUpdateHandler,
-  sourcesRunHandler,
-  sourcesClearHandler,
+  logApiRequest: withApiRequestLogging,
+  readerOverviewRoute,
+  xqueryEvaluateRoute,
+  syndicationEvaluateRoute,
+  configGlobalRoute,
+  configDeliveriesRoute,
+  configDeliveriesDeleteRoute,
+  sourcesUpdateRoute,
+  sourcesRunRoute,
+  sourcesClearRoute,
 })
+
+export const handleWebRequest = createWebRequestHandler(routes)
 
 const app: WebApp = {
   listen: () => {},

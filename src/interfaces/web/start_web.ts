@@ -9,7 +9,7 @@ import { findConfigFile, parseRawConfigDocument } from '../../config/load_config
 import { resolveLoggingConfig } from '../../config/resolve_config.ts'
 import { loggingSchema, timezoneSchema } from '../../config/schema.ts'
 import type { LoggingConfigResolved } from '../../config/types.ts'
-import { createFactsDbClient } from '../../db/client.ts'
+import { createDbClient } from '../../db/client.ts'
 import { parseWithFirstIssue } from '../../zod_utils.ts'
 import {
   runReadyCheckedWebServer,
@@ -300,7 +300,7 @@ export async function assertWebRuntimeReady(): Promise<void> {
 
   try {
     const context = await loadConfigRuntimeContext({ envMode: 'preserve_unknown' })
-    const factsDb = createFactsDbClient({ sqlite: context.loaded.config.sqlite })
+    const factsDb = createDbClient({ sqlite: context.loaded.config.sqlite })
     factsDb.$client.close()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

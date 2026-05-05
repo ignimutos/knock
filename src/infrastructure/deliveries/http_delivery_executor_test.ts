@@ -60,3 +60,10 @@ test('[unit] httpDeliveryExecutor: 应只消费 rendered plan 的 http/request/r
     },
   ])
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'unit',
+    risks: ['R07'],
+  },
+] as const

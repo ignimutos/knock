@@ -212,3 +212,30 @@ test('[contract] xquery api: 未知错误应返回 500 与结构化错误体', a
   assertEquals(payload.code, 'internal_error')
   assertEquals(payload.category, 'internal')
 })
+export const testMeta = [
+  {
+    title: '[flow] R19 xquery api: 应将请求 payload 原样转发给 evaluatePlayground',
+    layer: 'flow',
+    risks: ['R19'],
+  },
+  {
+    title: '[flow] R19 xquery api: POST 应返回 JSON 结果并上报成功日志元数据',
+    layer: 'flow',
+    risks: ['R19'],
+  },
+  {
+    title: '[flow] R20 xquery api: 非法 JSON 应返回 400 与 validation 错误体',
+    layer: 'flow',
+    risks: ['R20'],
+  },
+  {
+    title: '[contract] R19 xquery api: xquery 契约错误应返回 400 与结构化错误体',
+    layer: 'contract',
+    risks: ['R19'],
+  },
+  {
+    title: '[flow] R19 xquery api: 抓取失败应返回 502 与结构化错误体并上报失败日志元数据',
+    layer: 'flow',
+    risks: ['R19'],
+  },
+] as const

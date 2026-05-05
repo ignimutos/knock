@@ -115,3 +115,10 @@ test('[contract] web action executor: internal 错误应映射为结构化错误
   assertEquals(response.status, 500)
   assertEquals((await response.json()).code, 'source_action_failed')
 })
+export const testMeta = [
+  {
+    title: '[contract] R19 web action executor: 非法 JSON 应返回 400',
+    layer: 'contract',
+    risks: ['R19'],
+  },
+] as const

@@ -130,3 +130,10 @@ test('[contract] config global api: internal error 应返回通用文案', async
   assertEquals(payload.category, 'internal')
   assertEquals(payload.message, '配置操作失败，请查看服务端日志。')
 })
+export const testMeta = [
+  {
+    title: '[flow] R03 config global api: 应返回 workbench',
+    layer: 'flow',
+    risks: ['R03'],
+  },
+] as const

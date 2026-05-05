@@ -306,3 +306,15 @@ test('[contract] sqlite v2: query service 遇到坏 rendered_snapshot_json 应�
 
   await assertRejects(() => query.getRun('run-bad-attempt'))
 })
+export const testMeta = [
+  {
+    title: '__file__',
+    layer: 'contract',
+    risks: ['R10'],
+  },
+  {
+    title: '[contract] R10 sqlite v2: query service 应按 run/item/attempt 返回主事实',
+    layer: 'contract',
+    risks: ['R10'],
+  },
+] as const

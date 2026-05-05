@@ -1,12 +1,12 @@
 import { walk } from './fs.ts'
 import { dirname, join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse } from 'yaml'
 import { readTextFile } from '../platform/fs.ts'
 import { z } from 'zod'
+import type { RepoTestCaseMeta, TestLayer } from './test_api.ts'
 
 export type RequiredLayer = 'unit' | 'contract' | 'flow' | 'flow+contract'
-export type TestLayer = 'unit' | 'contract' | 'flow'
 
 export interface RiskRule {
   id: string
@@ -24,10 +24,8 @@ interface TestCaseRef {
   riskIds: string[]
 }
 
-interface FileRiskAnnotation {
-  filePath: string
-  layer: TestLayer
-  riskIds: string[]
+interface ImportedTestMetaModule {
+  testMeta?: readonly RepoTestCaseMeta[]
 }
 
 interface RiskCoverage {
@@ -37,8 +35,17 @@ interface RiskCoverage {
 
 const nonEmptyStringSchema = z.string().trim().min(1)
 const testLayerSchema = z.enum(['unit', 'contract', 'flow'])
-
 const riskIdSchema = nonEmptyStringSchema.regex(/^R\d+$/)
+
+const testMetaEntrySchema = z
+  .object({
+    title: nonEmptyStringSchema,
+    layer: testLayerSchema,
+    risks: z.array(riskIdSchema),
+  })
+  .strict()
+
+const testMetaExportSchema = z.array(testMetaEntrySchema)
 
 const riskRuleSchema = z.object({
   id: riskIdSchema,
@@ -70,12 +77,6 @@ const riskMatrixSchema = z
     })
   })
 
-const testTitlePattern = /\btest\((?:\s|\n)*(['"`])([\s\S]*?)\1/g
-const riskIdPattern = /\bR\d+\b/g
-const riskCommentPattern = /^\s*\/\/\s*risk-id:\s*(.+)$/gm
-const layerCommentPattern = /^\s*\/\/\s*layer:\s*(unit|contract|flow)\s*$/m
-const helperDefaultLayerPattern =
-  /name\.startsWith\(\s*['"]\[['"]\s*\)\s*\?\s*name\s*:\s*`\[(unit|contract|flow)\]\s*\$\{name\}`/
 const testFilePattern = /_test\.tsx?$/
 
 function getProjectRoot(): string {
@@ -84,15 +85,6 @@ function getProjectRoot(): string {
 
 function normalizeRelativePath(projectRoot: string, path: string): string {
   return relative(projectRoot, path).replaceAll('\\', '/')
-}
-
-function parseRiskIds(raw: string): string[] {
-  return Array.from(new Set(raw.match(riskIdPattern) ?? [])).sort()
-}
-
-function parseLayerFromTitle(title: string): TestLayer | undefined {
-  const match = /^\[(unit|contract|flow)\]/.exec(title)
-  return match?.[1] as TestLayer | undefined
 }
 
 function createRiskCoverage(): RiskCoverage {
@@ -111,57 +103,36 @@ function getRiskCoverage(byRisk: Map<string, RiskCoverage>, riskId: string): Ris
   return created
 }
 
-function parseHelperDefaultLayer(source: string): TestLayer | undefined {
-  const match = source.match(helperDefaultLayerPattern)
-  return match?.[1] as TestLayer | undefined
-}
+async function loadExplicitTestMeta(
+  projectRoot: string,
+  testFile: string,
+): Promise<readonly RepoTestCaseMeta[]> {
+  const absolutePath = join(projectRoot, testFile)
+  const previous = process.env.KNOCK_TEST_METADATA_MODE
+  process.env.KNOCK_TEST_METADATA_MODE = '1'
 
-function parseTestCases(filePath: string, source: string): TestCaseRef[] {
-  const cases: TestCaseRef[] = []
-  const helperDefaultLayer = parseHelperDefaultLayer(source)
-  const usesRepoTestApi =
-    source.includes("from '../testing/test_api.ts'") ||
-    source.includes('from "../testing/test_api.ts"') ||
-    source.includes("from './testing/test_api.ts'") ||
-    source.includes('from "./testing/test_api.ts"') ||
-    source.includes("from '../src/testing/test_api.ts'") ||
-    source.includes('from "../src/testing/test_api.ts"')
-
-  for (const match of source.matchAll(testTitlePattern)) {
-    const title = match[2]
-    const layer =
-      parseLayerFromTitle(title) ?? helperDefaultLayer ?? (usesRepoTestApi ? 'contract' : undefined)
-    if (!layer) continue
-
-    cases.push({
-      filePath,
-      title,
-      layer,
-      riskIds: parseRiskIds(title),
-    })
+  try {
+    const imported = (await import(pathToFileURL(absolutePath).href)) as ImportedTestMetaModule
+    if (!imported.testMeta || imported.testMeta.length === 0) {
+      return []
+    }
+    return testMetaExportSchema.parse(imported.testMeta)
+  } finally {
+    if (previous === undefined) {
+      delete process.env.KNOCK_TEST_METADATA_MODE
+    } else {
+      process.env.KNOCK_TEST_METADATA_MODE = previous
+    }
   }
-
-  return cases
 }
 
-function parseFileRiskAnnotation(filePath: string, source: string): FileRiskAnnotation | undefined {
-  const layerMatch = source.match(layerCommentPattern)
-  if (!layerMatch) return undefined
-
-  const layer = testLayerSchema.parse(layerMatch[1])
-  const riskIds = parseRiskIds(
-    Array.from(source.matchAll(riskCommentPattern))
-      .map((match) => match[1])
-      .join(' '),
-  )
-
-  if (riskIds.length === 0) return undefined
-
-  return {
+function normalizeTestMeta(filePath: string, testMeta: readonly RepoTestCaseMeta[]): TestCaseRef[] {
+  return testMeta.map((meta) => ({
     filePath,
-    layer,
-    riskIds,
-  }
+    title: meta.title,
+    layer: testLayerSchema.parse(meta.layer),
+    riskIds: Array.from(new Set(meta.risks.map((risk) => riskIdSchema.parse(risk)))).sort(),
+  }))
 }
 
 async function listTestFiles(projectRoot: string): Promise<string[]> {
@@ -183,27 +154,19 @@ async function listTestFiles(projectRoot: string): Promise<string[]> {
 async function collectTestMetadata(projectRoot: string): Promise<{
   testFiles: Set<string>
   testCases: TestCaseRef[]
-  fileAnnotations: FileRiskAnnotation[]
 }> {
   const testFiles = await listTestFiles(projectRoot)
   const testCases: TestCaseRef[] = []
-  const fileAnnotations: FileRiskAnnotation[] = []
 
   for (const testFile of testFiles) {
-    const absolutePath = join(projectRoot, testFile)
-    const source = await readTextFile(absolutePath)
-    testCases.push(...parseTestCases(testFile, source))
-
-    const annotation = parseFileRiskAnnotation(testFile, source)
-    if (annotation) {
-      fileAnnotations.push(annotation)
-    }
+    const explicitTestMeta = await loadExplicitTestMeta(projectRoot, testFile)
+    if (explicitTestMeta.length === 0) continue
+    testCases.push(...normalizeTestMeta(testFile, explicitTestMeta))
   }
 
   return {
     testFiles: new Set(testFiles),
     testCases,
-    fileAnnotations,
   }
 }
 
@@ -213,11 +176,7 @@ function validateFlowTestsHaveRiskIds(testCases: TestCaseRef[]): string[] {
     .map((testCase) => `${testCase.filePath}::${testCase.title}`)
 }
 
-function validateKnownRiskIds(input: {
-  matrix: RiskRule[]
-  testCases: TestCaseRef[]
-  fileAnnotations: FileRiskAnnotation[]
-}): void {
+function validateKnownRiskIds(input: { matrix: RiskRule[]; testCases: TestCaseRef[] }): void {
   const knownRiskIds = new Set(input.matrix.map((rule) => rule.id))
   const unknownRiskRefs = new Map<string, string[]>()
 
@@ -239,12 +198,6 @@ function validateKnownRiskIds(input: {
     }
   }
 
-  for (const annotation of input.fileAnnotations) {
-    for (const riskId of annotation.riskIds) {
-      addReference(riskId, `${annotation.filePath}::file annotation`)
-    }
-  }
-
   if (unknownRiskRefs.size === 0) return
 
   const lines = ['以下测试引用了未知风险 ID：']
@@ -255,26 +208,15 @@ function validateKnownRiskIds(input: {
   throw new Error(lines.join('\n'))
 }
 
-function buildRiskCoverage(input: {
-  testCases: TestCaseRef[]
-  fileAnnotations: FileRiskAnnotation[]
-}): Map<string, RiskCoverage> {
+function buildRiskCoverage(testCases: TestCaseRef[]): Map<string, RiskCoverage> {
   const byRisk = new Map<string, RiskCoverage>()
 
-  for (const testCase of input.testCases) {
+  for (const testCase of testCases) {
     if (testCase.riskIds.length === 0) continue
     for (const riskId of testCase.riskIds) {
       const coverage = getRiskCoverage(byRisk, riskId)
       if (testCase.layer === 'contract') coverage.contract.add(testCase.filePath)
       if (testCase.layer === 'flow') coverage.flow.add(testCase.filePath)
-    }
-  }
-
-  for (const annotation of input.fileAnnotations) {
-    for (const riskId of annotation.riskIds) {
-      const coverage = getRiskCoverage(byRisk, riskId)
-      if (annotation.layer === 'contract') coverage.contract.add(annotation.filePath)
-      if (annotation.layer === 'flow') coverage.flow.add(annotation.filePath)
     }
   }
 
@@ -285,7 +227,6 @@ function validateRiskCoverage(input: {
   matrix: RiskRule[]
   testFiles: Set<string>
   testCases: TestCaseRef[]
-  fileAnnotations: FileRiskAnnotation[]
 }): void {
   const problems: string[] = []
   const untaggedFlowTests = validateFlowTestsHaveRiskIds(input.testCases)
@@ -295,10 +236,7 @@ function validateRiskCoverage(input: {
     )
   }
 
-  const byRisk = buildRiskCoverage({
-    testCases: input.testCases,
-    fileAnnotations: input.fileAnnotations,
-  })
+  const byRisk = buildRiskCoverage(input.testCases)
 
   for (const rule of input.matrix) {
     const ownerTests = new Set(rule.owner_tests)
@@ -360,14 +298,12 @@ export async function validateRiskMatrix(
   validateKnownRiskIds({
     matrix,
     testCases: metadata.testCases,
-    fileAnnotations: metadata.fileAnnotations,
   })
 
   validateRiskCoverage({
     matrix,
     testFiles: metadata.testFiles,
     testCases: metadata.testCases,
-    fileAnnotations: metadata.fileAnnotations,
   })
 
   return matrix
