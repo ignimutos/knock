@@ -4,7 +4,7 @@ import type { DeliveryBinding } from '../domain/run_plan.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
 import type { SourceParser } from './ports/source_parser.ts'
 import type { SourceInputGateway } from './ports/source_input_gateway.ts'
-import { RunSourceUseCase, type RunSourceRequest } from './run_source_use_case.ts'
+import { RunSourceUseCase, type RunSourceRequest } from './run_source/run_source_use_case.ts'
 import { test } from '../testing/test_api.ts'
 
 // risk-id: R07
@@ -768,8 +768,8 @@ test('[flow] R07 runSourceUseCase: 应在边界处收口 run/item/attempt 聚合
       result: {
         status: 'failed',
         reason: 'telegram 500',
-        startedAt: '2026-04-13T11:00:03.000Z',
-        finishedAt: '2026-04-13T11:00:04.000Z',
+        startedAt: '2026-04-13T11:00:04.000Z',
+        finishedAt: '2026-04-13T11:00:05.000Z',
       },
     },
   ])

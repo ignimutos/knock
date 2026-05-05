@@ -7,9 +7,6 @@ import {
 } from '../composition/create_runtime_kernel.ts'
 import { test } from '../testing/test_api.ts'
 
-// risk-id: R07
-// layer: contract
-
 test('[contract] createRunSourceUseCaseForRuntime: production wiring 缺少完整 pipeline deps 时应 fail fast', async () => {
   await assertRejects(
     () =>

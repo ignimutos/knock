@@ -2,16 +2,13 @@ import { assertEquals, assertRejects } from '../testing/assert.ts'
 import { createInMemoryDb } from '../db/client.ts'
 import { statPath } from '../platform/fs.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
-import { createPreviewRuntime } from './create_preview_runtime.ts'
+import { createPreviewComposition } from './create_preview_runtime.ts'
 import { test } from '../testing/test_api.ts'
 
-// risk-id: R07
-// layer: contract
-
-test('[contract] preview runtime: 应使用 capture executors 并仅记录 attempt', async () => {
+test('[contract] preview composition: 应使用 capture executors 并仅记录 attempt', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
     const captured: string[] = []
-    const runtime = createPreviewRuntime({
+    const runtime = createPreviewComposition({
       config: {
         runtimeDir,
         language: 'zh-CN',
@@ -116,9 +113,9 @@ test('[contract] preview runtime: 应使用 capture executors 并仅记录 attem
   })
 })
 
-test('[contract] preview runtime: push payload 不是 object 时应在运行期拒绝', async () => {
+test('[contract] preview composition: push payload 不是 object 时应在运行期拒绝', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
-    const runtime = createPreviewRuntime({
+    const runtime = createPreviewComposition({
       config: {
         runtimeDir,
         language: 'zh-CN',
@@ -233,11 +230,11 @@ test('[contract] preview runtime: push payload 不是 object 时应在运行期�
   })
 })
 
-test('[contract] preview runtime: 注入 factsDb 时应 capture 投递且不写入 facts 表', async () => {
+test('[contract] preview composition: 注入 factsDb 时应 capture 投递且不写入 facts 表', async () => {
   await withOwnedRuntime(async ({ runtimeDir }) => {
     const factsDb = createInMemoryDb()
     const captured: string[] = []
-    const runtime = createPreviewRuntime({
+    const runtime = createPreviewComposition({
       factsDb,
       config: {
         runtimeDir,

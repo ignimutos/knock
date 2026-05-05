@@ -1,6 +1,6 @@
 import type { DeliveryBinding } from '../domain/run_plan.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
-import type { RunSourceResult, RunSourceUseCase } from './run_source_use_case.ts'
+import type { RunSourceResult, RunSourceUseCase } from './run_source/run_source_use_case.ts'
 
 export interface PreviewRunRequest {
   source: SourceDefinition

@@ -1,6 +1,9 @@
 import { Cron } from 'croner'
 import { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
-import { RunSourceUseCase, type RunSourceUseCaseDeps } from '../application/run_source_use_case.ts'
+import {
+  RunSourceUseCase,
+  type RunSourceUseCaseDeps,
+} from '../application/run_source/run_source_use_case.ts'
 import type { DeliveryAttemptRepository } from '../application/ports/delivery_attempt_repository.ts'
 import type { DeduplicationRepository } from '../application/ports/deduplication_repository.ts'
 import type { DeliveryExecutorRegistry } from '../application/ports/delivery_executor.ts'
@@ -16,8 +19,13 @@ import type { Logger } from '../core/logger.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { FactsDbClient } from '../db/client.ts'
 import type { DefinitionSet } from '../definitions/definition_set.ts'
-import { createSummaryQueryService } from '../infrastructure/sqlite/summary_query_service.ts'
+import { previewEffectPolicy, productionEffectPolicy, type EffectPolicy } from './effect_policy.ts'
 import { resolveSourceConfig, selectSourceInputGateway } from './runtime_source_helpers.ts'
+import { createDeliveryAttemptRepository } from '../infrastructure/sqlite/delivery_attempt_repository.ts'
+import { createApplicationDeduplicationRepository } from '../infrastructure/sqlite/deduplication_repository.ts'
+import { createItemRepository } from '../infrastructure/sqlite/item_repository.ts'
+import { createRunRepository } from '../infrastructure/sqlite/run_repository.ts'
+import { createSummaryQueryService } from '../infrastructure/sqlite/summary_query_service.ts'
 import { ByparrSourceInputGateway } from '../infrastructure/sources/byparr_source_input_gateway.ts'
 import { HttpSourceInputGateway } from '../infrastructure/sources/http_source_input_gateway.ts'
 import { SourceParserGateway } from '../infrastructure/sources/source_parser_gateway.ts'
@@ -240,6 +248,107 @@ export function createRuntimeRenderers(shared: SourceRuntimeSharedDeps): {
     renderPayload: (payload, context) =>
       shared.contentRuntime.renderPayload(payload as never, context),
   }
+}
+
+function createNoopRunRepository(): RunRepository {
+  return {
+    insert: () => Promise.resolve(),
+    update: () => Promise.resolve(),
+  }
+}
+
+function createNoopItemRepository(): ItemRepository {
+  return {
+    insertMany: () => Promise.resolve(),
+    updateStatus: () => Promise.resolve(),
+  }
+}
+
+function createNoopDeliveryAttemptRepository(): DeliveryAttemptRepository {
+  return {
+    insertPlanned: () => Promise.resolve(),
+    finish: () => Promise.resolve(),
+  }
+}
+
+function createNoopDeduplicationRepository(): DeduplicationRepository {
+  return {
+    isItemDuplicate: () => Promise.resolve(false),
+    registerItemFingerprint: () => Promise.resolve(),
+    isDeliveryDuplicate: () => Promise.resolve(false),
+    registerDeliveryFingerprint: () => Promise.resolve(),
+  }
+}
+
+function createRuntimePersistence(input: { factsDb: FactsDbClient; persistFacts: boolean }): {
+  runRepository: RunRepository
+  itemRepository: ItemRepository
+  deliveryAttemptRepository: DeliveryAttemptRepository
+} {
+  if (input.persistFacts) {
+    return {
+      runRepository: createRunRepository(input.factsDb),
+      itemRepository: createItemRepository(input.factsDb),
+      deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
+    }
+  }
+
+  return {
+    runRepository: createNoopRunRepository(),
+    itemRepository: createNoopItemRepository(),
+    deliveryAttemptRepository: createNoopDeliveryAttemptRepository(),
+  }
+}
+
+function createRuntimeDeduplicationRepository(input: {
+  factsDb: FactsDbClient
+  writeDedupe: boolean
+}): DeduplicationRepository {
+  if (input.writeDedupe) {
+    return createApplicationDeduplicationRepository(input.factsDb)
+  }
+
+  return createNoopDeduplicationRepository()
+}
+
+export function createRuntimePipeline(input: {
+  factsDb: FactsDbClient
+  deliveryExecutors: Partial<DeliveryExecutorRegistry>
+  policy: EffectPolicy
+}) {
+  return {
+    ...createRuntimePersistence({
+      factsDb: input.factsDb,
+      persistFacts: input.policy.persistFacts,
+    }),
+    deduplicationRepository: createRuntimeDeduplicationRepository({
+      factsDb: input.factsDb,
+      writeDedupe: input.policy.writeDedupe,
+    }),
+    deliveryExecutors: input.deliveryExecutors,
+  }
+}
+
+export function createProductionRuntimePipeline(input: {
+  factsDb: FactsDbClient
+  deliveryExecutors: Partial<DeliveryExecutorRegistry>
+}) {
+  return createRuntimePipeline({
+    factsDb: input.factsDb,
+    deliveryExecutors: input.deliveryExecutors,
+    policy: productionEffectPolicy,
+  })
+}
+
+export function createPreviewRuntimePipeline(input: {
+  factsDb: FactsDbClient
+  deliveryExecutors: Partial<DeliveryExecutorRegistry>
+}) {
+  return createRuntimePipeline({
+    factsDb: input.factsDb,
+    deliveryExecutors: input.deliveryExecutors,
+    policy: previewEffectPolicy,
+  })
 }
 
 export function createRuntimeKernel(input: {

@@ -8,7 +8,7 @@ import {
   RunSourceUseCase,
   type RunSourceRequest,
   type RunSourceResult,
-} from '../application/run_source_use_case.ts'
+} from '../application/run_source/run_source_use_case.ts'
 import { withOwnedRuntime } from '../test_runtime.ts'
 import { createProductionRuntime } from '../composition/create_production_runtime.ts'
 import { executePreviewSource } from './web/preview_runtime.ts'

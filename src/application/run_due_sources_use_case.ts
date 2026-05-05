@@ -1,4 +1,4 @@
-import type { RunSourceResult, RunSourceUseCase } from './run_source_use_case.ts'
+import type { RunSourceResult, RunSourceUseCase } from './run_source/run_source_use_case.ts'
 import type { SourceQueryService } from './ports/query_service.ts'
 
 export interface RunDueSourcesCommand {
