@@ -15,8 +15,11 @@ import { createHttpDeliveryExecutor } from '../infrastructure/deliveries/http_de
 import { createPruneFactsRepository } from '../infrastructure/sqlite/prune_facts_repository.ts'
 import { markInterruptedAttempts } from '../infrastructure/sqlite/recovery.ts'
 import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run_query_service.ts'
+import { createDeliveryAttemptRepository } from '../infrastructure/sqlite/delivery_attempt_repository.ts'
+import { createApplicationDeduplicationRepository } from '../infrastructure/sqlite/deduplication_repository.ts'
+import { createItemRepository } from '../infrastructure/sqlite/item_repository.ts'
+import { createRunRepository } from '../infrastructure/sqlite/run_repository.ts'
 import {
-  createProductionRuntimePipeline,
   createRunSourceUseCaseForRuntime,
   createRuntimeKernel,
   createSourceExecutionCore,
@@ -139,6 +142,19 @@ function createRuntimeFilterSource(source: {
   } as ResolvedSourceConfig
 }
 
+function createProductionRunSourcePipeline(input: {
+  factsDb: FactsDbClient
+  deliveryExecutors: ReturnType<typeof createProductionDeliveryExecutors>
+}) {
+  return {
+    runRepository: createRunRepository(input.factsDb),
+    itemRepository: createItemRepository(input.factsDb),
+    deliveryAttemptRepository: createDeliveryAttemptRepository(input.factsDb),
+    deduplicationRepository: createApplicationDeduplicationRepository(input.factsDb),
+    deliveryExecutors: input.deliveryExecutors,
+  }
+}
+
 function createProductionRunSourceUseCase(input: {
   config: AppConfigResolved
   factsDb: FactsDbClient
@@ -155,20 +171,21 @@ function createProductionRunSourceUseCase(input: {
     httpFetcher: input.httpFetcher,
     httpProxyClientFactory: input.httpProxyClientFactory,
   })
+  const deliveryExecutors = createProductionDeliveryExecutors({
+    config: input.config,
+    core,
+    loggers: input.loggers,
+    emailTransportFactory: input.emailTransportFactory,
+  })
 
   return createRunSourceUseCaseForRuntime({
     now: input.now,
     createRunId: () => crypto.randomUUID(),
     sourceInputGateway: core.sourceInputGateway,
     sourceParser: core.sourceParser,
-    pipeline: createProductionRuntimePipeline({
+    pipeline: createProductionRunSourcePipeline({
       factsDb: input.factsDb,
-      deliveryExecutors: createProductionDeliveryExecutors({
-        config: input.config,
-        core,
-        loggers: input.loggers,
-        emailTransportFactory: input.emailTransportFactory,
-      }),
+      deliveryExecutors,
     }),
     ...core.runtimeRenderers,
     shouldPassFilter: ({ item, feed, source, filterTemplate }) =>

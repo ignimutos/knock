@@ -4,7 +4,7 @@ import {
 } from '../../application/preview_run_use_case.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../../config/types.ts'
 import { buildLoadedDefinitionsFromResolvedConfig } from '../config/load_definitions.ts'
-import { createPreviewComposition } from '../../composition/create_preview_runtime.ts'
+import { createPreviewRuntime as createPreviewSourceRuntime } from '../../composition/create_preview_runtime.ts'
 import type { Fetcher } from '../../core/http_client.ts'
 
 export interface PreviewRuntimeDeps<TRequest, TParsedRequest, TResponse> {
@@ -65,7 +65,7 @@ export function createPreviewRunUseCaseRuntime(input: {
   fetcher?: Fetcher
   now?: () => string
 }) {
-  return createPreviewComposition(input).previewRunUseCase
+  return createPreviewSourceRuntime(input).previewRunUseCase
 }
 
 export async function executePreviewSource(input: {

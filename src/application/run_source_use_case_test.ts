@@ -768,8 +768,8 @@ test('[flow] R07 runSourceUseCase: 应在边界处收口 run/item/attempt 聚合
       result: {
         status: 'failed',
         reason: 'telegram 500',
-        startedAt: '2026-04-13T11:00:04.000Z',
-        finishedAt: '2026-04-13T11:00:05.000Z',
+        startedAt: '2026-04-13T11:00:03.000Z',
+        finishedAt: '2026-04-13T11:00:04.000Z',
       },
     },
   ])
