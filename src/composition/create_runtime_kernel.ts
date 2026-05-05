@@ -1,6 +1,9 @@
 import { Cron } from 'croner'
 import { RunDueSourcesUseCase } from '../application/run_due_sources_use_case.ts'
-import { RunSourceUseCase, type RunSourceUseCaseDeps } from '../application/run_source_use_case.ts'
+import {
+  RunSourceUseCase,
+  type RunSourceUseCaseDeps,
+} from '../application/run_source/run_source_use_case.ts'
 import type { DeliveryAttemptRepository } from '../application/ports/delivery_attempt_repository.ts'
 import type { DeduplicationRepository } from '../application/ports/deduplication_repository.ts'
 import type { DeliveryExecutorRegistry } from '../application/ports/delivery_executor.ts'

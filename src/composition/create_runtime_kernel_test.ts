@@ -2,7 +2,7 @@ import { assertEquals } from '../testing/assert.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import { createInMemoryDb } from '../db/client.ts'
 import { compileDefinitionsFromResolvedConfig } from '../definitions/compile_definitions.ts'
-import type { RunSourceResult } from '../application/run_source_use_case.ts'
+import type { RunSourceResult } from '../application/run_source/run_source_use_case.ts'
 import { createRuntimePipeline, createRuntimeKernel } from './create_runtime_kernel.ts'
 import { test } from '../testing/test_api.ts'
 

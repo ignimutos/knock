@@ -4,7 +4,7 @@ import type { DeliveryBinding } from '../domain/run_plan.ts'
 import type { SourceDefinition } from '../domain/source_definition.ts'
 import type { SourceParser } from './ports/source_parser.ts'
 import type { SourceInputGateway } from './ports/source_input_gateway.ts'
-import { RunSourceUseCase, type RunSourceRequest } from './run_source_use_case.ts'
+import { RunSourceUseCase, type RunSourceRequest } from './run_source/run_source_use_case.ts'
 import { test } from '../testing/test_api.ts'
 
 // risk-id: R07
