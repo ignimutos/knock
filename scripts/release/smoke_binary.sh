@@ -54,7 +54,7 @@ cat >"$workdir/config.yml" <<'EOF'
 sources: {}
 EOF
 
-"$binary" --mode daemon --runtime_dir "$workdir" --immediate
+"$binary" --mode daemon --runtime_dir "$workdir" --once
 
 KNOCK_RUNTIME_DIR="$workdir" "$binary" --mode web --web_host 127.0.0.1 --web_port "$port" >/tmp/knock-web.log 2>&1 &
 web_pid="$!"

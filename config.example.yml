@@ -250,7 +250,7 @@ deliveries:
 #   - summary source：通过 summary 汇总已保存 source state（与 http / byparr / syndication / xquery 互斥）
 # - 抓取 source 的 parser：syndication / xquery 二选一
 # - 抓取 source 同时省略 syndication 与 xquery，等价 syndication: {}
-# - 抓取 source 省略 schedule 时，只在手动触发或 --immediate 下运行
+# - 抓取 source 省略 schedule 时，只在手动触发或 --immediate/--once 下运行
 sources:
   # 标准 Feed 数据源示例（RSS / Atom / JSON Feed）
   bun:
@@ -278,7 +278,7 @@ sources:
       headers:
         User-Agent: knock-example
     # Croner 表达式，支持秒级 cron（可选）
-    # 省略 schedule 时，该 source 只在手动触发或 --immediate 下运行
+    # 省略 schedule 时，该 source 只在手动触发或 --immediate/--once 下运行
     schedule: "0 */30 * * * *"
     # 关联的投递目标 keyed map（可选）
     # - key 为 delivery id

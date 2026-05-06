@@ -104,9 +104,9 @@ test('[contract] container entrypoint: 标准化参数后应委托 main', async 
   assertEquals(calls, [['--mode', 'daemon']])
 })
 
-test('[contract] container entrypoint: CLI --once 与 env KNOCK_IMMEDIATE 冲突时应保留给 CLI 可见', async () => {
+test('[contract] container entrypoint: CLI --once 应覆盖 env KNOCK_IMMEDIATE', async () => {
   const { runContainerEntrypoint } = await import(
-    `${moduleUrl.href}?preserve-once-immediate-conflict`
+    `${moduleUrl.href}?cli-once-overrides-env-immediate`
   )
   const calls: string[][] = []
 
@@ -118,7 +118,24 @@ test('[contract] container entrypoint: CLI --once 与 env KNOCK_IMMEDIATE 冲突
     })
   })
 
-  assertEquals(calls, [['--mode', 'daemon', '--once', '--immediate']])
+  assertEquals(calls, [['--mode', 'daemon', '--once']])
+})
+
+test('[contract] container entrypoint: CLI --immediate 应覆盖 env KNOCK_ONCE', async () => {
+  const { runContainerEntrypoint } = await import(
+    `${moduleUrl.href}?cli-immediate-overrides-env-once`
+  )
+  const calls: string[][] = []
+
+  await withEnv({ KNOCK_ONCE: '1' }, async () => {
+    await runContainerEntrypoint(['--mode', 'daemon', '--immediate'], {
+      main: async (args: string[]) => {
+        calls.push(args)
+      },
+    })
+  })
+
+  assertEquals(calls, [['--mode', 'daemon', '--immediate']])
 })
 
 test('[contract] container entrypoint: 显式 daemon once 应在当前进程内返回', async () => {

@@ -85,13 +85,15 @@ export function applyContainerDefaults(
     if (webPort) nextArgs.push('--web_port', webPort)
   }
 
-  if (targetMode !== 'web' && !hasFlag('--once', nextArgs) && shouldEnableOnce(env.KNOCK_ONCE)) {
+  const hasExplicitStartupFlag = hasFlag('--once', nextArgs) || hasFlag('--immediate', nextArgs)
+
+  if (targetMode !== 'web' && !hasExplicitStartupFlag && shouldEnableOnce(env.KNOCK_ONCE)) {
     nextArgs.push('--once')
   }
 
   if (
     targetMode !== 'web' &&
-    !hasFlag('--immediate', nextArgs) &&
+    !hasExplicitStartupFlag &&
     shouldEnableImmediate(env.KNOCK_IMMEDIATE)
   ) {
     nextArgs.push('--immediate')

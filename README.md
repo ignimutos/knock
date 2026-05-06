@@ -935,7 +935,7 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为 `/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`、`KNOCK_ONCE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口为 `/app/docker-entrypoint.sh`，随后由它执行 `/app/knock-linux-x64`，并继续复用 `src/container_entrypoint.ts` 的参数归一化语义：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`、`KNOCK_ONCE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
 
 CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run verify:full`、`bun run build:binary`、`bun run smoke:binary`，再构建、smoke 与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
 

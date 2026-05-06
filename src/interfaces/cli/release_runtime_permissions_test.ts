@@ -45,6 +45,15 @@ test('[contract] smoke image script: docker image entrypoint points to shell ent
   assertStringIncludes(text, 'unexpected image entrypoint:')
 })
 
+test('[contract] smoke binary script: daemon startup probe must use one-shot mode', () => {
+  const text = readFileSync(
+    new URL('../../../scripts/release/smoke_binary.sh', import.meta.url),
+    'utf8',
+  )
+
+  assertStringIncludes(text, '"$binary" --mode daemon --runtime_dir "$workdir" --once')
+})
+
 test('[contract] release scripts: ready marker matching uses fixed-string grep', () => {
   for (const contract of contracts) {
     const text = readFileSync(new URL(contract.relativePath, import.meta.url), 'utf8')
