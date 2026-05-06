@@ -121,7 +121,13 @@ export function createSummaryQueryService(db: FactsDbClient): SummaryQueryServic
               AND source_runs.effect_domain = ?
               AND source_runs.status = 'success'
               AND pipeline_items.effect_domain = ?
-              AND pipeline_items.status = 'delivered'
+              AND (
+                pipeline_items.status = 'delivered'
+                OR (
+                  pipeline_items.status = 'skipped'
+                  AND pipeline_items.skipped_reason = 'no_deliveries'
+                )
+              )
             ORDER BY source_runs.finished_at ASC, pipeline_items.item_id ASC
           `,
         )

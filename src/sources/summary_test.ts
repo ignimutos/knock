@@ -1,4 +1,4 @@
-import { assertEquals } from '../testing/assert.ts'
+import { assertEquals, assertStringIncludes } from '../testing/assert.ts'
 import { join } from 'node:path'
 import type { ResolvedSourceConfig } from '../config/types.ts'
 import { createAiRuntime } from '../core/ai_runtime.ts'
@@ -197,6 +197,130 @@ test('[flow] R17 summarySource: 有 checkpoint 时应从 v2 facts query 读取 f
       result.entries[0].mapped.description,
       'Rust Feed Description|Rust Entry 1 Description',
     )
+
+    db.$client.close()
+  })
+})
+
+test('[contract] summarySource: 有 checkpoint 时应从 no_deliveries items 读取 summary 输入', async () => {
+  await withOwnedRuntime(TEST_RUNTIME, async () => {
+    const db = createDbClient({ sqlite: createSqliteConfig('summary-with-no-deliveries.db') })
+    const summaryQueryService = createSummaryQueryService(db)
+    const contentRuntime = createContentRuntime()
+
+    await insertSourceRun(db, {
+      runId: 'run-summary-prev-no-deliveries',
+      sourceId: 'summary.daily',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      status: 'success',
+      scheduledAt: '2026-04-11T09:00:00.000Z',
+      startedAt: '2026-04-11T09:00:00.000Z',
+      finishedAt: '2026-04-11T09:00:00.000Z',
+      counts: {
+        fetchedCount: 0,
+        parsedCount: 0,
+        filteredCount: 0,
+        duplicateItemCount: 0,
+        deliveredCount: 0,
+        failedAttemptCount: 0,
+        skippedCount: 0,
+      },
+    })
+
+    await insertSourceRun(db, {
+      runId: 'run-rust-no-deliveries',
+      sourceId: 'rust',
+      trigger: 'scheduled',
+      profile: 'production',
+      effectDomain: 'production',
+      status: 'success',
+      scheduledAt: '2026-04-12T08:00:00.000Z',
+      startedAt: '2026-04-12T08:00:00.000Z',
+      finishedAt: '2026-04-12T08:00:00.000Z',
+      counts: {
+        fetchedCount: 1,
+        parsedCount: 1,
+        filteredCount: 0,
+        duplicateItemCount: 0,
+        deliveredCount: 0,
+        failedAttemptCount: 0,
+        skippedCount: 1,
+      },
+    })
+    await setSourceRunFeedSnapshot(db, 'run-rust-no-deliveries', {
+      title: 'Rust Feed',
+      link: '',
+      description: 'Rust Feed Description',
+      generator: '',
+      language: '',
+      published: '',
+    })
+    await insertPipelineItem(db, {
+      itemId: 'item-rust-no-deliveries',
+      sourceRunId: 'run-rust-no-deliveries',
+      sourceId: 'rust',
+      effectDomain: 'production',
+      normalized: {
+        id: 'rust-no-deliveries',
+        title: 'Rust Entry No Deliveries',
+        link: 'https://example.com/rust-no-deliveries',
+        description: 'Rust Entry No Deliveries Description',
+        content: '',
+        published: '2026-04-12T08:00:00.000Z',
+        updated: '2026-04-12T08:00:00.000Z',
+      },
+      status: 'skipped',
+      skippedReason: 'no_deliveries',
+    })
+    await insertPipelineItem(db, {
+      itemId: 'item-rust-all-deliveries-duplicate',
+      sourceRunId: 'run-rust-no-deliveries',
+      sourceId: 'rust',
+      effectDomain: 'production',
+      normalized: {
+        id: 'rust-all-deliveries-duplicate',
+        title: 'Rust Entry All Deliveries Duplicate',
+        link: 'https://example.com/rust-all-deliveries-duplicate',
+        description: 'Rust Entry All Deliveries Duplicate Description',
+        content: '',
+        published: '2026-04-12T08:01:00.000Z',
+        updated: '2026-04-12T08:01:00.000Z',
+      },
+      status: 'skipped',
+      skippedReason: 'all_deliveries_duplicate',
+    })
+
+    const result = await buildSummarySource({
+      source: createSummarySource({
+        summary: {
+          sources: ['rust'],
+          entry: {
+            title: '{{ sources.rust.entries[0].title }}',
+            description:
+              '{{ sources.rust.feed.description }}|{{ sources.rust.entries[0].description }}',
+            content: '{{ sources.rust.entries[0].link }} {{ sources.rust.entries[0].published }}',
+          },
+        },
+      }),
+      upstreamSourceIds: ['rust'],
+      scheduledAt: '2026-04-12T10:00:00.000Z',
+      language: 'en-US',
+      effectDomain: 'production',
+      summaryQueryService,
+      contentRuntime,
+    })
+
+    assertEquals(result.entries.length, 1)
+    assertEquals(result.entries[0].mapped.title, 'Rust Entry No Deliveries')
+    assertEquals(
+      result.entries[0].mapped.description,
+      'Rust Feed Description|Rust Entry No Deliveries Description',
+    )
+    assertStringIncludes(result.entries[0].mapped.content, 'https://example.com/rust-no-deliveries')
+    assertStringIncludes(result.entries[0].mapped.content, '2026-04-12T08:00:00.000Z')
+    assertEquals(result.entries[0].mapped.content.includes('all-deliveries-duplicate'), false)
 
     db.$client.close()
   })
