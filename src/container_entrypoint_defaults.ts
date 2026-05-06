@@ -4,9 +4,7 @@ export function hasFlag(flag: string, args: string[]): boolean {
   return args.includes(flag)
 }
 
-export function shouldEnableImmediate(
-  value: string | undefined = getEnv('KNOCK_IMMEDIATE'),
-): boolean {
+function parseBooleanEnv(name: string, value: string | undefined): boolean {
   switch (value) {
     case undefined:
     case '':
@@ -28,8 +26,18 @@ export function shouldEnableImmediate(
     case 'OFF':
       return false
     default:
-      throw new Error(`KNOCK_IMMEDIATE 非法: ${value}`)
+      throw new Error(`${name} 非法: ${value}`)
   }
+}
+
+export function shouldEnableImmediate(
+  value: string | undefined = getEnv('KNOCK_IMMEDIATE'),
+): boolean {
+  return parseBooleanEnv('KNOCK_IMMEDIATE', value)
+}
+
+export function shouldEnableOnce(value: string | undefined = getEnv('KNOCK_ONCE')): boolean {
+  return parseBooleanEnv('KNOCK_ONCE', value)
 }
 
 export function resolveTargetMode(args: string[]): 'web' | 'daemon' | 'all' {
@@ -75,6 +83,10 @@ export function applyContainerDefaults(
   if (targetMode !== 'daemon' && !hasFlag('--web_port', nextArgs)) {
     const webPort = env.KNOCK_WEB_PORT
     if (webPort) nextArgs.push('--web_port', webPort)
+  }
+
+  if (targetMode !== 'web' && !hasFlag('--once', nextArgs) && shouldEnableOnce(env.KNOCK_ONCE)) {
+    nextArgs.push('--once')
   }
 
   if (

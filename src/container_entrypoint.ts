@@ -6,6 +6,7 @@ import {
   normalizeAppArgs,
   resolveTargetMode,
   shouldEnableImmediate,
+  shouldEnableOnce,
 } from './container_entrypoint_defaults.ts'
 
 export {
@@ -14,6 +15,7 @@ export {
   normalizeAppArgs,
   resolveTargetMode,
   shouldEnableImmediate,
+  shouldEnableOnce,
 }
 
 async function runRawCommand(args: string[]): Promise<void> {

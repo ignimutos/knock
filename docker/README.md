@@ -9,7 +9,7 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 - 工作目录：`/app`
 - 默认运行目录：`/app/runtime`
 - 默认环境变量：`KNOCK_RUNTIME_DIR=/app/runtime`
-- 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`
+- 支持的容器启动默认变量：`KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`、`KNOCK_ONCE`
 - 容器默认通过 `/app/docker-entrypoint.sh` 启动：先执行 runtime 权限自检/修复，再启动主程序
 - 默认主程序：`/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义，默认保留项目 CLI 的 `all` 模式
 - 构建阶段固定使用 `oven/bun:1.3.13`
@@ -54,15 +54,16 @@ sources:
 - 可选覆盖：`KNOCK_WEB_HOST=0.0.0.0`
 - 可选覆盖：`KNOCK_WEB_PORT=8000`
 - 可选覆盖：`KNOCK_IMMEDIATE=true|false`
+- 可选覆盖：`KNOCK_ONCE=true|false`
 
-这些变量只在镜像默认入口下生效；挂载到 `/app/runtime` 的 `config.yml` 会被默认读取。`src/container_entrypoint.ts` 会在未显式提供参数时保留项目 CLI 的 `all` 模式：`KNOCK_CONFIG_PATH` 会继续注入到含 daemon 分支的启动参数，`KNOCK_WEB_HOST` / `KNOCK_WEB_PORT` 会继续注入到含 web 分支的启动参数，`KNOCK_IMMEDIATE` 则按原约定补齐。若显式指定 `--mode daemon`，入口不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`；若显式指定 `--mode web`，入口不会把 `KNOCK_CONFIG_PATH` 改写成 CLI `--config`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
+这些变量只在镜像默认入口下生效；挂载到 `/app/runtime` 的 `config.yml` 会被默认读取。`src/container_entrypoint.ts` 会在未显式提供参数时保留项目 CLI 的 `all` 模式：`KNOCK_CONFIG_PATH` 会继续注入到含 daemon 分支的启动参数，`KNOCK_WEB_HOST` / `KNOCK_WEB_PORT` 会继续注入到含 web 分支的启动参数，`KNOCK_IMMEDIATE` / `KNOCK_ONCE` 会按约定补齐。若显式指定 `--mode daemon`，入口不会再注入 `KNOCK_WEB_HOST/KNOCK_WEB_PORT`；若显式指定 `--mode web`，入口不会把 `KNOCK_CONFIG_PATH` 改写成 CLI `--config`。若 `docker run` 里显式追加了对应 CLI 参数，则 CLI 参数优先。
 
 ## 一次性执行 daemon
 
 ```bash
 docker run --rm \
   -v "$(pwd)/runtime:/app/runtime" \
-  -e KNOCK_IMMEDIATE=true \
+  -e KNOCK_ONCE=true \
   <image>
 ```
 
@@ -89,7 +90,8 @@ docker run -d \
 - 修改 Web 监听地址：`docker run --rm -e KNOCK_WEB_HOST=0.0.0.0 <image>`
 - 修改 Web 监听端口：`docker run --rm -e KNOCK_WEB_PORT=9000 -p 9000:9000 <image>`
 - 指定配置文件：`docker run --rm -e KNOCK_CONFIG_PATH=/app/runtime/config.yml <image>`
-- 立即执行一次后退出：`docker run --rm -e KNOCK_IMMEDIATE=true <image>`
+- 立即执行一次后退出（当前进程会返回）：`docker run --rm -e KNOCK_ONCE=true <image>`
+- 启动时立即执行一次并继续常驻（短窗口内不会返回）：`docker run --rm -e KNOCK_IMMEDIATE=true <image>`
 - 显式参数覆盖环境变量：`docker run --rm -e KNOCK_WEB_PORT=8000 <image> --web_port 9000`
 
 如果你通过环境变量注入 provider 凭据、SMTP 配置或 webhook URL，直接在 `docker run` 时追加 `-e KEY=value` 即可；入口脚本只会补齐未显式传入的 CLI 参数。默认建议不传 `--user`，让入口在启动时先自检并尝试修复 `KNOCK_RUNTIME_DIR` 解析后的运行目录权限。`--user` 仍可作为高级覆盖：仅在你需要强制指定容器进程 UID/GID 时使用；若显式传入非 root `--user`，则视为你主动放弃自动修权，并需自行保证目标 runtime 目录可写。

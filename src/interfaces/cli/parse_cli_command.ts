@@ -10,6 +10,7 @@ export interface DaemonCliCommand {
   configPath?: string
   runtimeDir?: string
   immediate: boolean
+  once: boolean
 }
 
 export interface WebCliCommand {
@@ -23,6 +24,7 @@ export interface AllCliCommand {
   configPath?: string
   runtimeDir?: string
   immediate: boolean
+  once: boolean
   host?: string
   port?: number
 }
@@ -33,6 +35,7 @@ export interface DaemonStartOptions {
   configPath?: string
   runtimeDir?: string
   immediate: boolean
+  once: boolean
 }
 
 const cliPositionalsSchema = z.array(z.string()).superRefine((positionals, ctx) => {
@@ -57,10 +60,15 @@ const cliOptionsSchema = z
     configPath: z.string().optional(),
     runtimeDir: z.string().optional(),
     immediate: z.boolean(),
+    once: z.boolean(),
     host: z.string().optional(),
     port: z.number().int().min(1).max(65535).optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.immediate && value.once) {
+      ctx.addIssue({ code: 'custom', message: '--immediate 与 --once 不能同时使用' })
+    }
+
     if (value.mode === 'web') {
       if (value.configPath !== undefined) {
         ctx.addIssue({ code: 'custom', message: 'web 模式不支持 --config' })
@@ -73,6 +81,9 @@ const cliOptionsSchema = z
       }
       if (value.immediate) {
         ctx.addIssue({ code: 'custom', message: 'web 模式不支持 --immediate' })
+      }
+      if (value.once) {
+        ctx.addIssue({ code: 'custom', message: 'web 模式不支持 --once' })
       }
     }
 
@@ -129,6 +140,7 @@ export function parseCliCommand(args: string[]): CliCommand {
         config: { type: 'string' },
         runtime_dir: { type: 'string' },
         immediate: { type: 'boolean' },
+        once: { type: 'boolean' },
         web_host: { type: 'string' },
         web_port: { type: 'string' },
       },
@@ -143,6 +155,7 @@ export function parseCliCommand(args: string[]): CliCommand {
         configPath: values.config,
         runtimeDir: values.runtime_dir,
         immediate: values.immediate ?? false,
+        once: values.once ?? false,
         host: values.web_host,
         port: parseWebPort(values.web_port),
       },
@@ -155,6 +168,7 @@ export function parseCliCommand(args: string[]): CliCommand {
         configPath: options.configPath,
         runtimeDir: options.runtimeDir,
         immediate: options.immediate,
+        once: options.once,
       }
     }
 
@@ -171,6 +185,7 @@ export function parseCliCommand(args: string[]): CliCommand {
       configPath: options.configPath,
       runtimeDir: options.runtimeDir,
       immediate: options.immediate,
+      once: options.once,
       host: options.host,
       port: options.port,
     }
@@ -222,6 +237,7 @@ export function toDaemonStartOptions(command: CliCommand): DaemonStartOptions {
     configPath: command.configPath,
     runtimeDir: command.runtimeDir,
     immediate: command.immediate,
+    once: command.once,
   }
 }
 
@@ -249,6 +265,7 @@ export function buildChildArgs(command: CliCommand, mode: 'web' | 'daemon'): str
       args.push('--runtime_dir', command.runtimeDir)
     }
     if (command.immediate) args.push('--immediate')
+    if (command.once) args.push('--once')
   }
 
   if (mode === 'web') {

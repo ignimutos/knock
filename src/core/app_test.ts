@@ -46,7 +46,7 @@ sources: {}
 `,
     )
 
-    const result = await startApp({ runtimeDir: testRuntime, keepAlive: false })
+    const result = await startApp({ runtimeDir: testRuntime, keepAlive: false, once: false })
     assertEquals(result.mode, 'daemon')
   })
 })
@@ -65,8 +65,28 @@ sources: {}
       runtimeDir: testRuntime,
       keepAlive: false,
       immediate: true,
+      once: false,
     })
 
+    assertEquals(result.mode, 'daemon')
+  })
+})
+
+test('[flow] R03 app: once 模式应在一次启动执行后返回 daemon 结果', async () => {
+  await withAppRuntime('once-v2-daemon', async (testRuntime) => {
+    await writeRuntimeFile(
+      testRuntime,
+      'config.yml',
+      `
+sources: {}
+`,
+    )
+
+    const result = await startApp({
+      runtimeDir: testRuntime,
+      keepAlive: false,
+      once: true,
+    })
     assertEquals(result.mode, 'daemon')
   })
 })
@@ -91,6 +111,7 @@ sources: {}
       runtimeDir: testRuntime,
       keepAlive: false,
       immediate: true,
+      once: false,
     })
 
     const logPath = join(testRuntime, 'logs', 'app.jsonl')
@@ -106,6 +127,11 @@ export const testMeta = [
   },
   {
     title: '[flow] R03 app: immediate 模式应走 v2 daemon wiring 并返回 daemon 结果',
+    layer: 'flow',
+    risks: ['R03'],
+  },
+  {
+    title: '[flow] R03 app: once 模式应在一次启动执行后返回 daemon 结果',
     layer: 'flow',
     risks: ['R03'],
   },

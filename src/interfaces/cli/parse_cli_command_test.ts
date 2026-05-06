@@ -17,6 +17,7 @@ test('[contract] parseCliCommand: 应把 flags 解析成显式 daemon 命令对�
       configPath: '/tmp/config.yml',
       runtimeDir: '/tmp/runtime',
       immediate: false,
+      once: false,
     },
   )
 })
@@ -29,6 +30,28 @@ test('[contract] parseCliCommand: 应把 web 参数解析成显式 web 命令对
       host: '127.0.0.1',
       port: 8080,
     },
+  )
+})
+
+test('[contract] parseCliCommand: daemon 模式支持 --once', () => {
+  assertEquals(parseCliCommand(['--mode', 'daemon', '--once']), {
+    kind: 'daemon',
+    configPath: undefined,
+    runtimeDir: undefined,
+    immediate: false,
+    once: true,
+  })
+})
+
+test('[contract] parseCliCommand: web 模式不接受 --once', () => {
+  assertThrows(() => parseCliCommand(['--mode', 'web', '--once']), Error, 'web 模式不支持 --once')
+})
+
+test('[contract] parseCliCommand: --immediate 与 --once 不能同时使用', () => {
+  assertThrows(
+    () => parseCliCommand(['--immediate', '--once']),
+    Error,
+    '--immediate 与 --once 不能同时使用',
   )
 })
 

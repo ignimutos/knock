@@ -209,6 +209,7 @@ test('[contract] parseCliCommand: 应解析 --config、--runtime_dir 与 --immed
     configPath: '/tmp/config.yml',
     runtimeDir: '/tmp/runtime',
     immediate: true,
+    once: false,
     host: undefined,
     port: undefined,
   })
@@ -246,6 +247,7 @@ test('[contract] parseCliCommand: 未传 --immediate 时应显式返回 immediat
     configPath: '/tmp/config.yml',
     runtimeDir: undefined,
     immediate: false,
+    once: false,
     host: undefined,
     port: undefined,
   })
@@ -257,6 +259,7 @@ test('[contract] toDaemonStartOptions: 返回值应可赋给 app 启动入口类
   )
 
   assertEquals(options.immediate, false)
+  assertEquals(options.once, false)
   assertEquals(options.configPath, '/tmp/config.yml')
 })
 
@@ -275,6 +278,16 @@ test('[contract] toDaemonStartOptions: 应收敛为 daemon 启动参数', () => 
     configPath: '/tmp/config.yml',
     runtimeDir: '/tmp/runtime',
     immediate: true,
+    once: false,
+  })
+})
+
+test('[contract] toDaemonStartOptions: daemon --once 应收敛为 once=true', () => {
+  assertEquals(toDaemonStartOptions(parseCliCommand(['--mode', 'daemon', '--once'])), {
+    configPath: undefined,
+    runtimeDir: undefined,
+    immediate: false,
+    once: true,
   })
 })
 
@@ -297,6 +310,7 @@ test('[contract] resolveDaemonStartOptions: CLI 显式 runtime_dir 应优先于�
     configPath: '/tmp/config.yml',
     runtimeDir: '/tmp/runtime',
     immediate: false,
+    once: false,
   })
 })
 
@@ -312,6 +326,7 @@ test('[contract] resolveDaemonStartOptions: 未传 runtime_dir 时应回退到�
     configPath: '/tmp/config.yml',
     runtimeDir: '/tmp/runtime-from-env',
     immediate: false,
+    once: false,
   })
 })
 
@@ -474,6 +489,18 @@ test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进程',
   ])
 })
 
+test('[contract] buildChildArgs: all 模式应向 daemon 子进程透传 --once', () => {
+  const command = parseCliCommand(['--config', 'runtime/config.yml', '--once'])
+
+  assertEquals(buildChildArgs(command, 'daemon'), [
+    '--mode',
+    'daemon',
+    '--config',
+    'runtime/config.yml',
+    '--once',
+  ])
+})
+
 test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程', () => {
   const command = parseCliCommand([
     '--config',
@@ -502,6 +529,7 @@ test('[contract] dispatchCliCommand: 应通过 command object 分发 daemon 入�
       kind: 'daemon',
       configPath: '/tmp/config.yml',
       immediate: false,
+      once: false,
     },
     {
       dispatchStartupCommand: async (command) => {
@@ -515,6 +543,7 @@ test('[contract] dispatchCliCommand: 应通过 command object 分发 daemon 入�
       kind: 'daemon',
       configPath: '/tmp/config.yml',
       immediate: false,
+      once: false,
     },
   ])
 })
@@ -528,6 +557,7 @@ test('[contract] dispatchCliCommand: daemon 命令应委托 startup orchestrator
       configPath: '/tmp/config.yml',
       runtimeDir: '/tmp/runtime',
       immediate: true,
+      once: false,
     },
     {
       dispatchStartupCommand: async () => {

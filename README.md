@@ -12,7 +12,7 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 - 当前 `sqlite.*` 仍不支持热重载；修改后需要重启进程才能生效。
 - 处理链路：字段统一、Liquid 过滤、模板渲染。
 - 投递通道：file、push、email。
-- 运行模式：`all`、`web`、`daemon`，支持 `--immediate` 一次性执行。
+- 运行模式：`all`、`web`、`daemon`，支持 `--immediate`（启动后先执行一次并继续调度）与 `--once`（执行一次后退出）。
 - 状态存储：SQLite 记录 feed、entry、delivery 去重状态。
 - 日志：按 sink 配置输出；console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。
 
@@ -82,16 +82,22 @@ sources:
       local: {}
 ```
 
-### 4) 先跑一次即时执行
+### 4) 先跑一次单次执行
 
 ```bash
-bun run daemon -- --config <your-config.yml> --immediate
+bun run daemon -- --config <your-config.yml> --once
 ```
 
 ### 5) 启动常驻模式
 
 ```bash
 bun run start -- --config <your-config.yml>
+```
+
+如需在常驻模式启动时额外执行一次：
+
+```bash
+bun run daemon -- --config <your-config.yml> --immediate
 ```
 
 ## 配置设计原则
@@ -848,6 +854,7 @@ bun run src/main.ts \
   [--config <path>] \
   [--runtime_dir <dir>] \
   [--immediate] \
+  [--once] \
   [--web_host <host>] \
   [--web_port <port>]
 ```
@@ -857,14 +864,15 @@ bun run src/main.ts \
 - `--mode`：`all`（默认）/`web`/`daemon`
 - `--config`：显式配置文件路径
 - `--runtime_dir`：运行目录
-- `--immediate`：daemon 立即执行一次后退出
+- `--immediate`：daemon 启动后立即执行一次，然后进入常驻调度（短窗口内不会返回）
+- `--once`：daemon 启动后立即执行一次并退出（会在当前进程内返回）
 - `--web_host` / `--web_port`：web 监听地址
 
 ### mode 参数约束
 
 - `web` 模式：支持 `--web_host`、`--web_port`。
-- `daemon` 模式：支持 `--config`、`--runtime_dir`、`--immediate`。
-- `web` 模式与 `--config` / `--runtime_dir` / `--immediate` 组合会触发参数错误。
+- `daemon` 模式：支持 `--config`、`--runtime_dir`、`--immediate`、`--once`。
+- `web` 模式与 `--config` / `--runtime_dir` / `--immediate` / `--once` 组合会触发参数错误。
 - `daemon` 模式与 `--web_host` / `--web_port` 组合会触发参数错误。
 
 ### `--config` 与 `--runtime_dir` 优先级与路径解析
@@ -927,7 +935,7 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为 `/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口现为 `/app/knock-linux-x64`，内部仍复用 `src/container_entrypoint.ts` 的参数归一化语义：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`、`KNOCK_ONCE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
 
 CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run verify:full`、`bun run build:binary`、`bun run smoke:binary`，再构建、smoke 与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
 
@@ -997,7 +1005,7 @@ logging:
 
 ## 生产使用建议
 
-1. 先用 `--immediate` 验证配置与模板，再进入常驻调度。
+1. 先用 `--once` 验证配置与模板；如需常驻进程启动时额外跑一轮，再使用 `--immediate`。
 2. 启动命令显式传入 `--config`，确保进程读取目标配置文件。
 3. 将 SQLite 所在目录与 file delivery 输出目录挂载到宿主持久化存储，保证跨重启保留状态与产物。
 4. 对外抓取源配置稳定 `User-Agent`、合理 `timeout` 与 `retry`。

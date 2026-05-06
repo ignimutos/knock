@@ -16,6 +16,7 @@ export interface StartDaemonProcessOptions {
   keepAlive?: boolean
   keepAliveSignal?: Promise<void>
   immediate?: boolean
+  once?: boolean
 }
 
 interface StartDaemonProcessInput {
@@ -27,6 +28,7 @@ interface StartDaemonProcessInput {
   keepAlive: boolean
   keepAliveSignal?: Promise<void>
   immediate: boolean
+  once: boolean
 }
 
 export interface StartDaemonProcessResult {
@@ -40,27 +42,34 @@ export interface StartDaemonProcessDeps {
   }
 }
 
-const startDaemonProcessOptionsSchema = z.object({
-  runtimeDir: z.string({ message: 'runtimeDir 必须是字符串' }).optional(),
-  configPath: z.string({ message: 'configPath 必须是字符串' }).optional(),
-  httpFetcher: z.custom<Fetcher>((value) => value === undefined || typeof value === 'function', {
-    message: 'httpFetcher 必须是函数',
-  }),
-  httpProxyClientFactory: z.custom<ProxyClientFactory>(
-    (value) => value === undefined || typeof value === 'function',
-    { message: 'httpProxyClientFactory 必须是函数' },
-  ),
-  emailTransportFactory: z.custom<CreateTransport>(
-    (value) => value === undefined || typeof value === 'function',
-    { message: 'emailTransportFactory 必须是函数' },
-  ),
-  keepAlive: z.boolean({ message: 'keepAlive 必须是布尔值' }).optional(),
-  keepAliveSignal: z.custom<Promise<void>>(
-    (value) => value === undefined || value instanceof Promise,
-    { message: 'keepAliveSignal 必须是 Promise' },
-  ),
-  immediate: z.boolean({ message: 'immediate 必须是布尔值' }).optional(),
-})
+const startDaemonProcessOptionsSchema = z
+  .object({
+    runtimeDir: z.string({ message: 'runtimeDir 必须是字符串' }).optional(),
+    configPath: z.string({ message: 'configPath 必须是字符串' }).optional(),
+    httpFetcher: z.custom<Fetcher>((value) => value === undefined || typeof value === 'function', {
+      message: 'httpFetcher 必须是函数',
+    }),
+    httpProxyClientFactory: z.custom<ProxyClientFactory>(
+      (value) => value === undefined || typeof value === 'function',
+      { message: 'httpProxyClientFactory 必须是函数' },
+    ),
+    emailTransportFactory: z.custom<CreateTransport>(
+      (value) => value === undefined || typeof value === 'function',
+      { message: 'emailTransportFactory 必须是函数' },
+    ),
+    keepAlive: z.boolean({ message: 'keepAlive 必须是布尔值' }).optional(),
+    keepAliveSignal: z.custom<Promise<void>>(
+      (value) => value === undefined || value instanceof Promise,
+      { message: 'keepAliveSignal 必须是 Promise' },
+    ),
+    immediate: z.boolean({ message: 'immediate 必须是布尔值' }).optional(),
+    once: z.boolean({ message: 'once 必须是布尔值' }).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.immediate && value.once) {
+      ctx.addIssue({ code: 'custom', message: 'immediate 与 once 不能同时为 true' })
+    }
+  })
 
 function normalizeStartDaemonProcessInput(
   options: StartDaemonProcessOptions = {},
@@ -76,6 +85,40 @@ function normalizeStartDaemonProcessInput(
     keepAlive: parsed.keepAlive ?? true,
     keepAliveSignal: parsed.keepAliveSignal,
     immediate: parsed.immediate ?? false,
+    once: parsed.once ?? false,
+  }
+}
+
+async function runDaemonStartupOnce(input: StartDaemonProcessInput): Promise<void> {
+  const loaded = await loadCompiledConfig({
+    runtimeDir: input.runtimeDir,
+    configPath: input.configPath,
+  })
+  const { config, definitions } = loaded
+
+  await configureLoggingRuntime({
+    logging: config.logging,
+    runtimeDir: config.runtimeDir,
+    timezone: config.timezone,
+    timestampFormat: config.timestampFormat,
+  })
+
+  const daemon = createProductionRuntime({
+    config,
+    definitions,
+    httpFetcher: input.httpFetcher,
+    httpProxyClientFactory: input.httpProxyClientFactory,
+    emailTransportFactory: input.emailTransportFactory,
+    keepAlive: input.keepAlive,
+    keepAliveSignal: input.keepAliveSignal,
+  })
+
+  try {
+    await daemon.recoverInterruptedAttempts()
+    await daemon.runImmediate()
+  } finally {
+    daemon.stop()
+    await shutdownLoggingRuntime()
   }
 }
 
@@ -85,37 +128,10 @@ export async function startDaemonProcess(
 ): Promise<StartDaemonProcessResult> {
   const input = normalizeStartDaemonProcessInput(options)
 
-  if (input.immediate) {
-    const loaded = await loadCompiledConfig({
-      runtimeDir: input.runtimeDir,
-      configPath: input.configPath,
-    })
-    const { config, definitions } = loaded
-
-    await configureLoggingRuntime({
-      logging: config.logging,
-      runtimeDir: config.runtimeDir,
-      timezone: config.timezone,
-      timestampFormat: config.timestampFormat,
-    })
-
-    const daemon = createProductionRuntime({
-      config,
-      definitions,
-      httpFetcher: input.httpFetcher,
-      httpProxyClientFactory: input.httpProxyClientFactory,
-      emailTransportFactory: input.emailTransportFactory,
-      keepAlive: input.keepAlive,
-      keepAliveSignal: input.keepAliveSignal,
-    })
-
-    try {
-      await daemon.recoverInterruptedAttempts()
-      await daemon.runImmediate()
+  if (input.immediate || input.once) {
+    await runDaemonStartupOnce(input)
+    if (input.once) {
       return { mode: 'daemon' }
-    } finally {
-      daemon.stop()
-      await shutdownLoggingRuntime()
     }
   }
 

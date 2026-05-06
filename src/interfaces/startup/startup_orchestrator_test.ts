@@ -33,6 +33,7 @@ test('[contract] startup orchestrator: all 模式应启动 daemon 与 web 子进
       configPath: '/tmp/config.yml',
       runtimeDir: '/tmp/runtime',
       immediate: false,
+      once: false,
     },
     {
       env: { KNOCK_RUNTIME_DIR: '/tmp/runtime' },
@@ -56,7 +57,7 @@ test('[contract] startup orchestrator: all 模式应启动 daemon 与 web 子进
   assertEquals(killed, [])
 })
 
-test('[contract] startup orchestrator: all+immediate 模式应在 daemon 成功后终止 web 并返回', async () => {
+test('[contract] startup orchestrator: all+once 模式应在 daemon 成功后终止 web 并返回', async () => {
   killed = []
   const daemon = child('daemon', true)
   let resolveWebStatus: ((status: { success: boolean; code: number }) => void) | undefined
@@ -76,7 +77,8 @@ test('[contract] startup orchestrator: all+immediate 模式应在 daemon 成功�
       kind: 'all',
       configPath: '/tmp/config.yml',
       runtimeDir: '/tmp/runtime',
-      immediate: true,
+      immediate: false,
+      once: true,
     },
     {
       env: { KNOCK_RUNTIME_DIR: '/tmp/runtime' },
@@ -108,6 +110,7 @@ test('[contract] startup orchestrator: all 模式 web 先成功退出时应终�
       configPath: '/tmp/config.yml',
       runtimeDir: '/tmp/runtime',
       immediate: false,
+      once: false,
     },
     {
       env: { KNOCK_RUNTIME_DIR: '/tmp/runtime' },
@@ -132,6 +135,7 @@ test('[contract] startup orchestrator: all 模式首个失败子进程应终止�
           configPath: '/tmp/config.yml',
           runtimeDir: '/tmp/runtime',
           immediate: false,
+          once: false,
         },
         {
           env: { KNOCK_RUNTIME_DIR: '/tmp/runtime' },
