@@ -373,7 +373,7 @@ test('[contract] R11 logger: 无函数名栈帧时仍输出 code.filepath 与 co
   assertEquals('outcome' in attributes, false)
 })
 
-test('[contract] R11 logger: async 路径栈帧 fallback 时仍输出 code.filepath 与 code.line.number', () => {
+test('[contract] R11 logger: async 栈帧降级路径时仍输出 code.filepath 与 code.line.number', () => {
   if (!SUPPORTS_MOCKED_ERROR_STACKS) return
   const stdout: string[] = []
   const lineNumber = 312
@@ -962,8 +962,7 @@ export const testMeta = [
     risks: ['R11'],
   },
   {
-    title:
-      '[contract] R11 logger: async 路径栈帧 fallback 时仍输出 code.filepath 与 code.line.number',
+    title: '[contract] R11 logger: async 栈帧降级路径时仍输出 code.filepath 与 code.line.number',
     layer: 'contract',
     risks: ['R11'],
   },

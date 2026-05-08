@@ -190,6 +190,63 @@ test('runtime-harness: 显式 runtimeDir 调用应先清空目录并最终 clean
 
             self.assertEqual(result, {"ok": True, "missing": []})
 
+    def test_validate_owner_test_paths_supports_variable_length_risk_id_and_tsx_owner_test(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            docs_dir = temp_root / "docs" / "testing"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+
+            matrix_path = docs_dir / "risk-matrix.yml"
+            matrix_path.write_text(
+                """
+- id: R123
+  owner_tests:
+    - src/sources/web/create_web_request_handler_test.tsx
+                """.strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch("guard._repo_root", return_value=temp_root):
+                missing = validate_owner_test_paths(matrix_path)
+
+            self.assertEqual(missing, ["src/sources/web/create_web_request_handler_test.tsx"])
+
+    def test_risk_mapping_check_treats_tsx_test_file_as_test_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            docs_dir = temp_root / "docs" / "testing"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+            (docs_dir / "risk-matrix.yml").write_text(
+                """
+- id: R01
+  owner_tests:
+    - src/existing_test.ts
+                """.strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            test_path = temp_root / "src" / "sources" / "web" / "create_web_request_handler_test.tsx"
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            test_path.write_text(
+                """
+import { test } from '../../../testing/test_api.ts'
+
+test('web request handler: renders response', () => {})
+                """.strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch("guard._repo_root", return_value=temp_root):
+                result = _default_risk_mapping_check(["src/sources/web/create_web_request_handler_test.tsx"])
+
+            self.assertEqual(
+                result,
+                {"ok": False, "missing": ["src/sources/web/create_web_request_handler_test.tsx"]},
+            )
+
     def test_empty_changed_paths_blocks_gate_without_risk_file_check(self) -> None:
         result = run_guard(
             changed_paths=[],

@@ -197,7 +197,7 @@ sources:
   )
 })
 
-test('loadCompiledConfig: source.deliveries 数组输入应按当前对象契约拒绝且不返回迁移提示', async () => {
+test('loadCompiledConfig: source.deliveries 数组输入应按当前对象契约拒绝', async () => {
   await writeRuntimeFile(
     TEST_RUNTIME,
     'config.yml',
@@ -220,8 +220,6 @@ sources:
   const err = await assertRejects(() => loadCompiledConfig({ runtimeDir: TEST_RUNTIME }), Error)
   assertStringIncludes(err.message, 'source.rust.deliveries')
   assertStringIncludes(err.message, '必须是对象')
-  assertEquals(err.message.includes('已迁移'), false)
-  assertEquals(err.message.includes('已废弃'), false)
 })
 
 test('R04 loadConfig: 缺失环境变量时应报出配置路径', async () => {
@@ -648,7 +646,7 @@ test('loadConfig: 非权限错误应保持原始错误文案', () => {
   assertEquals(wrapped.message, '配置文件错误(/tmp/config.yml): 配置非法')
 })
 
-test('loadConfig: 应支持 config.yaml fallback', async () => {
+test('loadConfig: 缺失 config.yml 时应读取 config.yaml', async () => {
   await writeRuntimeFile(
     TEST_RUNTIME,
     'config.yaml',

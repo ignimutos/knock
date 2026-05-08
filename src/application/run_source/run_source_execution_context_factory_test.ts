@@ -3,6 +3,8 @@ import { test } from '../../testing/test_api.ts'
 import { RunSourceExecutionContextFactory } from './run_source_execution_context_factory.ts'
 import type { RunSourceUseCaseDeps } from './run_source_execution_types.ts'
 
+// layer: unit
+
 function createBaseDeps(): RunSourceUseCaseDeps {
   return {
     now: () => '2026-04-13T12:00:00.000Z',
@@ -26,7 +28,7 @@ test('[unit] runSourceExecutionContextFactory: 缺 execute 依赖时应 fail fas
   )
 })
 
-test('[unit] runSourceExecutionContextFactory: 应提供默认 createAttemptId 与渲染 fallback', async () => {
+test('[unit] runSourceExecutionContextFactory: 应提供默认 createAttemptId 与基础内容渲染能力', async () => {
   const factory = new RunSourceExecutionContextFactory({
     ...createBaseDeps(),
     runRepository: {

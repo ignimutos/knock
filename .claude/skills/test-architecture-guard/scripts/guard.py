@@ -26,7 +26,7 @@ LegacyAssertionCheck = Callable[[List[str]], CheckResult]
 CommandRunner = Callable[[List[str]], Tuple[int, str]]
 
 
-RISK_ID_PATTERN = re.compile(r"\bR\d{2}\b")
+RISK_ID_PATTERN = re.compile(r"\bR\d+\b")
 TEST_TITLE_PATTERN = re.compile(r"^\s*test\((?:\s|\n)*(['\"`])([\s\S]*?)\1", re.MULTILINE)
 COMMENT_PATTERN = re.compile(r"^\s*//\s*(.+)$")
 LAYER_COMMENT_PATTERN = re.compile(r"^\s*//\s*layer:\s*(unit|contract|flow)\s*$")
@@ -61,7 +61,7 @@ def _risk_matrix_path() -> Path:
 
 def _is_test_file(path: str) -> bool:
     normalized = path.replace("\\", "/")
-    return normalized.endswith("_test.ts")
+    return normalized.endswith("_test.ts") or normalized.endswith("_test.tsx")
 
 
 def _normalize_changed_path(path: str) -> Optional[str]:
@@ -161,7 +161,7 @@ def _load_owner_tests_from_risk_matrix(matrix_path: Path) -> Dict[str, List[str]
     for raw_line in matrix_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.rstrip()
 
-        risk_match = re.match(r"^\s*-\s*id:\s*(R\d{2})\s*$", line)
+        risk_match = re.match(r"^\s*-\s*id:\s*(R\d+)\s*$", line)
         if risk_match:
             current_risk_id = risk_match.group(1)
             owners_by_risk.setdefault(current_risk_id, [])
