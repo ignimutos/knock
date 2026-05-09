@@ -10,6 +10,8 @@ export const testMeta = [
 // risk-id: R03
 import { assertEquals, assertRejects } from '../../testing/assert.ts'
 import { test } from '../../testing/test_api.ts'
+import { SKIP_WEB_RUNTIME_READY_CHECK_ENV } from '../web/start_web.ts'
+import { runAllModeProcesses } from './process_orchestration.ts'
 import { dispatchStartupCommand } from './startup_orchestrator.ts'
 
 function child(name: 'daemon' | 'web', success: boolean) {
@@ -20,6 +22,45 @@ function child(name: 'daemon' | 'web', success: boolean) {
 }
 
 let killed: Array<'daemon' | 'web'> = []
+
+test('[contract] process orchestration: all 模式应为 daemon 与 web 注入正确 child env', async () => {
+  const spawned: Array<{
+    args: string[]
+    env: Record<string, string | undefined>
+  }> = []
+  killed = []
+  const daemon = child('daemon', true)
+  const web = child('web', true)
+
+  await runAllModeProcesses(
+    {
+      kind: 'all',
+      configPath: '/tmp/config.yml',
+      runtimeDir: '/tmp/runtime',
+      immediate: false,
+      once: false,
+      host: '127.0.0.1',
+      port: 8000,
+    },
+    {
+      env: { BASE: '1' },
+      spawnChild: ({ args, env }) => {
+        spawned.push({ args, env })
+        return args[1] === 'daemon' ? daemon : web
+      },
+    },
+  )
+
+  assertEquals(spawned[0]?.env.BASE, '1')
+  assertEquals(spawned[0]?.env.KNOCK_CONFIG_PATH, '/tmp/config.yml')
+  assertEquals(spawned[0]?.env.KNOCK_RUNTIME_DIR, '/tmp/runtime')
+  assertEquals(spawned[0]?.env[SKIP_WEB_RUNTIME_READY_CHECK_ENV], undefined)
+
+  assertEquals(spawned[1]?.env.BASE, '1')
+  assertEquals(spawned[1]?.env.KNOCK_CONFIG_PATH, '/tmp/config.yml')
+  assertEquals(spawned[1]?.env.KNOCK_RUNTIME_DIR, '/tmp/runtime')
+  assertEquals(spawned[1]?.env[SKIP_WEB_RUNTIME_READY_CHECK_ENV], '1')
+})
 
 test('[contract] startup orchestrator: all 模式应启动 daemon 与 web 子进程', async () => {
   const spawned: string[][] = []

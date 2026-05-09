@@ -15,12 +15,12 @@ import { createHttpDeliveryExecutor } from '../infrastructure/deliveries/http_de
 import { createPruneFactsRepository } from '../infrastructure/sqlite/prune_facts_repository.ts'
 import { markInterruptedAttempts } from '../infrastructure/sqlite/recovery.ts'
 import { createSourceRunQueryService } from '../infrastructure/sqlite/source_run_query_service.ts'
+import { createRuntimeKernel } from './runtime_kernel_builder.ts'
 import {
   createProductionRuntimePipeline,
   createRunSourceUseCaseForRuntime,
-  createRuntimeKernel,
-  createSourceExecutionCore,
-} from './create_runtime_kernel.ts'
+} from './runtime_pipeline_builder.ts'
+import { createSourceExecutionCore } from './source_runtime_builder.ts'
 
 export interface ProductionRuntimeLoggers {
   root: Logger
