@@ -5,10 +5,10 @@ import type { Fetcher } from '../core/http_client.ts'
 import { createInMemoryDb, type FactsDbClient } from '../db/client.ts'
 import { createCaptureDeliveryExecutor } from '../infrastructure/deliveries/capture_delivery_executor.ts'
 import {
-  createPreviewRuntimePipeline,
   createRunSourceUseCaseForRuntime,
-  createSourceExecutionCore,
-} from './create_runtime_kernel.ts'
+  createPreviewRuntimePipeline,
+} from './runtime_pipeline_builder.ts'
+import { createSourceExecutionCore } from './source_runtime_builder.ts'
 
 function asPreviewPushPayload(payload: unknown): Record<string, unknown> | undefined {
   if (payload === undefined) return undefined

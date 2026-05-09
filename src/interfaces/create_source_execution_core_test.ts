@@ -1,10 +1,8 @@
 import { assertEquals, assertRejects } from '../testing/assert.ts'
 import { createInMemoryDb } from '../db/client.ts'
 import { createLogger } from '../core/logger.ts'
-import {
-  createRunSourceUseCaseForRuntime,
-  createSourceExecutionCore,
-} from '../composition/create_runtime_kernel.ts'
+import { createRunSourceUseCaseForRuntime } from '../composition/runtime_pipeline_builder.ts'
+import { createSourceExecutionCore } from '../composition/source_runtime_builder.ts'
 import { test } from '../testing/test_api.ts'
 
 test('[contract] createRunSourceUseCaseForRuntime: production wiring 缺少完整 pipeline deps 时应 fail fast', async () => {
@@ -53,7 +51,7 @@ test('[contract] createRunSourceUseCaseForRuntime: production wiring 缺少完�
   )
 })
 
-test('[contract] createRunSourceUseCaseForRuntime: preview execute 缺少 pipeline deps 时应 fail fast', async () => {
+test('[contract] createRunSourceUseCaseForRuntime: preview collect-only 可运行但 execute 阶段缺少 pipeline deps 时应报错', async () => {
   const runSourceUseCase = createRunSourceUseCaseForRuntime({
     now: () => '2026-04-17T12:05:00.000Z',
     createRunId: () => 'run-preview-collect-only',
