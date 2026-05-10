@@ -4,8 +4,8 @@ export interface WebRouteDefinition {
   handle: (request: Request) => Response | Promise<Response>
 }
 
-import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
-import type { SourceActionLogMeta } from '../src/interfaces/web/create_source_action_handler.ts'
+import type { EvaluateLogMeta } from '../src/adapters/web/create_playground_evaluate_handler.ts'
+import type { SourceActionLogMeta } from '../src/adapters/web/create_source_action_handler.ts'
 
 export type LoggedApiRouteHandler = (
   request: Request,

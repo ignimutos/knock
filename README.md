@@ -21,17 +21,15 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 ### 主干结构
 
 ```text
-src/main.ts                  CLI 入口与 mode 分流
-src/config/                  配置契约、加载、校验与解析
+src/main.ts                  CLI 可执行入口
+src/bootstrap/               CLI、daemon、preview、runtime assembly 入口
+src/config/                  配置契约、加载、校验、mutation 与 workbench shaping
+src/contracts/               稳定 DTO、枚举、错误分类
+src/workflow/                use case、run_source 主链与 stage 编排
+src/persistence/             sqlite client、facts stores、read model
+src/adapters/                sources / deliveries / web adapters
 src/definitions/             canonical delivery/source/binding 定义编译
-src/composition/             生产/预览运行时组合根
-src/application/             用例、pipeline 与 stage 编排
-src/infrastructure/          SQLite、source gateway、delivery executor 适配层
 src/core/                    通用 runtime（日志、Liquid、AI、调度、HTTP）
-src/sources/                 syndication / xquery / summary 解析能力
-src/deliveries/              file / push / email 通道能力
-src/interfaces/              CLI、daemon、web 等入口适配面
-src/db/                      SQLite 客户端、schema 与状态存储
 web/                         网页调试页与 API 路由
 config.example.yml           完整参考配置
 package.json                 Bun 运行 / 构建 / 验证脚本入口
@@ -945,7 +943,7 @@ Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜
 
 日志按显式 sink 配置输出：console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。JSONL 字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
 
-当前 v2 执行点：source 抓取/解析日志来自 `src/infrastructure/sources/http_source_input_gateway.ts`、`src/infrastructure/sources/byparr_source_input_gateway.ts`、`src/infrastructure/sources/source_parser_gateway.ts`；pipeline 的 filter/dedupe/delivery/finalize 日志来自 `src/application/run_source_use_case.ts` 与 `src/application/stages/delivery_stage.ts`。
+当前 v2 执行点：source 抓取/解析日志来自 `src/adapters/sources/http_source_input_gateway.ts`、`src/adapters/sources/byparr_source_input_gateway.ts`、`src/adapters/sources/source_parser_gateway.ts`；pipeline 的 filter/dedupe/delivery/finalize 日志来自 `src/workflow/run_source_use_case.ts` 与 `src/workflow/stages/delivery_stage.ts`。
 
 Namespaced 关键字段示例：`source.id`、`source.run_id`、`pipeline.item_id`、`delivery.id`、`template.ai.provider`、`template.ai.model_ref`、`template.ai.outcome`。
 

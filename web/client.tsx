@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 
 import { hydrate } from 'preact'
-import type { ConfigWorkbenchOverview } from '../src/web/config_workbench_overview.ts'
+import type { ConfigWorkbenchOverview } from '../src/contracts/workbench.ts'
 import ConfigWorkbench from './islands/config_workbench.tsx'
 
 const root = document.getElementById('config-workbench-root')

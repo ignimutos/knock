@@ -10,7 +10,7 @@ export const testMeta = [
 // risk-id: R03
 import { assertEquals, assertStringIncludes } from '../../src/testing/assert.ts'
 import renderToString from 'preact-render-to-string'
-import type { ConfigWorkbenchOverview } from '../../src/web/config_workbench_overview.ts'
+import type { ConfigWorkbenchOverview } from '../../src/contracts/workbench.ts'
 import ConfigPage from './config.tsx'
 import { test } from '../../src/testing/test_api.ts'
 
@@ -157,13 +157,13 @@ test('[contract] web pages: Config 页不应输出 raw secret', () => {
             providers: {
               anthropic: {
                 type: 'anthropic',
-                apiKey: '__KNOCK_SECRET_UNCHANGED__',
+                apiKey: 'real-api-key',
                 models: {},
               },
             },
           },
           aiJson:
-            '{\n  "providers": {\n    "anthropic": {\n      "apiKey": "__KNOCK_SECRET_UNCHANGED__"\n    }\n  }\n}',
+            '{\n  "providers": {\n    "anthropic": {\n      "apiKey": "real-api-key"\n    }\n  }\n}',
         },
         deliveries: [
           {
@@ -177,7 +177,7 @@ test('[contract] web pages: Config 页不应输出 raw secret', () => {
                 security: 'starttls',
                 auth: {
                   username: 'bot',
-                  password: '__KNOCK_SECRET_UNCHANGED__',
+                  password: 'real-secret',
                 },
               },
               message: {
@@ -188,7 +188,7 @@ test('[contract] web pages: Config 页不应输出 raw secret', () => {
               },
             },
             configJson:
-              '{\n  "smtp": {\n    "auth": {\n      "password": "__KNOCK_SECRET_UNCHANGED__"\n    }\n  }\n}',
+              '{\n  "smtp": {\n    "auth": {\n      "password": "real-secret"\n    }\n  }\n}',
           },
         ],
       },
@@ -196,5 +196,6 @@ test('[contract] web pages: Config 页不应输出 raw secret', () => {
   )
 
   assertEquals(html.includes('real-secret'), false)
+  assertEquals(html.includes('real-api-key'), false)
   assertStringIncludes(html, '__KNOCK_SECRET_UNCHANGED__')
 })

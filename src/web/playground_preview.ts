@@ -1,11 +1,8 @@
 import { join } from 'node:path'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import { cwd } from '../platform/fs.ts'
-import { getCurrentWebLoggingRuntime } from '../interfaces/web/start_web.ts'
-import {
-  executePreviewSource,
-  toPreviewExecutionResult,
-} from '../interfaces/web/preview_runtime.ts'
+import { getCurrentWebLoggingRuntime } from '../adapters/web/start_web.ts'
+import { executePreviewSource, toPreviewExecutionResult } from '../adapters/web/preview_runtime.ts'
 import type { Fetcher } from '../core/http_client.ts'
 
 export interface PlaygroundPreviewResult {

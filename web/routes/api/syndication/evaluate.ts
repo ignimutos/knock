@@ -1,10 +1,10 @@
-import { createPlaygroundEvaluateHandler } from '../../../../src/interfaces/web/create_playground_evaluate_handler.ts'
+import { createPlaygroundEvaluateHandler } from '../../../../src/adapters/web/create_playground_evaluate_handler.ts'
 import {
   classifySyndicationPlaygroundError,
   evaluateSyndicationPlayground,
 } from '../../../../src/web/syndication_playground.ts'
 
-export type { EvaluateLogMeta } from '../../../../src/interfaces/web/create_playground_evaluate_handler.ts'
+export type { EvaluateLogMeta } from '../../../../src/adapters/web/create_playground_evaluate_handler.ts'
 
 export const handler = createPlaygroundEvaluateHandler({
   evaluatePlayground: evaluateSyndicationPlayground,

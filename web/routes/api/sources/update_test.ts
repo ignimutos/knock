@@ -1,5 +1,5 @@
 import { assertEquals } from '../../../../src/testing/assert.ts'
-import { SourceManagementError } from '../../../../src/interfaces/web/source_management.ts'
+import { SourceManagementError } from '../../../../src/adapters/web/source_management.ts'
 import { type SourceActionLogMeta, handler } from './update.ts'
 import { test } from '../../../../src/testing/test_api.ts'
 

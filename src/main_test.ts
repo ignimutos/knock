@@ -7,21 +7,21 @@ import {
   assertStringIncludes,
   assertThrows,
 } from './testing/assert.ts'
-import type { StartAppOptions } from './main.ts'
-import { dispatchCliCommand, main, startWeb } from './main.ts'
-import { waitForWebReady } from './interfaces/web/start_web.ts'
+import type { StartDaemonProcessOptions as StartAppOptions } from './bootstrap/start_daemon_process.ts'
+import { dispatchCliCommand, main } from './bootstrap/dispatch_cli_command.ts'
+import {
+  buildChildArgs,
+  parseCliCommand,
+  resolveDaemonStartOptions,
+  toDaemonStartOptions,
+} from './bootstrap/parse_cli_command.ts'
+import { startWeb, waitForWebReady } from './adapters/web/start_web.ts'
 import { cwd } from './platform/fs.ts'
 import { execPath } from './platform/process.ts'
 import { serve } from './platform/serve.ts'
 import { withOwnedRuntime } from './test_runtime.ts'
 import { test } from './testing/test_api.ts'
 import { createStableChildEnv, withEnv, writeRuntimeFile } from './testing/test_helpers.ts'
-import {
-  buildChildArgs,
-  parseCliCommand,
-  resolveDaemonStartOptions,
-  toDaemonStartOptions,
-} from './interfaces/cli/parse_cli_command.ts'
 
 const WEB_STARTUP_TEST_TIMEOUT_MS = 90_000
 

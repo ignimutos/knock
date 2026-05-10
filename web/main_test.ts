@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from '../src/testing/assert.ts'
 import { createLogger } from '../src/core/logger.ts'
-import { setCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
+import { setCurrentWebLoggingRuntime } from '../src/adapters/web/start_web.ts'
 import { test } from '../src/testing/test_api.ts'
 import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../src/testing/test_helpers.ts'
 import app, { handleWebRequest, withApiRequestLogging } from './main.tsx'

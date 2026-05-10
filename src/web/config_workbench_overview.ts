@@ -2,14 +2,14 @@ import {
   type ConfigWorkbenchDeliveryConfig,
   type ConfigWorkbenchDeliveryKind,
   type ConfigWorkbenchOverview,
-} from '../application/config_workbench/workbench_contract.ts'
+} from '../contracts/workbench.ts'
 import { redactConfigSecrets } from './config_secret_redaction.ts'
 
 export type {
   ConfigWorkbenchDeliveryConfig,
   ConfigWorkbenchDeliveryKind,
   ConfigWorkbenchOverview,
-} from '../application/config_workbench/workbench_contract.ts'
+} from '../contracts/workbench.ts'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

@@ -2,7 +2,7 @@ import { assertEquals, assertRejects, assertThrows } from '../testing/assert.ts'
 import {
   getCurrentWebLoggingRuntime,
   setCurrentWebLoggingRuntime,
-} from '../interfaces/web/start_web.ts'
+} from '../adapters/web/start_web.ts'
 import {
   classifyPlaygroundError,
   evaluatePlayground,

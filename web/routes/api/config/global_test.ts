@@ -1,5 +1,5 @@
 import { assertEquals } from '../../../../src/testing/assert.ts'
-import { ConfigManagementError } from '../../../../src/interfaces/web/config_management_errors.ts'
+import { ConfigManagementError } from '../../../../src/contracts/errors.ts'
 import { handler } from './global.ts'
 import { test } from '../../../../src/testing/test_api.ts'
 

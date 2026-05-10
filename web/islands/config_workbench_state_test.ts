@@ -1,17 +1,19 @@
 import { assertEquals, assertThrows } from '../../src/testing/assert.ts'
 import type { PushConfig } from '../../src/config/schema.ts'
-import type { ConfigWorkbenchOverview } from '../../src/web/config_workbench_overview.ts'
-import type { ReaderSourceOverview } from '../../src/web/reader_overview.ts'
+import type {
+  ConfigWorkbenchOverview,
+  ReaderSourceOverview,
+} from '../../src/contracts/workbench.ts'
 import { test } from '../../src/testing/test_api.ts'
 
+import { type DeliveryDraft } from './config_workbench_state.ts'
 import {
   buildDeliveryPayload,
   buildSourcePayload,
   createDeliveryFormState,
   createGlobalFormState,
   createSourceFormState,
-  type DeliveryDraft,
-} from './config_workbench_state.ts'
+} from '../components/config/form_state.ts'
 
 test('[unit] config workbench state: createGlobalFormState 应保留 logging file rotation 字段', () => {
   const global: ConfigWorkbenchOverview['global'] = {
@@ -226,4 +228,81 @@ test('[unit] config workbench state: buildSourcePayload 遇到非法 JSON overri
       ),
     'push-delivery override 必须是合法 JSON',
   )
+})
+
+test('[unit] config workbench state: buildSourcePayload 遇到未知 deliveryId 应直接抛错', () => {
+  assertThrows(
+    () =>
+      buildSourcePayload(
+        {
+          id: 'source-1',
+          name: 'Source 1',
+          enabled: true,
+          schedule: '',
+          filter: '',
+          transport: 'http',
+          parser: 'syndication',
+          targetUrl: 'https://example.com/feed.xml',
+          xqueryLocate: '',
+          xqueryEntryId: '',
+          deliveryIds: ['missing-delivery'],
+          deliveryOverrides: {
+            'missing-delivery': '{\n  "subject": "oops"\n}',
+          },
+        },
+        [],
+      ),
+    '未知 deliveryId',
+  )
+})
+
+test('[unit] config workbench state: buildDeliveryPayload 遇到非法 retry statusCodes 应抛错', () => {
+  const state = createDeliveryFormState({
+    id: 'telegram',
+    enabled: true,
+    kind: 'push',
+    config: {
+      http: {
+        url: 'https://example.com/hook',
+        method: 'POST',
+      },
+      request: {
+        type: 'body',
+      },
+    },
+    configJson: '{}',
+  })
+
+  state.pushRetryStatusCodes = '429, foo'
+
+  assertThrows(
+    () => buildDeliveryPayload(state),
+    'push.http.retry.statusCodes 必须是逗号分隔的整数列表',
+  )
+})
+
+test('[unit] config workbench state: buildDeliveryPayload 遇到非法 email.smtp.port 应抛错', () => {
+  const state = createDeliveryFormState({
+    id: 'mailer',
+    enabled: true,
+    kind: 'email',
+    config: {
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        security: 'starttls',
+      },
+      message: {
+        from: 'noreply@example.com',
+        to: ['ops@example.com'],
+        subject: 'hello',
+        text: 'body',
+      },
+    },
+    configJson: '{}',
+  })
+
+  state.emailSmtpPort = '587x'
+
+  assertThrows(() => buildDeliveryPayload(state), 'email.smtp.port 必须是整数')
 })

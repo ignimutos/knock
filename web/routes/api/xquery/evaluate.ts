@@ -1,10 +1,10 @@
-import { createPlaygroundEvaluateHandler } from '../../../../src/interfaces/web/create_playground_evaluate_handler.ts'
+import { createPlaygroundEvaluateHandler } from '../../../../src/adapters/web/create_playground_evaluate_handler.ts'
 import {
   classifyPlaygroundError,
   evaluatePlayground,
 } from '../../../../src/web/xquery_playground.ts'
 
-export type { EvaluateLogMeta } from '../../../../src/interfaces/web/create_playground_evaluate_handler.ts'
+export type { EvaluateLogMeta } from '../../../../src/adapters/web/create_playground_evaluate_handler.ts'
 
 export const handler = createPlaygroundEvaluateHandler({
   evaluatePlayground,

@@ -1,13 +1,13 @@
 import { assertEquals, assertExists } from '../testing/assert.ts'
 import type { AppConfigResolved } from '../config/types.ts'
-import { createInMemoryDb } from '../db/client.ts'
+import { createInMemoryDb } from '../persistence/sqlite/client.ts'
 import type { SourceRun } from '../domain/source_run.ts'
-import { insertPipelineItem } from '../infrastructure/sqlite/item_repository.ts'
+import { insertPipelineItem } from '../persistence/sqlite/item_repository.ts'
 import {
   insertSourceRun,
   setSourceRunFeedSnapshot,
-} from '../infrastructure/sqlite/run_repository.ts'
-import { buildReaderOverview, loadReaderOverview } from './reader_overview.ts'
+} from '../persistence/sqlite/run_repository.ts'
+import { buildReaderOverview, loadReaderOverview } from '../config/reader_overview.ts'
 import { test } from '../testing/test_api.ts'
 import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../testing/test_helpers.ts'
 

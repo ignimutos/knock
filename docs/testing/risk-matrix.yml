@@ -4,9 +4,9 @@
   expected_guardrail: run marked failed with actionable reason
   required_layer: contract
   owner_tests:
-    - src/infrastructure/sources/http_source_input_gateway_test.ts
-    - src/infrastructure/sources/byparr_source_input_gateway_test.ts
-    - src/sources/syndication_test.ts
+    - src/adapters/sources/http_source_input_gateway_test.ts
+    - src/adapters/sources/byparr_source_input_gateway_test.ts
+    - src/adapters/sources/syndication_test.ts
 
 - id: R02
   domain: source
@@ -14,7 +14,7 @@
   expected_guardrail: parser returns stable error contract
   required_layer: contract
   owner_tests:
-    - src/sources/syndication_test.ts
+    - src/adapters/sources/syndication_test.ts
 
 - id: R03
   domain: config
@@ -23,11 +23,9 @@
   required_layer: flow+contract
   owner_tests:
     - src/config/load_config_test.ts
-    - src/interfaces/config/load_definitions_test.ts
+    - src/config/load_definitions_test.ts
     - src/config/config_example_test.ts
-    - src/interfaces/startup/startup_orchestrator_test.ts
-    - src/interfaces/web/runtime_session_test.ts
-    - src/interfaces/web/config_management_test.ts
+    - src/adapters/web/runtime_session_test.ts
     - src/container_entrypoint_test.ts
     - src/main_test.ts
     - src/core/app_test.ts
@@ -57,7 +55,7 @@
   expected_guardrail: entry marked skipped with deterministic reason
   required_layer: flow+contract
   owner_tests:
-    - src/application/run_source_item_pipeline_test.ts
+    - src/workflow/run_source_item_pipeline_test.ts
 
 - id: R07
   domain: delivery
@@ -65,10 +63,10 @@
   expected_guardrail: final attempt persisted as failed with reason
   required_layer: flow+contract
   owner_tests:
-    - src/deliveries/http_test.ts
-    - src/deliveries/email_test.ts
-    - src/application/run_source_use_case_test.ts
-    - src/application/run_source_item_pipeline_test.ts
+    - src/adapters/deliveries/http_test.ts
+    - src/adapters/deliveries/email_test.ts
+    - src/workflow/run_source_use_case_test.ts
+    - src/workflow/run_source_item_pipeline_test.ts
 
 - id: R08
   domain: delivery
@@ -85,7 +83,7 @@
   expected_guardrail: run records failed delivery and keeps process alive
   required_layer: flow
   owner_tests:
-    - src/deliveries/file_test.ts
+    - src/adapters/deliveries/file_test.ts
 
 - id: R10
   domain: db
@@ -93,9 +91,9 @@
   expected_guardrail: bootstrap exits with stable diagnostics
   required_layer: contract
   owner_tests:
-    - src/db/client_test.ts
-    - src/infrastructure/sqlite/recovery_test.ts
-    - src/infrastructure/sqlite/source_run_query_service_test.ts
+    - src/persistence/sqlite/client_test.ts
+    - src/persistence/sqlite/recovery_test.ts
+    - src/persistence/sqlite/source_run_query_service_test.ts
 
 - id: R11
   domain: logging
@@ -112,7 +110,7 @@
   expected_guardrail: dedupe hit prevents duplicate delivery attempts
   required_layer: contract
   owner_tests:
-    - src/infrastructure/sqlite/schema_test.ts
+    - src/persistence/sqlite/schema_test.ts
 
 - id: R13
   domain: source
@@ -120,7 +118,7 @@
   expected_guardrail: source run fails with bounded error surface
   required_layer: contract
   owner_tests:
-    - src/sources/xquery_test.ts
+    - src/adapters/sources/xquery_test.ts
 
 - id: R14
   domain: source
@@ -128,7 +126,7 @@
   expected_guardrail: pipeline ends with info-level empty-result outcome
   required_layer: flow
   owner_tests:
-    - src/infrastructure/sources/source_parser_gateway_test.ts
+    - src/adapters/sources/source_parser_gateway_test.ts
 
 - id: R15
   domain: app
@@ -136,9 +134,8 @@
   expected_guardrail: run due sources use case invoked once per tick
   required_layer: flow
   owner_tests:
-    - src/application/run_due_sources_use_case_test.ts
-    - src/interfaces/daemon/start_daemon_test.ts
-    - src/interfaces/web/source_management_test.ts
+    - src/workflow/run_due_sources_use_case_test.ts
+    - src/adapters/web/source_management_test.ts
     - web/routes/api/sources/run_test.ts
     - web/routes/api/sources/update_test.ts
     - web/routes/api/sources/clear_test.ts
@@ -157,7 +154,7 @@
   expected_guardrail: window boundaries and entry count stay deterministic
   required_layer: flow+contract
   owner_tests:
-    - src/sources/summary_test.ts
+    - src/adapters/sources/summary_test.ts
 
 - id: R18
   domain: web
@@ -165,8 +162,7 @@
   expected_guardrail: preview profile and warnings follow stable contract
   required_layer: contract
   owner_tests:
-    - src/application/preview_source_use_case_test.ts
-    - src/interfaces/web/preview_runtime_test.ts
+    - src/adapters/web/preview_runtime_test.ts
     - src/web/xquery_playground_test.ts
     - src/web/syndication_playground_test.ts
     - web/main_test.ts
@@ -177,7 +173,7 @@
   expected_guardrail: endpoint returns stable validation error payload
   required_layer: flow+contract
   owner_tests:
-    - src/interfaces/web/web_action_executor_test.ts
+    - src/adapters/web/web_action_executor_test.ts
     - web/routes/api/syndication/evaluate_test.ts
     - web/routes/api/xquery/evaluate_test.ts
 

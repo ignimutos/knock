@@ -1,4 +1,4 @@
-import { loadReaderOverview } from '../../../../src/web/reader_overview.ts'
+import { loadReaderOverview } from '../../../../src/config/reader_overview.ts'
 
 export async function handler(_request: Request): Promise<Response> {
   const overview = await loadReaderOverview()

@@ -3,7 +3,7 @@ import type {
   ReaderEntrySnapshot,
   ReaderOverview,
   ReaderSourceOverview,
-} from '../../src/web/reader_overview.ts'
+} from '../../src/contracts/workbench.ts'
 
 function toBootstrapJson(overview: ReaderOverview): string {
   return JSON.stringify(overview).replace(/</g, '\\u003c')

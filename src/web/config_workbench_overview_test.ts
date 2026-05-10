@@ -1,5 +1,5 @@
 import { assertEquals } from '../testing/assert.ts'
-import { loadConfigWorkbenchContext } from '../interfaces/web/runtime_session.ts'
+import { loadConfigWorkbenchContext } from '../config/runtime_session.ts'
 import { test } from '../testing/test_api.ts'
 import { withEnv, withRuntimeHarness, writeRuntimeFile } from '../testing/test_helpers.ts'
 
@@ -32,9 +32,7 @@ test('[contract] config workbench overview: 加载失败时应返回通用 issue
   await withRuntimeDir('deliveries:\n  broken: {}\n', async () => {
     const { workbench } = await loadConfigWorkbenchContext().catch(async () => ({
       rawDocument: undefined,
-      workbench: await (
-        await import('../interfaces/web/runtime_session.ts')
-      ).loadConfigWorkbenchOverview(),
+      workbench: await (await import('../config/runtime_session.ts')).loadConfigWorkbenchOverview(),
     }))
 
     assertEquals(workbench.issue, '读取 Config Workbench 数据失败，请查看服务端日志。')

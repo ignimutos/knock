@@ -1,7 +1,7 @@
 import { createLogger, type Logger } from '../src/core/logger.ts'
-import type { EvaluateLogMeta } from '../src/interfaces/web/create_playground_evaluate_handler.ts'
-import type { SourceActionLogMeta } from '../src/interfaces/web/create_source_action_handler.ts'
-import { getCurrentWebLoggingRuntime } from '../src/interfaces/web/start_web.ts'
+import type { EvaluateLogMeta } from '../src/adapters/web/create_playground_evaluate_handler.ts'
+import type { SourceActionLogMeta } from '../src/adapters/web/create_source_action_handler.ts'
+import { getCurrentWebLoggingRuntime } from '../src/adapters/web/start_web.ts'
 
 type LoggedRequest = Request | { req: Request }
 
