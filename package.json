@@ -19,7 +19,7 @@
     "test": "bun test src web",
     "test:path": "bash ./scripts/run-paths.sh bun test -- src web --",
     "test:arch": "bun test src/testing/risk_mapping_test.ts",
-    "test:startup": "bun test src/config/config_example_test.ts src/interfaces/cli/parse_cli_command_test.ts src/core/app_test.ts src/container_entrypoint_test.ts web/main_test.ts",
+    "test:startup": "bun test src/config/config_example_test.ts src/main_test.ts src/core/app_test.ts src/container_entrypoint_test.ts src/compiled_release_entrypoint_test.ts web/main_test.ts",
     "verify:scoped": "bun run build:web && bun run check && bun run test:arch && bun run test:startup",
     "verify:full": "bun run verify:scoped && bun run test",
     "docker:build": "bash -lc 'docker build --tag \"${KNOCK_IMAGE_TAG:-knock:local}\" .'",
