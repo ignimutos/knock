@@ -3,11 +3,13 @@ paths:
   - 'README.md'
   - 'config.example.yml'
   - 'src/main.ts'
-  - 'src/application/**'
-  - 'src/interfaces/**'
+  - 'src/bootstrap/**'
   - 'src/config/**'
-  - 'src/sources/**'
-  - 'src/deliveries/**'
+  - 'src/contracts/**'
+  - 'src/adapters/**'
+  - 'src/workflow/**'
+  - 'src/persistence/**'
+  - 'src/web/**'
   - 'web/**'
 ---
 

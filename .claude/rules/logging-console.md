@@ -3,8 +3,9 @@ paths:
   - 'src/main.ts'
   - 'src/core/logger.ts'
   - 'src/core/logger_test.ts'
-  - 'src/interfaces/daemon/**'
-  - 'src/interfaces/web/**'
+  - 'src/bootstrap/**'
+  - 'src/adapters/**'
+  - 'src/workflow/**'
   - 'web/routes/**'
   - 'README.md'
   - 'config.example.yml'
@@ -14,8 +15,8 @@ paths:
 
 这些规则只覆盖控制台日志展示层的强约束。
 
-- source fetch/parse 事件来自 infrastructure source adapters（`http_source_input_gateway.ts`、`byparr_source_input_gateway.ts`、`source_parser_gateway.ts`）。
-- pipeline filter/dedupe/delivery/finalize 事件来自 `src/application/run_source/run_source_lifecycle.ts`、`src/application/run_source/run_source_execution_pipeline.ts` 与 `DeliveryStage` / 相关 stages。
+- source fetch/parse 事件来自 adapters source gateways（`src/adapters/sources/http_source_input_gateway.ts`、`src/adapters/sources/byparr_source_input_gateway.ts`、`src/adapters/sources/source_parser_gateway.ts`）。
+- pipeline filter/dedupe/delivery/finalize 事件来自 `src/workflow/run_source/run_source_lifecycle.ts`、`src/workflow/run_source/run_source_execution_pipeline.ts` 与 `src/workflow/stages/delivery_stage.ts` / 相关 stages。
 - 控制台层只负责展示这些底层记录；MUST NOT 按已删除的 `source_runtime` / `delivery_runtime` helper 想象另一套字段来源。
 - 控制台 sink 仅在 `logging.sinks.console` 显式配置时创建。
 - `logging.sinks.console.format` 支持 `pretty` 与 `jsonl`；`pretty` 为高密度单行优先展示，默认按级别着色，不再默认整块展开 `resource` / `attributes`。

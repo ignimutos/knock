@@ -118,14 +118,14 @@ test('loadConfig: 应支持 config.yaml fallback', () => {
         repo_root = Path(__file__).resolve().parents[4]
         stdin_payload = (
             f'{{"tool_input":{{"file_path":"{repo_root.as_posix()}/src/core/logger_test.ts"}},'
-            '"tool_response":{"filePath":"src/db/client_test.ts"}}'
+            '"tool_response":{"filePath":"src/persistence/sqlite/client_test.ts"}}'
         )
 
         extracted = _parse_hook_json_stdin(stdin_payload)
         merged = _merge_changed_paths([], extracted)
 
         self.assertIn("src/core/logger_test.ts", merged)
-        self.assertIn("src/db/client_test.ts", merged)
+        self.assertIn("src/persistence/sqlite/client_test.ts", merged)
 
     def test_check_risk_files_detects_missing_owner_tests(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -201,7 +201,7 @@ test('runtime-harness: 显式 runtimeDir 调用应先清空目录并最终 clean
                 """
 - id: R123
   owner_tests:
-    - src/sources/web/create_web_request_handler_test.tsx
+    - src/adapters/web/create_web_request_handler_test.tsx
                 """.strip()
                 + "\n",
                 encoding="utf-8",
@@ -210,7 +210,7 @@ test('runtime-harness: 显式 runtimeDir 调用应先清空目录并最终 clean
             with patch("guard._repo_root", return_value=temp_root):
                 missing = validate_owner_test_paths(matrix_path)
 
-            self.assertEqual(missing, ["src/sources/web/create_web_request_handler_test.tsx"])
+            self.assertEqual(missing, ["src/adapters/web/create_web_request_handler_test.tsx"])
 
     def test_risk_mapping_check_treats_tsx_test_file_as_test_surface(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -227,7 +227,7 @@ test('runtime-harness: 显式 runtimeDir 调用应先清空目录并最终 clean
                 encoding="utf-8",
             )
 
-            test_path = temp_root / "src" / "sources" / "web" / "create_web_request_handler_test.tsx"
+            test_path = temp_root / "src" / "adapters" / "web" / "create_web_request_handler_test.tsx"
             test_path.parent.mkdir(parents=True, exist_ok=True)
             test_path.write_text(
                 """
@@ -240,11 +240,11 @@ test('web request handler: renders response', () => {})
             )
 
             with patch("guard._repo_root", return_value=temp_root):
-                result = _default_risk_mapping_check(["src/sources/web/create_web_request_handler_test.tsx"])
+                result = _default_risk_mapping_check(["src/adapters/web/create_web_request_handler_test.tsx"])
 
             self.assertEqual(
                 result,
-                {"ok": False, "missing": ["src/sources/web/create_web_request_handler_test.tsx"]},
+                {"ok": False, "missing": ["src/adapters/web/create_web_request_handler_test.tsx"]},
             )
 
     def test_empty_changed_paths_blocks_gate_without_risk_file_check(self) -> None:
@@ -270,7 +270,8 @@ test('web request handler: renders response', () => {})
             "src/main.ts",
             "src/container_entrypoint.ts",
             "src/test_runtime.ts",
-            "src/sources/xquery.ts",
+            "src/persistence/sqlite/",
+            "src/adapters/sources/xquery.ts",
         ):
             with self.subTest(boundary_path=boundary_path):
                 executed = []

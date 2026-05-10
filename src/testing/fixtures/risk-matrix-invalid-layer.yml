@@ -4,7 +4,7 @@
   expected_guardrail: run marked failed with actionable reason
   required_layer: flow+contract
   owner_tests:
-    - src/sources/syndication_test.ts
+    - src/adapters/sources/syndication_test.ts
 
 - id: R02
   domain: source
@@ -12,7 +12,7 @@
   expected_guardrail: parser returns stable error contract
   required_layer: contract
   owner_tests:
-    - src/sources/syndication_test.ts
+    - src/adapters/sources/syndication_test.ts
 
 - id: R03
   domain: config
@@ -52,7 +52,7 @@
   expected_guardrail: final attempt persisted as failed with reason
   required_layer: flow+contract
   owner_tests:
-    - src/deliveries/http_test.ts
+    - src/adapters/deliveries/http_test.ts
 
 - id: R08
   domain: delivery
@@ -68,7 +68,7 @@
   expected_guardrail: run records failed delivery and keeps process alive
   required_layer: flow
   owner_tests:
-    - src/deliveries/file_test.ts
+    - src/adapters/deliveries/file_test.ts
 
 - id: R10
   domain: db
@@ -76,7 +76,7 @@
   expected_guardrail: bootstrap exits with stable diagnostics
   required_layer: flow+contract
   owner_tests:
-    - src/db/client_test.ts
+    - src/persistence/sqlite/client_test.ts
 
 - id: R11
   domain: logging
@@ -92,7 +92,7 @@
   expected_guardrail: dedupe hit prevents duplicate delivery attempts
   required_layer: flow
   owner_tests:
-    - src/infrastructure/sqlite/schema_test.ts
+    - src/persistence/sqlite/schema_test.ts
 
 - id: R13
   domain: source
@@ -100,7 +100,7 @@
   expected_guardrail: source run fails with bounded error surface
   required_layer: contract
   owner_tests:
-    - src/sources/xquery_test.ts
+    - src/adapters/sources/xquery_test.ts
 
 - id: R14
   domain: source
@@ -108,7 +108,7 @@
   expected_guardrail: pipeline ends with info-level empty-result outcome
   required_layer: flow
   owner_tests:
-    - src/infrastructure/sources/source_parser_gateway_test.ts
+    - src/adapters/sources/source_parser_gateway_test.ts
 
 - id: R15
   domain: app
@@ -116,7 +116,7 @@
   expected_guardrail: run due sources use case invoked once per tick
   required_layer: flow
   owner_tests:
-    - src/interfaces/daemon/start_daemon_test.ts
+    - src/workflow/run_due_sources_use_case_test.ts
 
 - id: R16
   domain: template
@@ -140,7 +140,7 @@
   expected_guardrail: preview profile and warnings follow stable contract
   required_layer: contract
   owner_tests:
-    - src/interfaces/web/preview_runtime_test.ts
+    - src/adapters/web/preview_runtime_test.ts
 
 - id: R19
   domain: api

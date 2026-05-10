@@ -45,9 +45,9 @@ HIGH_RISK_BOUNDARIES = (
     "scripts/run-paths.sh",
     "src/main.ts",
     "src/container_entrypoint.ts",
-    "src/db/",
+    "src/persistence/sqlite/",
     "src/test_runtime.ts",
-    "src/sources/xquery.ts",
+    "src/adapters/sources/xquery.ts",
 )
 
 
