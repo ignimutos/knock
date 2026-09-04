@@ -1594,8 +1594,7 @@ export type LogLevel = NonNullable<z.output<typeof loggingSchema>['level']>
 export type LogConsoleFormat = NonNullable<z.output<typeof loggingConsoleSchema>['format']>
 export type LogFileFormat = NonNullable<z.output<typeof loggingFileSchema>['format']>
 export type LogSinkType =
-  | z.output<typeof loggingConsoleSchema>['type']
-  | z.output<typeof loggingFileSchema>['type']
+  z.output<typeof loggingConsoleSchema>['type'] | z.output<typeof loggingFileSchema>['type']
 export type LogConsoleSinkConfig = z.output<typeof loggingConsoleSchema>
 export type LogFileSinkConfig = z.output<typeof loggingFileSchema>
 export type LogFileRotationConfig = NonNullable<z.output<typeof loggingFileSchema>['rotation']>

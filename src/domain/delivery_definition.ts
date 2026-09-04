@@ -2,9 +2,7 @@ import type { FileDeliveryConfig } from '../config/schema.ts'
 import type { EmailMessageConfig, HttpPayload, ResolvedDeliveryConfig } from '../config/types.ts'
 
 export type DeliveryDefinition =
-  | FileDeliveryDefinition
-  | HttpPushDeliveryDefinition
-  | EmailDeliveryDefinition
+  FileDeliveryDefinition | HttpPushDeliveryDefinition | EmailDeliveryDefinition
 
 export interface FileDeliveryDefinition {
   kind: 'file'

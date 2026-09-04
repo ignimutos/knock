@@ -2,8 +2,6 @@
 paths:
   - 'src/testing/**'
   - 'src/**/*test.ts'
-  - 'web/**/*test.ts'
-  - 'web/**/*test.tsx'
   - 'docs/testing/**'
   - '.claude/settings.json'
   - '.claude/skills/test-architecture-guard/**'

@@ -6,14 +6,12 @@ import { test } from './test_api.ts'
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url))
 const SRC_DIR = join(TEST_DIR, '..')
-const WEB_DIR = join(SRC_DIR, '..', 'web')
 const MODERN_ROOTS = [
   join(SRC_DIR, 'bootstrap'),
   join(SRC_DIR, 'config'),
   join(SRC_DIR, 'workflow'),
   join(SRC_DIR, 'persistence'),
   join(SRC_DIR, 'adapters'),
-  WEB_DIR,
 ]
 const ROOT_ENTRY_FILES = [join(SRC_DIR, 'main.ts')]
 const FORBIDDEN_ROOTS = ['application/', 'composition/', 'infrastructure/', 'interfaces/', 'db/']

@@ -144,9 +144,7 @@ export interface SourceEmailDeliveryOverride {
 }
 
 export type SourceDeliveryOverride =
-  | SourceFileDeliveryOverride
-  | SourcePushDeliveryOverride
-  | SourceEmailDeliveryOverride
+  SourceFileDeliveryOverride | SourcePushDeliveryOverride | SourceEmailDeliveryOverride
 
 export type SourceDeliveriesConfig = Record<string, SourceDeliveryOverride>
 

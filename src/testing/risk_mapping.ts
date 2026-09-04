@@ -138,7 +138,7 @@ function normalizeTestMeta(filePath: string, testMeta: readonly RepoTestCaseMeta
 async function listTestFiles(projectRoot: string): Promise<string[]> {
   const results: string[] = []
 
-  for (const directory of ['src', 'web']) {
+  for (const directory of ['src']) {
     for await (const entry of walk(join(projectRoot, directory), {
       includeDirs: false,
       match: [testFilePattern],

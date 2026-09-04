@@ -39,12 +39,8 @@ assert_runtime_fixture() {
 measure_once() {
   local image="$1"
   local runtime_dir=""
-  local container_name=""
-  local port started ended ready_response
+  local started ended
   cleanup_measure_once() {
-    if [ -n "${container_name:-}" ]; then
-      docker rm -f "$container_name" >/dev/null 2>&1 || true
-    fi
     if [ -n "${runtime_dir:-}" ]; then
       rm -rf "$runtime_dir"
     fi
@@ -52,15 +48,6 @@ measure_once() {
 
   trap cleanup_measure_once RETURN
   runtime_dir="$(mktemp -d)"
-  container_name="knock-measure-$(date +%s)-$RANDOM"
-  port="$(python3 - <<'PY'
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)"
 
   cat >"$runtime_dir/config.yml" <<'EOF'
 sources: {}
@@ -74,34 +61,21 @@ print(int(time.time() * 1000))
 PY
 )"
 
-  docker run -d --rm \
-    --name "$container_name" \
-    -p "${port}:${port}" \
+  if ! docker run --rm \
     -v "$runtime_dir:/app/runtime" \
     -e KNOCK_CONFIG_PATH=/app/runtime/config.yml \
-    -e KNOCK_WEB_HOST=0.0.0.0 \
-    -e KNOCK_WEB_PORT="$port" \
-    "$image" >/dev/null
+    -e KNOCK_ONCE=1 \
+    "$image" >/dev/null 2>&1; then
+    echo "daemon once run failed for $image" >&2
+    return 1
+  fi
 
-  for _ in $(seq 1 120); do
-    ready_response="$(curl -fsS "http://127.0.0.1:${port}${ready_path}")" || {
-      sleep 0.25
-      continue
-    }
-    if grep -Fq -- "$ready_marker" <<<"$ready_response"; then
-      ended="$(python3 - <<'PY'
+  ended="$(python3 - <<'PY'
 import time
 print(int(time.time() * 1000))
 PY
 )"
-      echo $((ended - started))
-      return 0
-    fi
-    sleep 0.25
-  done
-
-  docker logs "$container_name" || true
-  return 1
+  echo $((ended - started))
 }
 
 measure_series() {
@@ -122,20 +96,13 @@ PY
 main() {
   set -euo pipefail
 
-  local baseline_image candidate_image ready_path ready_marker samples
+  local baseline_image candidate_image samples
   local baseline_ms candidate_ms improvement_pct baseline_output candidate_output
   local -a baseline_runs candidate_runs
 
   baseline_image="${BASE_IMAGE:?BASE_IMAGE is required}"
   candidate_image="${CANDIDATE_IMAGE:?CANDIDATE_IMAGE is required}"
-  ready_path="${READY_PATH:-/config}"
-  ready_marker="${READY_MARKER:-Knock Config}"
   samples="${SAMPLES:-3}"
-
-  if [ -z "$ready_path" ]; then
-    echo "READY_PATH must not be empty" >&2
-    return 1
-  fi
 
   if ! [[ "$samples" =~ ^[1-9][0-9]*$ ]]; then
     echo "SAMPLES must be a positive integer" >&2

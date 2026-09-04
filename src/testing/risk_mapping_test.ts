@@ -190,7 +190,7 @@ test('[contract] risk-mapping: exported testMeta 应驱动风险覆盖校验', a
   required_layer: flow+contract
   owner_tests:
     - src/config_contract_test.ts
-    - web/config_flow_test.ts
+    - src/config_flow_test.ts
 `.trim() + '\n',
     )
 
@@ -204,7 +204,7 @@ test('[contract] risk-mapping: exported testMeta 应驱动风险覆盖校验', a
     )
 
     await writeTextFile(
-      join(projectRoot, 'web', 'config_flow_test.ts'),
+      join(projectRoot, 'src', 'config_flow_test.ts'),
       createFixtureTestMetaSource({
         title: 'R1 config flow covers same risk',
         layer: 'flow',

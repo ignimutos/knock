@@ -2,7 +2,6 @@
 paths:
   - 'src/bootstrap/**'
   - 'src/config/**'
-  - 'src/adapters/web/**'
   - 'src/main.ts'
   - 'config.example.yml'
   - 'README.md'

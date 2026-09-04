@@ -1,7 +1,6 @@
 ---
 paths:
   - 'src/**'
-  - 'web/**'
   - 'README.md'
   - 'config.example.yml'
   - 'CLAUDE.md'

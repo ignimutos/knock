@@ -9,10 +9,7 @@ import {
   type LoadCompiledConfigOptions,
   type LoadedCompiledConfig,
 } from '../config/load_compiled_config.ts'
-import {
-  createProductionRuntime,
-  type ProductionRuntime,
-} from './create_production_runtime.ts'
+import { createProductionRuntime, type ProductionRuntime } from './create_production_runtime.ts'
 import { configureLoggingRuntime, shutdownLoggingRuntime } from '../core/logging_runtime.ts'
 import { createLogger, type Logger } from '../core/logger.ts'
 import type { Fetcher, ProxyClientFactory } from '../core/http_client.ts'

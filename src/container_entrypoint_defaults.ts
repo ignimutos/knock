@@ -40,17 +40,6 @@ export function shouldEnableOnce(value: string | undefined = getEnv('KNOCK_ONCE'
   return parseBooleanEnv('KNOCK_ONCE', value)
 }
 
-export function resolveTargetMode(args: string[]): 'web' | 'daemon' | 'all' {
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--mode') {
-      const value = args[index + 1]
-      if (value === 'daemon' || value === 'all' || value === 'web') return value
-    }
-  }
-
-  return 'all'
-}
-
 export function normalizeAppArgs(rawArgs: string[]): string[] | undefined {
   if (rawArgs.length === 0) return []
   if (rawArgs[0] === 'bun' && rawArgs[1] === 'run' && rawArgs[2] === 'start') {
@@ -68,34 +57,19 @@ export function applyContainerDefaults(
   env: Record<string, string | undefined> = getEnvObject(),
 ): string[] {
   const nextArgs = [...appArgs]
-  const targetMode = resolveTargetMode(nextArgs)
 
-  if (targetMode !== 'web' && !hasFlag('--config', nextArgs)) {
+  if (!hasFlag('--config', nextArgs)) {
     const configPath = env.KNOCK_CONFIG_PATH
     if (configPath) nextArgs.push('--config', configPath)
   }
 
-  if (targetMode !== 'daemon' && !hasFlag('--web_host', nextArgs)) {
-    const webHost = env.KNOCK_WEB_HOST
-    if (webHost) nextArgs.push('--web_host', webHost)
-  }
-
-  if (targetMode !== 'daemon' && !hasFlag('--web_port', nextArgs)) {
-    const webPort = env.KNOCK_WEB_PORT
-    if (webPort) nextArgs.push('--web_port', webPort)
-  }
-
   const hasExplicitStartupFlag = hasFlag('--once', nextArgs) || hasFlag('--immediate', nextArgs)
 
-  if (targetMode !== 'web' && !hasExplicitStartupFlag && shouldEnableOnce(env.KNOCK_ONCE)) {
+  if (!hasExplicitStartupFlag && shouldEnableOnce(env.KNOCK_ONCE)) {
     nextArgs.push('--once')
   }
 
-  if (
-    targetMode !== 'web' &&
-    !hasExplicitStartupFlag &&
-    shouldEnableImmediate(env.KNOCK_IMMEDIATE)
-  ) {
+  if (!hasExplicitStartupFlag && shouldEnableImmediate(env.KNOCK_IMMEDIATE)) {
     nextArgs.push('--immediate')
   }
 

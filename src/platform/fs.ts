@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, type Stats } from 'node:fs'
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,7 +17,7 @@ export interface DirEntry {
   isDirectory: boolean
 }
 
-function toFileInfo(stats: Awaited<ReturnType<typeof stat>>): FileInfo {
+function toFileInfo(stats: Stats): FileInfo {
   return {
     isFile: stats.isFile(),
     isDirectory: stats.isDirectory(),

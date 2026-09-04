@@ -4,7 +4,6 @@ import {
   applyContainerDefaults,
   hasFlag,
   normalizeAppArgs,
-  resolveTargetMode,
   shouldEnableImmediate,
   shouldEnableOnce,
 } from './container_entrypoint_defaults.ts'
@@ -13,7 +12,6 @@ export {
   applyContainerDefaults,
   hasFlag,
   normalizeAppArgs,
-  resolveTargetMode,
   shouldEnableImmediate,
   shouldEnableOnce,
 }

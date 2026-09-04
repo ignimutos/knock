@@ -4,11 +4,9 @@ on:
   pull_request:
     paths:
       - src/**
-      - web/**
       - package.json
       - bun.lock
       - tsconfig.json
-      - vite.config.ts
       - Dockerfile
       - .dockerignore
       - docker/**
@@ -21,11 +19,9 @@ on:
       - main
     paths:
       - src/**
-      - web/**
       - package.json
       - bun.lock
       - tsconfig.json
-      - vite.config.ts
       - Dockerfile
       - .dockerignore
       - docker/**

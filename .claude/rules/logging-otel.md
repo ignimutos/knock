@@ -7,8 +7,6 @@ paths:
   - 'src/adapters/**'
   - 'src/persistence/**'
   - 'src/workflow/**'
-  - 'src/web/**'
-  - 'web/**'
   - 'README.md'
   - 'config.example.yml'
 ---
@@ -108,7 +106,7 @@ paths:
 以下信息 SHOULD 放进 `attributes`：
 
 - 事件结果、原因、计数、耗时、批次、重试、过滤、降级等事件级字段
-- source、pipeline、template、delivery、web 请求、数据库操作等与当前事件直接相关的信息
+- source、pipeline、template、delivery、数据库操作等与当前事件直接相关的信息
 - 需要做筛选、聚合、告警、统计的机器字段
 
 本轮仓库级约定：
@@ -116,7 +114,6 @@ paths:
 - source 关联主键 SHOULD 使用 `source.id` 与 `source.run_id`
 - 单条消息/entry 关联主键 SHOULD 使用 `pipeline.item_id`
 - 单个投递目标 SHOULD 使用 `delivery.id`
-- web 请求关联主键 SHOULD 使用 `web.request_id`
 - 这些业务关联字段 MUST NOT 借位写进 trace 字段
 
 ### trace 字段
@@ -140,7 +137,7 @@ paths:
 ## 业务字段 namespace
 
 - 业务字段放在 `attributes` 时 MUST 采用按域分层命名。
-- 第一版固定 9 个业务域：
+- 第一版固定 8 个业务域：
   - `app.*`
   - `config.*`
   - `db.*`
@@ -149,11 +146,10 @@ paths:
   - `pipeline.*`
   - `template.*`
   - `delivery.*`
-  - `web.*`
 - 新增业务字段时 MUST 先落到最贴近职责归属的域下，再继续细分层级。
 - AI 相关字段 MUST 继续跟随所属业务域，而不是单独新增顶层 `ai.*`；例如模板链路用 `template.ai.*`，source 链路用 `source.ai.*`，delivery 链路用 `delivery.ai.*`。
 - 业务字段 SHOULD 优先使用稳定名词层级；只有动作语义不可避免时才使用动作段。
-- 没有明确批准前，MUST NOT 新增第 10 个业务域根前缀。
+- 没有明确批准前，MUST NOT 新增第 9 个业务域根前缀。
 
 ## `scope.name` 稳定点分命名
 
@@ -173,14 +169,12 @@ paths:
 - `app.bootstrap.runtime`
 - `pipeline.filter.engine`
 - `app.console.pretty.renderer`
-- `web.request.handler`
 
 反例：
 
 - `fetch`
 - `source.rust.42.fetch`
 - `delivery.telegram.retry`
-- `web.request.handler.prod`
 - `source.fetch.success`
 
 ## 非成功结果的字段与级别要求

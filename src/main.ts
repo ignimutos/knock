@@ -5,7 +5,6 @@ export {
   dispatchCliCommand,
   main,
   startApp,
-  startWeb,
   type StartAppOptions,
   type StartAppResult,
 } from './bootstrap/dispatch_cli_command.ts'

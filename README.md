@@ -7,12 +7,11 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 ## 功能概览
 
 - 输入能力：RSS / Atom / JSON Feed、XQuery 页面提取、summary 窗口汇总。
-- Web `/config`：结构化 / JSON 双模式编辑；secret 字段不回显，未修改时保留原值；写操作要求同源请求。
-- 配置文件更新后，daemon 会自动尝试热重载后续调度、source、delivery、AI 与 logging 行为；Web `/config` 保存也会触发当前 web 进程的本地 reload。
+- 配置文件更新后，daemon 会自动尝试热重载后续调度、source、delivery、AI 与 logging 行为。
 - 当前 `sqlite.*` 仍不支持热重载；修改后需要重启进程才能生效。
 - 处理链路：字段统一、Liquid 过滤、模板渲染。
 - 投递通道：file、push、email。
-- 运行模式：`all`、`web`、`daemon`，支持 `--immediate`（启动后先执行一次并继续调度）与 `--once`（执行一次后退出）。
+- daemon 是唯一运行形态，支持 `--immediate`（启动后先执行一次并继续调度）与 `--once`（执行一次后退出）。
 - 状态存储：SQLite 记录 feed、entry、delivery 去重状态。
 - 日志：按 sink 配置输出；console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。
 
@@ -22,15 +21,13 @@ Knock 是一个基于 Bun + TypeScript 的订阅抓取与投递守护进程。
 
 ```text
 src/main.ts                  CLI 可执行入口
-src/bootstrap/               CLI、daemon、preview、runtime assembly 入口
-src/config/                  配置契约、加载、校验、mutation 与 workbench shaping
-src/contracts/               稳定 DTO、枚举、错误分类
+src/bootstrap/               CLI、daemon 与 runtime assembly 入口
+src/config/                  配置契约、加载、校验与解析
 src/workflow/                use case、run_source 主链与 stage 编排
 src/persistence/             sqlite client、facts stores、read model
-src/adapters/                sources / deliveries / web adapters
+src/adapters/                sources / deliveries 适配器
 src/definitions/             canonical delivery/source/binding 定义编译
 src/core/                    通用 runtime（日志、Liquid、AI、调度、HTTP）
-web/                         网页调试页与 API 路由
 config.example.yml           完整参考配置
 package.json                 Bun 运行 / 构建 / 验证脚本入口
 tsconfig.json                Bun / TypeScript 类型检查配置
@@ -109,8 +106,6 @@ bun run daemon -- --config <your-config.yml> --immediate
 7. `summary` source 采用互斥模型：启用 `summary` 后，source 进入汇总模式，并使用独立窗口语义。
 8. 配置加载阶段先展开 `${ENV_VAR}`，运行阶段再渲染 Liquid 模板；同一字符串中两者并存时，执行顺序保持为“先 ENV，后 Liquid”。
 9. `sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `runtime_dir` 解析。
-10. Web `/config` 入口不会回显已保存的 secret；未修改 secret 时会保留原值。
-11. Web `/config` 的写操作只接受同源请求，且通过 Web 编辑的文件路径必须保持为 runtime 内相对路径。
 
 ## 完整配置模型长这样：
 
@@ -825,53 +820,24 @@ sources:
           条目数：{{ sources.deno.entries | size }}
 ```
 
-## 网页调试页
-
-- 首页：`/`
-- Reader：`/reader`，浏览最近快照，并提供 source 常用管理动作：保存少量高频配置、强制获取、清空该 source 历史。
-- XQuery Playground：`/xquery`
-- Syndication Playground：`/syndication`
-- API：
-  - `POST /api/xquery/evaluate`
-  - `POST /api/syndication/evaluate`
-  - `POST /api/sources/update`
-  - `POST /api/sources/run`
-  - `POST /api/sources/clear`
-
-启动方式：
-
-```bash
-bun run src/main.ts --mode web
-```
-
 ## 命令行用法
 
 ```bash
 bun run src/main.ts \
-  [--mode <all|web|daemon>] \
   [--config <path>] \
   [--runtime_dir <dir>] \
   [--immediate] \
-  [--once] \
-  [--web_host <host>] \
-  [--web_port <port>]
+  [--once]
 ```
 
 ### 参数说明
 
-- `--mode`：`all`（默认）/`web`/`daemon`
+入口默认即 daemon，无 `--mode` 概念；已移除 `--mode`、`--web_host`、`--web_port`。
+
 - `--config`：显式配置文件路径
 - `--runtime_dir`：运行目录
 - `--immediate`：daemon 启动后立即执行一次，然后进入常驻调度（短窗口内不会返回）
 - `--once`：daemon 启动后立即执行一次并退出（会在当前进程内返回）
-- `--web_host` / `--web_port`：web 监听地址
-
-### mode 参数约束
-
-- `web` 模式：支持 `--web_host`、`--web_port`。
-- `daemon` 模式：支持 `--config`、`--runtime_dir`、`--immediate`、`--once`。
-- `web` 模式与 `--config` / `--runtime_dir` / `--immediate` / `--once` 组合会触发参数错误。
-- `daemon` 模式与 `--web_host` / `--web_port` 组合会触发参数错误。
 
 ### `--config` 与 `--runtime_dir` 优先级与路径解析
 
@@ -900,7 +866,7 @@ bun run src/main.ts \
 bun run build:binary
 ```
 
-产物输出到 `dist/knock-linux-x64`。该二进制保留现有 CLI 契约，可继续使用 `--mode all|web|daemon`。
+产物输出到 `dist/knock-linux-x64`。该二进制与源码入口共享同一 daemon-only CLI 契约。
 
 ## 容器部署
 
@@ -933,7 +899,7 @@ docker run --rm \
   knock:local
 ```
 
-将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口为 `/app/docker-entrypoint.sh`，随后由它执行 `/app/knock-linux-x64`，并继续复用 `src/container_entrypoint.ts` 的参数归一化语义：默认保留项目 CLI 的 `all` 模式，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_WEB_HOST`、`KNOCK_WEB_PORT`、`KNOCK_IMMEDIATE`、`KNOCK_ONCE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、`web/`、完整 `node_modules/` 或 `.web-dist/`；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm -e KNOCK_WEB_PORT=8000 knock:local --web_port 9000`。
+将宿主机持久化目录挂载到容器内默认运行目录 `/app/runtime`，并通过容器环境变量注入密钥与令牌。镜像内置 `KNOCK_RUNTIME_DIR=/app/runtime`，因此默认会读取 `/app/runtime/config.yml`（若不存在再回退到 `/app/runtime/config.yaml`）。镜像默认入口为 `/app/docker-entrypoint.sh`，随后由它执行 `/app/knock-linux-x64`，并复用 `src/container_entrypoint.ts` 的参数归一化语义：默认直接以 daemon 运行，并按需从 `KNOCK_CONFIG_PATH`、`KNOCK_IMMEDIATE`、`KNOCK_ONCE` 注入缺省参数；若同时传入显式 CLI 参数，CLI 仍优先于这些容器环境变量。运行镜像不再携带 `src/`、完整 `node_modules/` 或前端构建产物；当前仅保留二进制运行时需要的 `jsdom`、`css-tree`、`mdn-data` 资产目录。若挂载宿主机 runtime 目录，Linux 下应保证该目录对容器进程可写；最直接的做法是显式传 `--user "$(id -u):$(id -g)"`，例如 `docker run --rm knock:local --config /app/runtime/config.yml`。
 
 CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run verify:full`、`bun run build:binary`、`bun run smoke:binary`，再构建、smoke 与体积检查镜像，最后仅在 `main` 发布 Docker Hub 并同步 `docker/README.md`。
 
@@ -988,18 +954,18 @@ logging:
 - `bun run fmt:check`
 - `bun run lint:check`
 - `bun run test:arch`：校验 `docs/testing/risk-matrix.yml` 与真实测试映射、分层和风险 ID 是否一致。
-- `bun run test:startup`：校验配置解析、CLI、主入口、容器入口与 Web 入口的启动契约。
-- `bun run verify:full`：串起 build、check、startup/arch tests 与全量测试。
+- `bun run test:startup`：校验配置解析、CLI、主入口与容器入口的启动契约。
+- `bun run verify:full`：串起 check、startup/arch tests 与全量测试。
 - `bun run build:binary`：生成 `dist/knock-linux-x64` 单文件二进制。
-- `bun run smoke:binary`：对二进制跑 `daemon` / `web` / `all` 三条最小 smoke。
-- `bun run smoke:image`：对本地 Docker 镜像跑 `/config` 与 `/assets/client.js` smoke。
+- `bun run smoke:binary`：对二进制跑 daemon `--once` 与常驻存活的 smoke。
+- `bun run smoke:image`：对本地 Docker 镜像跑 daemon `KNOCK_ONCE` 冷启动 smoke。
 - `bun run measure:cold-start`：对 baseline/candidate 镜像做 cold-start 中位数比较，例如 `BASE_IMAGE=knock:baseline CANDIDATE_IMAGE=knock:local bun run measure:cold-start`。
 - `bun run test:path -- <paths>`：按路径运行测试子集。
 - `bun run lint:check:path -- <paths>`：按路径运行 lint 子集。
 - `bun run fmt:check:path -- <paths>`：按路径运行 Prettier 检查子集。
 - `bun run check`：当前仍为项目级 TypeScript 基线验证，不支持按路径切片。
 
-当前 CI / 本地发布前门禁会依次执行 `build:web`、`check`、`test:arch`、`test:startup`、`test`、`build:binary`、`smoke:binary`，然后再做 Docker build、镜像 smoke 与镜像体积检查。
+当前 CI / 本地发布前门禁会依次执行 `check`、`test:arch`、`test:startup`、`test`、`build:binary`、`smoke:binary`，然后再做 Docker build、镜像 smoke 与镜像体积检查。
 
 ## 生产使用建议
 

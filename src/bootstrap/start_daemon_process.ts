@@ -46,22 +46,27 @@ const startDaemonProcessOptionsSchema = z
   .object({
     runtimeDir: z.string({ message: 'runtimeDir 必须是字符串' }).optional(),
     configPath: z.string({ message: 'configPath 必须是字符串' }).optional(),
-    httpFetcher: z.custom<Fetcher>((value) => value === undefined || typeof value === 'function', {
-      message: 'httpFetcher 必须是函数',
-    }),
-    httpProxyClientFactory: z.custom<ProxyClientFactory>(
-      (value) => value === undefined || typeof value === 'function',
-      { message: 'httpProxyClientFactory 必须是函数' },
-    ),
-    emailTransportFactory: z.custom<CreateTransport>(
-      (value) => value === undefined || typeof value === 'function',
-      { message: 'emailTransportFactory 必须是函数' },
-    ),
+    httpFetcher: z
+      .custom<Fetcher>((value) => value === undefined || typeof value === 'function', {
+        message: 'httpFetcher 必须是函数',
+      })
+      .optional(),
+    httpProxyClientFactory: z
+      .custom<ProxyClientFactory>((value) => value === undefined || typeof value === 'function', {
+        message: 'httpProxyClientFactory 必须是函数',
+      })
+      .optional(),
+    emailTransportFactory: z
+      .custom<CreateTransport>((value) => value === undefined || typeof value === 'function', {
+        message: 'emailTransportFactory 必须是函数',
+      })
+      .optional(),
     keepAlive: z.boolean({ message: 'keepAlive 必须是布尔值' }).optional(),
-    keepAliveSignal: z.custom<Promise<void>>(
-      (value) => value === undefined || value instanceof Promise,
-      { message: 'keepAliveSignal 必须是 Promise' },
-    ),
+    keepAliveSignal: z
+      .custom<Promise<void>>((value) => value === undefined || value instanceof Promise, {
+        message: 'keepAliveSignal 必须是 Promise',
+      })
+      .optional(),
     immediate: z.boolean({ message: 'immediate 必须是布尔值' }).optional(),
     once: z.boolean({ message: 'once 必须是布尔值' }).optional(),
   })

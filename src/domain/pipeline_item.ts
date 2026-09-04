@@ -11,12 +11,7 @@ export interface NormalizedEntrySnapshot {
 }
 
 export type PipelineItemStatus =
-  | 'ready'
-  | 'filtered'
-  | 'duplicate'
-  | 'skipped'
-  | 'delivered'
-  | 'failed'
+  'ready' | 'filtered' | 'duplicate' | 'skipped' | 'delivered' | 'failed'
 
 export type PipelineItemSkippedReason = 'all_deliveries_duplicate' | 'no_deliveries'
 

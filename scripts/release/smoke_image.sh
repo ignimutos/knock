@@ -40,7 +40,7 @@ main() {
   (
     set -euo pipefail
 
-    local image entrypoint runtime_dir container_name client_tmp port config_html
+    local image entrypoint runtime_dir
 
     image="${KNOCK_IMAGE_TAG:-knock:local}"
     entrypoint="$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')"
@@ -50,20 +50,9 @@ main() {
     fi
 
     runtime_dir="$(mktemp -d)"
-    container_name="knock-smoke-$(date +%s)-$RANDOM"
-    client_tmp="$(mktemp)"
-    port="$(python3 - <<'PY'
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)"
 
     cleanup() {
-      docker rm -f "$container_name" >/dev/null 2>&1 || true
-      rm -rf "$runtime_dir" "$client_tmp"
+      rm -rf "$runtime_dir"
     }
     trap cleanup EXIT
 
@@ -73,30 +62,12 @@ EOF
     prepare_runtime_fixture "$runtime_dir"
     assert_runtime_fixture "$runtime_dir"
 
-    docker run -d --rm \
-      --name "$container_name" \
-      -p "${port}:${port}" \
+    # daemon cold-run: KNOCK_ONCE=1 must load config, init sqlite and exit cleanly
+    docker run --rm \
       -v "$runtime_dir:/app/runtime" \
       -e KNOCK_CONFIG_PATH=/app/runtime/config.yml \
-      -e KNOCK_WEB_HOST=0.0.0.0 \
-      -e KNOCK_WEB_PORT="$port" \
-      "$image" >/dev/null
-
-    for _ in $(seq 1 120); do
-      config_html="$(curl -fsS "http://127.0.0.1:${port}/config")" || {
-        sleep 0.25
-        continue
-      }
-      if grep -Fq -- 'Knock Config' <<<"$config_html"; then
-        curl -fsS "http://127.0.0.1:${port}/assets/client.js" >"$client_tmp"
-        test -s "$client_tmp"
-        return 0
-      fi
-      sleep 0.25
-    done
-
-    echo "image did not become ready" >&2
-    return 1
+      -e KNOCK_ONCE=1 \
+      "$image"
   )
 }
 

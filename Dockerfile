@@ -5,10 +5,9 @@ FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION} AS build
 
 WORKDIR /app
 
-COPY package.json bun.lock tsconfig.json vite.config.ts ./
+COPY package.json bun.lock tsconfig.json ./
 RUN bun install --frozen-lockfile
 COPY src ./src
-COPY web ./web
 COPY scripts ./scripts
 RUN bun run build:binary
 
@@ -31,8 +30,6 @@ COPY --from=build --chown=knock:knock /app/node_modules/css-tree /app/node_modul
 COPY --from=build --chown=knock:knock /app/node_modules/mdn-data /app/node_modules/mdn-data
 COPY --chown=knock:knock docker/entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
-
-EXPOSE 8000
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD []

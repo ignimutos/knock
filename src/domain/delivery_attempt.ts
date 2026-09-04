@@ -3,12 +3,7 @@ import type { EffectDomain } from './run_profile.ts'
 export type DeliveryChannel = 'file' | 'push' | 'email'
 
 export type DeliveryAttemptStatus =
-  | 'planned'
-  | 'running'
-  | 'delivered'
-  | 'failed'
-  | 'skipped'
-  | 'interrupted'
+  'planned' | 'running' | 'delivered' | 'failed' | 'skipped' | 'interrupted'
 
 export interface RenderedSnapshot {
   channel: DeliveryChannel

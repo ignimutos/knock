@@ -13,7 +13,6 @@ async function run(command: string[], failureMessage: string): Promise<void> {
 await mkdir('dist', { recursive: true })
 await rm('dist/knock-linux-x64', { force: true })
 
-await run(['bun', 'run', 'build:web'], 'build:web failed')
 await run(
   [
     'bun',

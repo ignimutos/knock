@@ -5,12 +5,9 @@ paths:
   - 'src/main.ts'
   - 'src/bootstrap/**'
   - 'src/config/**'
-  - 'src/contracts/**'
   - 'src/adapters/**'
   - 'src/workflow/**'
   - 'src/persistence/**'
-  - 'src/web/**'
-  - 'web/**'
 ---
 
 # docs-sync

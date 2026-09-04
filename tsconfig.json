@@ -8,13 +8,11 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "preact",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "types": ["node"],
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "web/**/*", "vite.config.ts"],
-  "exclude": ["node_modules", ".web-dist"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
 }

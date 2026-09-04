@@ -16,13 +16,7 @@ export interface SourceRunCounts {
 }
 
 export type SourceRunStatus =
-  | 'planned'
-  | 'running'
-  | 'success'
-  | 'partial'
-  | 'failed'
-  | 'skipped'
-  | 'interrupted'
+  'planned' | 'running' | 'success' | 'partial' | 'failed' | 'skipped' | 'interrupted'
 
 export interface SourceRun {
   runId: string

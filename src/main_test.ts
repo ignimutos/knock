@@ -1,199 +1,12 @@
-import { spawn } from 'node:child_process'
-import { createServer } from 'node:net'
-import { Readable } from 'node:stream'
-import {
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-  assertThrows,
-} from './testing/assert.ts'
+import { assertEquals, assertThrows } from './testing/assert.ts'
 import type { StartDaemonProcessOptions as StartAppOptions } from './bootstrap/start_daemon_process.ts'
 import { dispatchCliCommand, main } from './bootstrap/dispatch_cli_command.ts'
 import {
-  buildChildArgs,
   parseCliCommand,
   resolveDaemonStartOptions,
   toDaemonStartOptions,
 } from './bootstrap/parse_cli_command.ts'
-import { startWeb, waitForWebReady } from './adapters/web/start_web.ts'
-import { cwd } from './platform/fs.ts'
-import { execPath } from './platform/process.ts'
-import { serve } from './platform/serve.ts'
-import { withOwnedRuntime } from './test_runtime.ts'
 import { test } from './testing/test_api.ts'
-import { createStableChildEnv, withEnv, writeRuntimeFile } from './testing/test_helpers.ts'
-
-const WEB_STARTUP_TEST_TIMEOUT_MS = 90_000
-
-type ChildOutputStream = NodeJS.ReadableStream | ReadableStream<Uint8Array> | null
-
-type TestChildProcess = {
-  stdout: ChildOutputStream
-  stderr: ChildOutputStream
-  status: Promise<{ success: boolean; code: number; signal?: NodeJS.Signals }>
-  kill: (signal?: NodeJS.Signals) => void
-}
-
-function toWebReadableStream(stream: ChildOutputStream): ReadableStream<Uint8Array> | null {
-  if (!stream) return null
-  if ('getReader' in stream) {
-    return stream as unknown as ReadableStream<Uint8Array>
-  }
-  return Readable.toWeb(stream as Readable) as ReadableStream<Uint8Array>
-}
-
-async function closeChildStream(stream: ChildOutputStream): Promise<void> {
-  if (!stream) return
-  if ('cancel' in stream) {
-    await (stream as ReadableStream<Uint8Array>).cancel().catch(() => {})
-    return
-  }
-  ;(stream as Readable).destroy()
-}
-
-function buildMainTestCommandArgs(args: string[]): string[] {
-  if (typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined') {
-    return ['run', 'src/main.ts', ...args]
-  }
-  return [
-    'run',
-    '--allow-read',
-    '--allow-write',
-    '--allow-env',
-    '--allow-net',
-    '--allow-ffi',
-    '--allow-run',
-    '--allow-sys',
-    'src/main.ts',
-    ...args,
-  ]
-}
-
-function spawnMainProcess(args: string[], env: Record<string, string>): TestChildProcess {
-  const child = spawn(execPath(), buildMainTestCommandArgs(args), {
-    cwd: cwd(),
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  return {
-    stdout: child.stdout,
-    stderr: child.stderr,
-    status: new Promise((resolve, reject) => {
-      child.once('error', reject)
-      child.once('exit', (code, signal) => {
-        resolve({
-          success: code === 0,
-          code: code ?? 1,
-          signal: signal ?? undefined,
-        })
-      })
-    }),
-    kill: (signal: NodeJS.Signals = 'SIGTERM') => {
-      child.kill(signal)
-    },
-  }
-}
-
-async function reservePort(): Promise<number> {
-  const server = createServer()
-  return await new Promise<number>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        server.close(() => reject(new Error('无法分配测试端口')))
-        return
-      }
-      server.close((error) => {
-        if (error) {
-          reject(error)
-          return
-        }
-        resolve(address.port)
-      })
-    })
-  })
-}
-
-async function occupyPort(): Promise<{ port: number; close: () => Promise<void> }> {
-  const server = createServer()
-  return await new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        server.close(() => reject(new Error('无法占用测试端口')))
-        return
-      }
-      resolve({
-        port: address.port,
-        close: () =>
-          new Promise<void>((innerResolve, innerReject) => {
-            server.close((error) => {
-              if (error) {
-                innerReject(error)
-                return
-              }
-              innerResolve()
-            })
-          }),
-      })
-    })
-  })
-}
-
-async function readCommandOutputUntil(
-  stream: ChildOutputStream,
-  expected: string,
-  timeoutMs: number,
-): Promise<string> {
-  const readable = toWebReadableStream(stream)
-  if (!readable) return ''
-
-  const reader = readable.getReader()
-  const decoder = new TextDecoder()
-  let output = ''
-  const deadline = Date.now() + timeoutMs
-
-  try {
-    while (Date.now() < deadline) {
-      const remaining = Math.max(0, deadline - Date.now())
-      let timeoutId: ReturnType<typeof setTimeout> | undefined
-      const chunk = await Promise.race([
-        reader.read(),
-        new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
-          timeoutId = setTimeout(() => resolve({ done: true, value: undefined }), remaining)
-        }),
-      ])
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId)
-      }
-      if (chunk.done) break
-      output += decoder.decode(chunk.value, { stream: true })
-      if (output.includes(expected)) {
-        return output
-      }
-    }
-    return output
-  } finally {
-    try {
-      await reader.cancel()
-    } catch {
-      // noop
-    }
-  }
-}
-
-async function readStartupOutput(
-  child: TestChildProcess,
-  port: number,
-  timeoutMs: number,
-): Promise<string> {
-  const expected = `Web 服务开始监听 http://127.0.0.1:${port}/`
-  const output = await readCommandOutputUntil(child.stdout, expected, timeoutMs)
-  assertStringIncludes(output, expected)
-  return output
-}
 
 test('[contract] parseCliCommand: 应解析 --config、--runtime_dir 与 --immediate', () => {
   const command = parseCliCommand([
@@ -205,13 +18,11 @@ test('[contract] parseCliCommand: 应解析 --config、--runtime_dir 与 --immed
   ])
 
   assertEquals(command, {
-    kind: 'all',
+    kind: 'daemon',
     configPath: '/tmp/config.yml',
     runtimeDir: '/tmp/runtime',
     immediate: true,
     once: false,
-    host: undefined,
-    port: undefined,
   })
 })
 
@@ -227,30 +38,46 @@ test('[contract] parseCliCommand: --runtime_dir 缺少值时应报错', () => {
   assertThrows(() => parseCliCommand(['--runtime_dir']), Error, '--runtime_dir 缺少目录参数')
 })
 
-test('[contract] parseCliCommand: --mode 缺少值时应报错', () => {
-  assertThrows(() => parseCliCommand(['--mode']), Error, '--mode 缺少参数')
-})
-
-test('[contract] parseCliCommand: --web_host 缺少值时应报错', () => {
-  assertThrows(() => parseCliCommand(['--web_host']), Error, '--web_host 缺少参数')
-})
-
-test('[contract] parseCliCommand: --web_port 缺少值时应报错', () => {
-  assertThrows(() => parseCliCommand(['--web_port']), Error, '--web_port 缺少参数')
+test('[contract] parseCliCommand: 未传任何参数时应默认为 daemon', () => {
+  assertEquals(parseCliCommand([]), {
+    kind: 'daemon',
+    configPath: undefined,
+    runtimeDir: undefined,
+    immediate: false,
+    once: false,
+  })
 })
 
 test('[contract] parseCliCommand: 未传 --immediate 时应显式返回 immediate=false', () => {
   const command = parseCliCommand(['--config', '/tmp/config.yml'])
 
   assertEquals(command, {
-    kind: 'all',
+    kind: 'daemon',
     configPath: '/tmp/config.yml',
     runtimeDir: undefined,
     immediate: false,
     once: false,
-    host: undefined,
-    port: undefined,
   })
+})
+
+test('[contract] parseCliCommand: 已移除的 --mode 应视为未知参数', () => {
+  assertThrows(() => parseCliCommand(['--mode', 'daemon']), Error, '未知参数: --mode')
+})
+
+test('[contract] parseCliCommand: 已移除的 --web_host 应视为未知参数', () => {
+  assertThrows(() => parseCliCommand(['--web_host', '127.0.0.1']), Error, '未知参数: --web_host')
+})
+
+test('[contract] parseCliCommand: 已移除的 --web_port 应视为未知参数', () => {
+  assertThrows(() => parseCliCommand(['--web_port', '8080']), Error, '未知参数: --web_port')
+})
+
+test('[contract] parseCliCommand: --immediate 与 --once 不能同时使用', () => {
+  assertThrows(
+    () => parseCliCommand(['--immediate', '--once']),
+    Error,
+    '--immediate 与 --once 不能同时使用',
+  )
 })
 
 test('[contract] toDaemonStartOptions: 返回值应可赋给 app 启动入口类型', () => {
@@ -282,8 +109,8 @@ test('[contract] toDaemonStartOptions: 应收敛为 daemon 启动参数', () => 
   })
 })
 
-test('[contract] toDaemonStartOptions: daemon --once 应收敛为 once=true', () => {
-  assertEquals(toDaemonStartOptions(parseCliCommand(['--mode', 'daemon', '--once'])), {
+test('[contract] toDaemonStartOptions: --once 应收敛为 once=true', () => {
+  assertEquals(toDaemonStartOptions(parseCliCommand(['--once'])), {
     configPath: undefined,
     runtimeDir: undefined,
     immediate: false,
@@ -293,14 +120,7 @@ test('[contract] toDaemonStartOptions: daemon --once 应收敛为 once=true', ()
 
 test('[contract] resolveDaemonStartOptions: CLI 显式 runtime_dir 应优先于环境变量', () => {
   const options = resolveDaemonStartOptions(
-    parseCliCommand([
-      '--mode',
-      'daemon',
-      '--config',
-      '/tmp/config.yml',
-      '--runtime_dir',
-      '/tmp/runtime',
-    ]),
+    parseCliCommand(['--config', '/tmp/config.yml', '--runtime_dir', '/tmp/runtime']),
     {
       KNOCK_RUNTIME_DIR: '/tmp/runtime-from-env',
     },
@@ -315,12 +135,9 @@ test('[contract] resolveDaemonStartOptions: CLI 显式 runtime_dir 应优先于�
 })
 
 test('[contract] resolveDaemonStartOptions: 未传 runtime_dir 时应回退到环境变量', () => {
-  const options = resolveDaemonStartOptions(
-    parseCliCommand(['--mode', 'daemon', '--config', '/tmp/config.yml']),
-    {
-      KNOCK_RUNTIME_DIR: '/tmp/runtime-from-env',
-    },
-  )
+  const options = resolveDaemonStartOptions(parseCliCommand(['--config', '/tmp/config.yml']), {
+    KNOCK_RUNTIME_DIR: '/tmp/runtime-from-env',
+  })
 
   assertEquals(options, {
     configPath: '/tmp/config.yml',
@@ -328,197 +145,6 @@ test('[contract] resolveDaemonStartOptions: 未传 runtime_dir 时应回退到�
     immediate: false,
     once: false,
   })
-})
-
-test('[contract] parseCliCommand: 应解析 mode=web 与 web 参数', () => {
-  const command = parseCliCommand([
-    '--mode',
-    'web',
-    '--web_host',
-    '127.0.0.1',
-    '--web_port',
-    '8080',
-  ])
-
-  assertEquals(command, {
-    kind: 'web',
-    host: '127.0.0.1',
-    port: 8080,
-  })
-})
-
-test('[contract] parseCliCommand: start 默认 mode=all', () => {
-  assertEquals(parseCliCommand([]).kind, 'all')
-})
-
-test('[contract] parseCliCommand: web 模式不接受 --config', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--config', 'runtime/config.yml']),
-    Error,
-    'web 模式不支持 --config',
-  )
-})
-
-test('[contract] parseCliCommand: web 模式不接受 --runtime_dir', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--runtime_dir', '/tmp/runtime']),
-    Error,
-    'web 模式不支持 --runtime_dir',
-  )
-})
-
-test('[contract] parseCliCommand: web 模式不接受 --immediate', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--immediate']),
-    Error,
-    'web 模式不支持 --immediate',
-  )
-})
-
-test('[contract] parseCliCommand: daemon 模式不接受 --web_host', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'daemon', '--web_host', '127.0.0.1']),
-    Error,
-    'daemon 模式不支持 --web_host',
-  )
-})
-
-test('[contract] parseCliCommand: daemon 模式不接受 --web_port', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'daemon', '--web_port', '8080']),
-    Error,
-    'daemon 模式不支持 --web_port',
-  )
-})
-
-test('[contract] parseCliCommand: --mode 非法值时应报错', () => {
-  assertThrows(() => parseCliCommand(['--mode', 'oops']), Error, '--mode 非法: oops')
-})
-
-test('[contract] parseCliCommand: --web_port 非数字时应报错', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--web_port', 'abc']),
-    Error,
-    '--web_port 非法',
-  )
-})
-
-test('[contract] parseCliCommand: --web_port 小数时应报错', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--web_port', '8080.5']),
-    Error,
-    '--web_port 非法',
-  )
-})
-
-test('[contract] parseCliCommand: --web_port 空白时应报错', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--web_port', '  ']),
-    Error,
-    '--web_port 非法',
-  )
-})
-
-test('[contract] parseCliCommand: --web_port 越界时应报错', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--web_port', '70000']),
-    Error,
-    '--web_port 非法',
-  )
-})
-
-test('[contract] parseCliCommand: --web_port 为 0 时应报错', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--web_port', '0']),
-    Error,
-    '--web_port 非法',
-  )
-})
-
-test('[contract] parseCliCommand: --web_port 最小边界 1 应通过', () => {
-  const command = parseCliCommand(['--mode', 'web', '--web_port', '1'])
-  assertEquals(command.kind, 'web')
-  if (command.kind !== 'web') throw new Error('unexpected command kind')
-  assertEquals(command.port, 1)
-})
-
-test('[contract] parseCliCommand: --web_port 最大边界 65535 应通过', () => {
-  const command = parseCliCommand(['--mode', 'web', '--web_port', '65535'])
-  assertEquals(command.kind, 'web')
-  if (command.kind !== 'web') throw new Error('unexpected command kind')
-  assertEquals(command.port, 65535)
-})
-
-test('[contract] parseCliCommand: daemon 模式下 --web_host 空字符串也应报互斥错误', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'daemon', '--web_host', '']),
-    Error,
-    'daemon 模式不支持 --web_host',
-  )
-})
-
-test('[contract] parseCliCommand: web 模式下 --config 空字符串也应报互斥错误', () => {
-  assertThrows(
-    () => parseCliCommand(['--mode', 'web', '--config', '']),
-    Error,
-    'web 模式不支持 --config',
-  )
-})
-
-test('[contract] buildChildArgs: all 模式参数可分发到 daemon 子进程', () => {
-  const command = parseCliCommand([
-    '--config',
-    'runtime/config.yml',
-    '--runtime_dir',
-    'runtime',
-    '--immediate',
-    '--web_host',
-    '127.0.0.1',
-    '--web_port',
-    '8080',
-  ])
-
-  assertEquals(buildChildArgs(command, 'daemon'), [
-    '--mode',
-    'daemon',
-    '--config',
-    'runtime/config.yml',
-    '--runtime_dir',
-    'runtime',
-    '--immediate',
-  ])
-})
-
-test('[contract] buildChildArgs: all 模式应向 daemon 子进程透传 --once', () => {
-  const command = parseCliCommand(['--config', 'runtime/config.yml', '--once'])
-
-  assertEquals(buildChildArgs(command, 'daemon'), [
-    '--mode',
-    'daemon',
-    '--config',
-    'runtime/config.yml',
-    '--once',
-  ])
-})
-
-test('[contract] buildChildArgs: all 模式参数可分发到 web 子进程', () => {
-  const command = parseCliCommand([
-    '--config',
-    'runtime/config.yml',
-    '--web_host',
-    '127.0.0.1',
-    '--web_port',
-    '8080',
-  ])
-
-  assertEquals(buildChildArgs(command, 'web'), [
-    '--mode',
-    'web',
-    '--web_host',
-    '127.0.0.1',
-    '--web_port',
-    '8080',
-  ])
 })
 
 test('[contract] dispatchCliCommand: 应通过 command object 分发 daemon 入口', async () => {
@@ -569,501 +195,14 @@ test('[contract] dispatchCliCommand: daemon 命令应委托 startup orchestrator
   assertEquals(calls, ['startup'])
 })
 
-test('[contract] main: 应通过 command object 分发入口', async () => {
-  const calls: string[] = []
-
-  await dispatchCliCommand(
-    parseCliCommand(['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', '8080']),
-    {
-      dispatchStartupCommand: async (command) => {
-        if (command.kind !== 'web') {
-          throw new Error('unexpected command kind')
-        }
-        calls.push(`${command.host}:${command.port}`)
-      },
-    },
-  )
-
-  assertEquals(calls, ['127.0.0.1:8080'])
-})
-
 test('[contract] main: 通过 main(args) 应走同一 dispatch 路径', async () => {
   const calls: string[] = []
 
-  await main([], {
+  await main(['--once'], {
     dispatchStartupCommand: async (command) => {
       calls.push(command.kind)
     },
   })
 
-  assertEquals(calls, ['all'])
-})
-
-test('[contract] main: all 模式启动不应因 web 预检抢占 sqlite 而失败', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(
-      runtimeDir,
-      'config.yml',
-      ['sqlite:', '  path: db/knock.db', 'sources: {}'].join('\n'),
-    )
-
-    const port = await reservePort()
-
-    const child = spawnMainProcess(
-      ['--web_host', '127.0.0.1', '--web_port', String(port)],
-      createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-    )
-
-    try {
-      const deadline = Date.now() + 10_000
-      let response: Response | undefined
-      let lastError: unknown
-
-      while (Date.now() < deadline) {
-        const lifecycle = await Promise.race([
-          child.status.then(() => 'exited' as const),
-          new Promise<'running'>((resolve) => setTimeout(() => resolve('running'), 100)),
-        ])
-        assertEquals(lifecycle, 'running')
-
-        try {
-          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
-          if (candidate.status === 200) {
-            response = candidate
-            break
-          }
-          lastError = new Error(`unexpected status: ${candidate.status}`)
-        } catch (error) {
-          lastError = error
-        }
-      }
-
-      if (!response) {
-        throw lastError instanceof Error ? lastError : new Error('等待 all 模式 web 页面可达超时')
-      }
-      await response.text()
-    } finally {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
-      }
-      await closeChildStream(child.stdout)
-      await closeChildStream(child.stderr)
-      await child.status.catch(() => undefined)
-    }
-  })
-})
-
-test('[contract] startWeb: 配置 jsonl 时应输出 JSONL 而不是 pretty', async () => {
-  await withEnv(
-    {
-      CI: 'true',
-      FORCE_COLOR: '1',
-      TERM: 'xterm-256color',
-      NO_COLOR: undefined,
-    },
-    async () => {
-      await withOwnedRuntime(async ({ runtimeDir }) => {
-        await writeRuntimeFile(
-          runtimeDir,
-          'config.yml',
-          [
-            'sources: {}',
-            'logging:',
-            '  level: info',
-            '  sinks:',
-            '    console:',
-            '      type: console',
-            '      format: jsonl',
-          ].join('\n'),
-        )
-
-        const port = await reservePort()
-
-        const child = spawnMainProcess(
-          ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
-          createStableChildEnv({
-            KNOCK_RUNTIME_DIR: runtimeDir,
-          }),
-        )
-
-        try {
-          const output = await readStartupOutput(child, port, WEB_STARTUP_TEST_TIMEOUT_MS)
-
-          assertEquals(output.includes('\u001b['), false)
-          assertStringIncludes(output, '"severityText":"INFO"')
-          assertStringIncludes(output, '"scope":{"name":"web.startup"}')
-          assertStringIncludes(output, '"web.host":"127.0.0.1"')
-          assertStringIncludes(output, `"web.url":"http://127.0.0.1:${port}/"`)
-        } finally {
-          try {
-            child.kill('SIGTERM')
-          } catch {
-            // noop
-          }
-          await closeChildStream(child.stdout)
-          await closeChildStream(child.stderr)
-          await child.status
-        }
-      })
-    },
-  )
-})
-
-test('[contract] startWeb: 应拒绝 logging 路径中的环境变量展开', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(
-      runtimeDir,
-      'config.yml',
-      [
-        'sources: {}',
-        'logging:',
-        '  level: info',
-        '  sinks:',
-        '    console:',
-        '      type: console',
-        '      format: ${LOG_FORMAT}',
-      ].join('\n'),
-    )
-
-    await withEnv({ KNOCK_RUNTIME_DIR: runtimeDir }, async () => {
-      await assertRejects(
-        () => startWeb({ host: '127.0.0.1', port: 18080 }),
-        Error,
-        'logging.sinks.console.format 不支持环境变量展开',
-      )
-    })
-  })
-})
-
-test('[contract] startWeb: 启动时应输出 pretty 单行并包含 host、port 与 url', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(
-      runtimeDir,
-      'config.yml',
-      [
-        'deliveries:',
-        '  telegram:',
-        '    enabled: false',
-        '    push:',
-        '      http:',
-        '        url: https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage',
-        '      request:',
-        '        payload:',
-        '          chat_id: ${TELEGRAM_CHAT_ID}',
-        '          text: hello',
-        'sources: {}',
-        'logging:',
-        '  level: info',
-        '  sinks:',
-        '    console:',
-        '      type: console',
-        '      format: pretty',
-      ].join('\n'),
-    )
-
-    const port = await reservePort()
-
-    const child = spawnMainProcess(
-      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
-      createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-    )
-
-    try {
-      const output = await readStartupOutput(child, port, WEB_STARTUP_TEST_TIMEOUT_MS)
-
-      assertStringIncludes(output, '\u001b[')
-      assertStringIncludes(output, 'info')
-      assertStringIncludes(output, 'startup')
-      assertStringIncludes(output, `Web 服务开始监听 http://127.0.0.1:${port}/`)
-      assertEquals(output.includes('"web.host"'), false)
-      assertEquals(output.includes('TELEGRAM_BOT_TOKEN'), false)
-      assertEquals(output.includes('TELEGRAM_CHAT_ID'), false)
-    } finally {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
-      }
-      await closeChildStream(child.stdout)
-      await closeChildStream(child.stderr)
-      await child.status
-    }
-  })
-})
-
-test('[contract] startWeb: 配置存在但 sqlite 不可用时应 fail fast 而不是假装启动成功', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(
-      runtimeDir,
-      'config.yml',
-      ['sqlite:', '  path: db/knock.db', 'sources: {}'].join('\n'),
-    )
-    await writeRuntimeFile(runtimeDir, 'db', 'not-a-directory')
-
-    const port = await reservePort()
-
-    const child = spawnMainProcess(
-      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
-      createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-    )
-
-    try {
-      const stderr = await readCommandOutputUntil(child.stderr, 'Web 启动前检查失败:', 10_000)
-      assertStringIncludes(stderr, 'Web 启动前检查失败:')
-      const status = await child.status
-      assertEquals(status.success, false)
-    } finally {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
-      }
-      await closeChildStream(child.stdout)
-      await closeChildStream(child.stderr)
-      await child.status.catch(() => undefined)
-    }
-  })
-})
-
-test('[contract] startWeb: 监听 0.0.0.0 时应通过回环地址完成就绪探测', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
-
-    const port = await reservePort()
-
-    const child = spawnMainProcess(
-      ['--mode', 'web', '--web_host', '0.0.0.0', '--web_port', String(port)],
-      createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-    )
-
-    try {
-      const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
-      let configResponse: Response | undefined
-      let lastError: unknown
-
-      while (Date.now() < deadline) {
-        try {
-          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
-          if (candidate.status === 200) {
-            configResponse = candidate
-            break
-          }
-          lastError = new Error(`unexpected status: ${candidate.status}`)
-        } catch (error) {
-          lastError = error
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-
-      if (!configResponse) {
-        throw lastError instanceof Error ? lastError : new Error('等待 0.0.0.0 config 页面可达超时')
-      }
-      await configResponse.text()
-    } finally {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
-      }
-      await closeChildStream(child.stdout)
-      await closeChildStream(child.stderr)
-      await child.status
-    }
-  })
-})
-
-test('[contract] waitForWebReady: 单次长首访应在总等待窗口内成功', async () => {
-  const port = await reservePort()
-  const abortController = new AbortController()
-
-  let requestCount = 0
-  const server = serve(
-    { hostname: '127.0.0.1', port, signal: abortController.signal },
-    async (request) => {
-      if (new URL(request.url).pathname !== '/config') {
-        return new Response('not found', { status: 404 })
-      }
-
-      requestCount += 1
-      if (requestCount === 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2_000))
-      }
-
-      return new Response('<html><body>Knock Config</body></html>', {
-        headers: {
-          'content-type': 'text/html; charset=utf-8',
-        },
-      })
-    },
-  )
-
-  const startedAt = Date.now()
-  try {
-    await waitForWebReady('127.0.0.1', port)
-  } finally {
-    abortController.abort()
-    await server.shutdown()
-  }
-
-  if (requestCount !== 1) {
-    throw new Error(`长首访不应被中断重试，实际请求了 ${requestCount} 次`)
-  }
-  if (Date.now() - startedAt < 1_500) {
-    throw new Error('waitForWebReady 不应在长首访完成前返回')
-  }
-})
-
-test('[contract] startWeb: 启动后 config 页面应实际可访问', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
-
-    const port = await reservePort()
-
-    const child = spawnMainProcess(
-      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
-      createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-    )
-
-    try {
-      const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
-      let homeResponse: Response | undefined
-      let lastError: unknown
-
-      while (Date.now() < deadline) {
-        try {
-          const candidate = await fetch(`http://127.0.0.1:${port}/`)
-          if (candidate.status === 200) {
-            homeResponse = candidate
-            break
-          }
-          lastError = new Error(`unexpected status: ${candidate.status}`)
-        } catch (error) {
-          lastError = error
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-
-      if (!homeResponse) {
-        throw lastError instanceof Error ? lastError : new Error('等待首页可达超时')
-      }
-      await homeResponse.text()
-
-      const response = await fetch(`http://127.0.0.1:${port}/config`)
-      assertEquals(response.status, 200)
-      await response.text()
-    } finally {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
-      }
-      await closeChildStream(child.stdout)
-      await closeChildStream(child.stderr)
-      await child.status
-    }
-  })
-})
-
-test('[contract] startWeb: 端口被占用时应直接报子进程退出而不是等待超时', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
-
-    const occupied = await occupyPort()
-    const { port } = occupied
-
-    try {
-      await withEnv({ KNOCK_RUNTIME_DIR: runtimeDir }, async () => {
-        const startedAt = Date.now()
-        await assertRejects(
-          () =>
-            startWeb({
-              host: '127.0.0.1',
-              port,
-            }),
-          Error,
-          'web 子进程异常退出: 1',
-        )
-        const elapsedMs = Date.now() - startedAt
-        if (elapsedMs >= 14_000) {
-          throw new Error(`端口占用失败不应等待接近超时窗口，实际耗时 ${elapsedMs}ms`)
-        }
-      })
-    } finally {
-      await occupied.close()
-    }
-  })
-})
-
-test('[contract] startWeb: 就绪后短窗口内不应因 config watcher 立即退出', async () => {
-  await withOwnedRuntime(async ({ runtimeDir }) => {
-    await writeRuntimeFile(runtimeDir, 'config.yml', 'sources: {}\n')
-
-    const port = await reservePort()
-
-    const child = spawnMainProcess(
-      ['--mode', 'web', '--web_host', '127.0.0.1', '--web_port', String(port)],
-      createStableChildEnv({
-        KNOCK_RUNTIME_DIR: runtimeDir,
-      }),
-    )
-
-    try {
-      const deadline = Date.now() + WEB_STARTUP_TEST_TIMEOUT_MS
-      let configResponse: Response | undefined
-      let lastError: unknown
-
-      while (Date.now() < deadline) {
-        try {
-          const candidate = await fetch(`http://127.0.0.1:${port}/config`)
-          if (candidate.status === 200) {
-            configResponse = candidate
-            break
-          }
-          lastError = new Error(`unexpected status: ${candidate.status}`)
-        } catch (error) {
-          lastError = error
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-
-      if (!configResponse) {
-        throw lastError instanceof Error ? lastError : new Error('等待 config 页面可达超时')
-      }
-      await configResponse.text()
-
-      const earlyExit = await Promise.race([
-        child.status.then((status) => ({ kind: 'exit' as const, status })),
-        new Promise<{ kind: 'timeout' }>((resolve) =>
-          setTimeout(() => resolve({ kind: 'timeout' }), 1200),
-        ),
-      ])
-      if (earlyExit.kind === 'exit') {
-        throw new Error(`web 子进程在启动后过早退出: ${earlyExit.status.code}`)
-      }
-    } finally {
-      try {
-        child.kill('SIGTERM')
-      } catch {
-        // noop
-      }
-      await closeChildStream(child.stdout)
-      await closeChildStream(child.stderr)
-      await child.status
-    }
-  })
+  assertEquals(calls, ['daemon'])
 })

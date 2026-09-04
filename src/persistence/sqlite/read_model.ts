@@ -362,8 +362,7 @@ export function createSqliteReadModel(db: FactsDbClient): FactsReadModel {
 
     async getLatestRunForSource(sourceId, effectDomain) {
       return getLatestRunForSourceQuery.get(sourceId, effectDomain) as
-        | ReaderOverviewRunRow
-        | undefined
+        ReaderOverviewRunRow | undefined
     },
 
     async getEntriesForRun(runId, effectDomain) {
@@ -388,8 +387,7 @@ export function createSqliteReadModel(db: FactsDbClient): FactsReadModel {
 
       for (const sourceId of sourceIds) {
         const latestRun = getSummaryLatestRunQuery.get(sourceId, effectDomain) as
-          | { feedJson: string | null }
-          | undefined
+          { feedJson: string | null } | undefined
 
         result[sourceId] = toSummarySourceInput(latestRun?.feedJson ?? null)
       }

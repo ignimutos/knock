@@ -1,7 +1,6 @@
 ---
 paths:
   - 'src/**'
-  - 'web/**'
   - 'scripts/**'
   - 'package.json'
   - 'bun.lock'

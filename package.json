@@ -3,10 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:web": "bun --bun vite build --configLoader native",
     "start": "bun run src/main.ts",
-    "web": "bun run src/main.ts --mode web",
-    "daemon": "bun run src/main.ts --mode daemon",
+    "daemon": "bun run src/main.ts",
     "dev": "bun run src/main.ts",
     "check": "bun --bun tsc --project tsconfig.json",
     "fmt": "bun --bun prettier --write .",
@@ -16,11 +14,11 @@
     "lint": "oxlint --fix .",
     "lint:check": "oxlint .",
     "lint:check:path": "bash ./scripts/run-paths.sh oxlint -- . --",
-    "test": "bun test src web",
-    "test:path": "bash ./scripts/run-paths.sh bun test -- src web --",
+    "test": "bun test src",
+    "test:path": "bash ./scripts/run-paths.sh bun test -- src --",
     "test:arch": "bun test src/testing/risk_mapping_test.ts",
-    "test:startup": "bun test src/config/config_example_test.ts src/main_test.ts src/core/app_test.ts src/container_entrypoint_test.ts src/compiled_release_entrypoint_test.ts web/main_test.ts",
-    "verify:scoped": "bun run build:web && bun run check && bun run test:arch && bun run test:startup",
+    "test:startup": "bun test src/config/config_example_test.ts src/main_test.ts src/core/app_test.ts src/container_entrypoint_test.ts src/compiled_release_entrypoint_test.ts",
+    "verify:scoped": "bun run check && bun run test:arch && bun run test:startup",
     "verify:full": "bun run verify:scoped && bun run test",
     "docker:build": "bash -lc 'docker build --tag \"${KNOCK_IMAGE_TAG:-knock:local}\" .'",
     "docker:size:check": "bash -lc 'image=\"${KNOCK_IMAGE_TAG:-knock:local}\"; size_bytes=$(docker image inspect \"$image\" --format \"{{.Size}}\"); size_mb=$(((size_bytes + 1048575) / 1048576)); limit_mb=${KNOCK_IMAGE_MAX_SIZE_MB:-450}; printf \"Docker image size: %s MB (limit %s MB)\\n\" \"$size_mb\" \"$limit_mb\"; test \"$size_mb\" -le \"$limit_mb\"'",
@@ -49,8 +47,6 @@
     "markdown-it": "^14.3.1",
     "nodemailer": "^7.0.13",
     "picocolors": "^1.1.1",
-    "preact": "^10.29.8",
-    "preact-render-to-string": "^6.7.0",
     "sanitize-html": "^2.17.7",
     "turndown": "^7.2.4",
     "yaml": "^2.9.0",
@@ -66,7 +62,6 @@
     "bun-types": "^1.4.0",
     "oxlint": "^1.81.0",
     "prettier": "^3.9.6",
-    "typescript": "^6.0.3",
-    "vite": "^7.3.6"
+    "typescript": "^6.0.3"
   }
 }
