@@ -1,7 +1,7 @@
-import { RunSourceItemPipeline } from '../run_source_item_pipeline.ts'
-import { DeduplicationStage } from '../stages/deduplication_stage.ts'
-import { FilterStage } from '../stages/filter_stage.ts'
-import { RenderStage } from '../stages/render_stage.ts'
+import { RunSourceItemPipeline } from './run_source_item_pipeline.ts'
+import { DeduplicationStage } from './stages/deduplication_stage.ts'
+import { FilterStage } from './stages/filter_stage.ts'
+import { RenderStage } from './stages/render_stage.ts'
 import type { CollectedSourceRun, RunSourceExecutionContext } from './run_source_execution_types.ts'
 
 export function createRunSourceItemPipeline(

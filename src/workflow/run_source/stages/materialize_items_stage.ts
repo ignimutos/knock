@@ -16,15 +16,7 @@ export async function materializeItemsStage(
       sourceRunId: run.runId,
       sourceId: run.sourceId,
       effectDomain: run.effectDomain,
-      normalized: {
-        id: entry.id,
-        title: entry.title,
-        link: entry.link,
-        description: entry.description,
-        content: entry.content,
-        published: entry.published,
-        updated: entry.updated,
-      },
+      normalized: entry,
     }),
   )
 

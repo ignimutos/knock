@@ -14,6 +14,7 @@ import { configureLoggingRuntime, shutdownLoggingRuntime } from '../core/logging
 import { createLogger, type Logger } from '../core/logger.ts'
 import type { Fetcher, ProxyClientFactory } from '../core/http_client.ts'
 import type { CreateTransport } from '../platform/nodemailer.ts'
+import { parseDurationMs } from '../config/runtime_semantics.ts'
 
 export type DaemonReloadTrigger = 'watcher'
 
@@ -21,7 +22,7 @@ interface ActiveGeneration {
   loaded: LoadedCompiledConfig
   runtime: Pick<
     ProductionRuntime,
-    'recoverInterruptedAttempts' | 'runScheduledTick' | 'runSourceNow' | 'stop'
+    'recoverInterruptedAttempts' | 'runScheduledTick' | 'pruneFacts' | 'stop'
   >
   acceptingRuns: boolean
   inFlightRuns: number
@@ -41,7 +42,6 @@ interface DaemonReloadController {
   start(): Promise<void>
   stop(): Promise<void>
   requestReload(trigger: DaemonReloadTrigger): Promise<void>
-  runSourceNow(sourceId: string): Promise<{ started: boolean }>
 }
 
 interface CreateDaemonReloadControllerDeps {
@@ -67,7 +67,6 @@ function createRuntimeGeneration(
       httpFetcher: options.httpFetcher,
       httpProxyClientFactory: options.httpProxyClientFactory,
       emailTransportFactory: options.emailTransportFactory,
-      keepAlive: false,
     })
 
   return {
@@ -110,6 +109,55 @@ export function createDaemonReloadController(
   let outerCron: { stop(): void } | undefined
   let pendingTrigger = false
   let reloadPromise: Promise<void> | undefined
+  let stopScheduledPrune: (() => void) | undefined
+
+  function clearPruneSchedule(): void {
+    stopScheduledPrune?.()
+    stopScheduledPrune = undefined
+  }
+
+  function startPruneJob(): void {
+    clearPruneSchedule()
+    const generation = activeGeneration
+    if (!generation) return
+
+    const intervalMs = parseDurationMs(
+      generation.loaded.config.sqlite.retention.interval,
+      'sqlite.retention.interval',
+    )
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const runPrune = async (): Promise<void> => {
+      try {
+        await withActiveGeneration((gen) => gen.runtime.pruneFacts())
+      } catch (error) {
+        logger.error('周期 facts 清理失败', {
+          'db.operation': 'prune',
+          error_message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+
+    const schedule = (remainingMs: number): void => {
+      if (cancelled) return
+      const wait = Math.min(remainingMs, 2 ** 31 - 1)
+      timer = setTimeout(() => {
+        if (cancelled) return
+        if (remainingMs - wait > 0) {
+          schedule(remainingMs - wait)
+          return
+        }
+        void runPrune().finally(() => schedule(intervalMs))
+      }, wait)
+    }
+
+    schedule(intervalMs)
+    stopScheduledPrune = () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }
 
   function restartOuterCron(): void {
     outerCron?.stop()
@@ -247,15 +295,18 @@ export function createDaemonReloadController(
       await applyLogging(loaded)
       activeGeneration = createRuntimeGeneration(options, deps, loaded)
       await activeGeneration.runtime.recoverInterruptedAttempts()
+      await activeGeneration.runtime.pruneFacts()
       await activeGeneration.runtime.runScheduledTick()
       restartOuterCron()
       restartPoller(loaded.configPath)
+      startPruneJob()
 
       if (options.keepAlive ?? true) {
         await (options.keepAliveSignal ?? new Promise(() => {}))
       }
     },
     async stop(): Promise<void> {
+      clearPruneSchedule()
       poller?.stop()
       outerCron?.stop()
       poller = undefined
@@ -273,9 +324,6 @@ export function createDaemonReloadController(
     },
     async requestReload(_trigger: DaemonReloadTrigger): Promise<void> {
       await requestReload()
-    },
-    async runSourceNow(sourceId: string): Promise<{ started: boolean }> {
-      return await withActiveGeneration((generation) => generation.runtime.runSourceNow(sourceId))
     },
   }
 }

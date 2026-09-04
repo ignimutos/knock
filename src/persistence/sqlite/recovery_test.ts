@@ -3,7 +3,6 @@ import { createInMemoryDb } from '../../persistence/sqlite/client.ts'
 import { insertDeliveryAttempt } from './delivery_attempt_repository.ts'
 import { insertSourceRun } from './run_repository.ts'
 import { markInterruptedAttempts } from './recovery.ts'
-import { createSourceRunQueryService } from './source_run_query_service.ts'
 import { test } from '../../testing/test_api.ts'
 
 // risk-id: R10
@@ -65,15 +64,22 @@ test('[contract] R10 sqlite v2: recovery 应将 planned/running attempts 标记�
 
   await markInterruptedAttempts(db, '2026-04-13T10:30:00.000Z')
 
-  const query = createSourceRunQueryService(db)
-  const view = await query.getRun('run-2')
+  const runRow = db.$client
+    .prepare('SELECT status, finished_at AS finishedAt FROM source_runs WHERE run_id = ?')
+    .get('run-2') as { status: string; finishedAt: string | null }
+  const attemptRow = db.$client
+    .prepare(
+      'SELECT status, reason, finished_at AS finishedAt FROM delivery_attempts WHERE source_run_id = ?',
+    )
+    .get('run-2') as { status: string; reason: string | null; finishedAt: string | null }
 
-  assertExists(view)
-  assertEquals(view.run.status, 'interrupted')
-  assertEquals(view.run.finishedAt, '2026-04-13T10:30:00.000Z')
-  assertEquals(view.attempts[0]?.status, 'interrupted')
-  assertEquals(view.attempts[0]?.reason, 'process_interrupted')
-  assertEquals(view.attempts[0]?.finishedAt, '2026-04-13T10:30:00.000Z')
+  assertExists(runRow)
+  assertEquals(runRow.status, 'interrupted')
+  assertEquals(runRow.finishedAt, '2026-04-13T10:30:00.000Z')
+  assertExists(attemptRow)
+  assertEquals(attemptRow.status, 'interrupted')
+  assertEquals(attemptRow.reason, 'process_interrupted')
+  assertEquals(attemptRow.finishedAt, '2026-04-13T10:30:00.000Z')
 })
 
 test('[contract] sqlite v2: recovery 失败时应回滚 attempt 更新，避免 run/attempt 失配', async () => {
@@ -136,15 +142,22 @@ test('[contract] sqlite v2: recovery 失败时应回滚 attempt 更新，避免 
 
   await assertRejects(() => markInterruptedAttempts(db, '2026-04-13T10:40:30.000Z'))
 
-  const query = createSourceRunQueryService(db)
-  const view = await query.getRun('run-rollback')
+  const runRow = db.$client
+    .prepare('SELECT status, finished_at AS finishedAt FROM source_runs WHERE run_id = ?')
+    .get('run-rollback') as { status: string; finishedAt: string | null }
+  const attemptRow = db.$client
+    .prepare(
+      'SELECT status, reason, finished_at AS finishedAt FROM delivery_attempts WHERE source_run_id = ?',
+    )
+    .get('run-rollback') as { status: string; reason: string | null; finishedAt: string | null }
 
-  assertExists(view)
-  assertEquals(view.run.status, 'running')
-  assertEquals(view.run.finishedAt, undefined)
-  assertEquals(view.attempts[0]?.status, 'running')
-  assertEquals(view.attempts[0]?.reason, undefined)
-  assertEquals(view.attempts[0]?.finishedAt, undefined)
+  assertExists(runRow)
+  assertEquals(runRow.status, 'running')
+  assertEquals(runRow.finishedAt, null)
+  assertExists(attemptRow)
+  assertEquals(attemptRow.status, 'running')
+  assertEquals(attemptRow.reason, null)
+  assertEquals(attemptRow.finishedAt, null)
 })
 export const testMeta = [
   {

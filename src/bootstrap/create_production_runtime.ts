@@ -1,7 +1,5 @@
-import { Cron } from 'croner'
 import type { RunDueSourcesUseCase } from '../workflow/run_due_sources_use_case.ts'
-import { PruneFactsUseCase } from '../workflow/prune_facts_use_case.ts'
-import { QueryRunsUseCase } from '../workflow/query_runs_use_case.ts'
+import type { PruneFactsResult } from '../workflow/ports/prune_facts_repository.ts'
 import type { CreateTransport } from '../platform/nodemailer.ts'
 import type { AppConfigResolved } from '../config/types.ts'
 import type { FactsDbClient } from '../persistence/sqlite/client.ts'
@@ -15,13 +13,10 @@ export interface ProductionRuntimeRunResult {
 
 export interface ProductionRuntime {
   runDueSourcesUseCase: Pick<RunDueSourcesUseCase, 'execute'>
-  queryRunsUseCase: QueryRunsUseCase
-  pruneFactsUseCase: PruneFactsUseCase
+  pruneFacts: () => Promise<PruneFactsResult>
   recoverInterruptedAttempts: () => Promise<void>
   runImmediate: () => Promise<ProductionRuntimeRunResult>
   runScheduledTick: (scheduledAt?: string) => Promise<ProductionRuntimeRunResult>
-  runSourceNow: (sourceId: string) => Promise<ProductionRuntimeRunResult>
-  enterDaemon: () => Promise<void>
   stop: () => void
 }
 
@@ -31,12 +26,8 @@ export interface CreateProductionRuntimeOptions {
   httpFetcher?: Fetcher
   httpProxyClientFactory?: ProxyClientFactory
   emailTransportFactory?: CreateTransport
-  keepAlive?: boolean
-  keepAliveSignal?: Promise<void>
   now?: () => string
   factsDb?: FactsDbClient
-  runDueSourcesUseCase?: ProductionRuntime['runDueSourcesUseCase']
-  scheduleDueSources?: (task: () => Promise<void>) => { stop: () => void }
 }
 
 export function createProductionRuntime(
@@ -52,60 +43,37 @@ export function createProductionRuntime(
     now,
     factsDb: options.factsDb,
   })
-  const runDueSourcesUseCase = options.runDueSourcesUseCase ?? services.runDueSourcesUseCase
-  const scheduledJobs: { stop: () => void }[] = []
-  const scheduleDueSources =
-    options.scheduleDueSources ??
-    ((task: () => Promise<void>) =>
-      new Cron('* * * * * *', { protect: true, timezone: options.config.timezone }, task))
 
   const runScheduledTick = async (scheduledAt?: string) => {
     return await services.scheduler.runSource('__run_due_sources__', async () => {
-      await runDueSourcesUseCase.execute({
+      await services.runDueSourcesUseCase.execute({
         trigger: 'scheduled',
         scheduledAt,
       })
     })
   }
 
+  const pruneFacts = async (): Promise<PruneFactsResult> => {
+    return await services.pruneFactsUseCase.execute({
+      maxAge: options.config.sqlite.retention.maxAge,
+      maxEntriesPerSource: options.config.sqlite.retention.maxEntriesPerSource,
+    })
+  }
+
   return {
-    runDueSourcesUseCase,
-    queryRunsUseCase: services.queryRunsUseCase,
-    pruneFactsUseCase: services.pruneFactsUseCase,
+    runDueSourcesUseCase: services.runDueSourcesUseCase,
+    pruneFacts,
     recoverInterruptedAttempts: services.recoverInterruptedAttempts,
     async runImmediate() {
       return await services.scheduler.runSource('__run_due_sources__', async () => {
-        await runDueSourcesUseCase.execute({
+        await services.runDueSourcesUseCase.execute({
           trigger: 'immediate',
           scheduledAt: now(),
         })
       })
     },
-    async runSourceNow(sourceId: string) {
-      return await services.scheduler.runSource(sourceId, async () => {
-        await runDueSourcesUseCase.execute({
-          sourceId,
-          trigger: 'manual',
-          scheduledAt: now(),
-        })
-      })
-    },
     runScheduledTick,
-    async enterDaemon() {
-      scheduledJobs.push(
-        scheduleDueSources(async () => {
-          await runScheduledTick()
-        }),
-      )
-
-      const shouldKeepAlive = options.keepAlive ?? true
-      if (!shouldKeepAlive) return
-      await (options.keepAliveSignal ?? new Promise(() => {}))
-    },
     stop() {
-      for (const job of scheduledJobs) {
-        job.stop()
-      }
       services.factsDb.$client.close()
     },
   }

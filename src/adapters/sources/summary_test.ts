@@ -29,6 +29,7 @@ function createSqliteConfig(databaseName: string) {
       maxAge: '1d',
       maxEntriesPerSource: 20,
       vacuum: 'off' as const,
+      interval: '24h' as const,
     },
   }
 }

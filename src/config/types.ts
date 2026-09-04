@@ -58,6 +58,7 @@ export interface SqliteRetentionConfigResolved {
   maxAge: string
   maxEntriesPerSource: number
   vacuum: SqliteRetentionVacuumMode
+  interval: string
 }
 
 export interface SqliteConfigResolved {

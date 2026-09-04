@@ -423,6 +423,7 @@ export const sqliteRetentionSchema = z
       })
       .default(1000),
     vacuum: createEnumSchema(['off', 'afterPrune']).default('off'),
+    interval: createDurationSchema('sqlite.retention.interval', { allowDays: true }).default('24h'),
   })
   .strict()
   .prefault({})

@@ -1,5 +1,5 @@
 import type { SourceRun } from '../../domain/source_run.ts'
-import type { RunSourceItemPipelineLifecycleCounts } from '../run_source_item_pipeline.ts'
+import type { RunSourceItemPipelineLifecycleCounts } from './run_source_item_pipeline.ts'
 import {
   createRunSourceExecutionCounts,
   accumulateRunSourceExecutionCounts,
@@ -7,9 +7,9 @@ import {
 import { createRunSourceItemPipeline } from './create_run_source_item_pipeline.ts'
 import { RunSourceLifecycle } from './run_source_lifecycle.ts'
 import type { CollectedSourceRun, RunSourceExecutionContext } from './run_source_execution_types.ts'
-import { finalizeRunStage } from '../stages/finalize_run_stage.ts'
-import { materializeItemsStage } from '../stages/materialize_items_stage.ts'
-import { persistRunStage } from '../stages/persist_run_stage.ts'
+import { finalizeRunStage } from './stages/finalize_run_stage.ts'
+import { materializeItemsStage } from './stages/materialize_items_stage.ts'
+import { persistRunStage } from './stages/persist_run_stage.ts'
 
 export class RunSourceExecutionPipeline {
   constructor(

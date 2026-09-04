@@ -317,6 +317,11 @@ test('[unit] domain: renderedSnapshot.channel 必须与 attempt.channel 一致',
       plannedAt: '2026-04-13T09:44:00.000Z',
       renderedSnapshot: {
         channel: 'push',
+        payload: {
+          http: { method: 'POST', url: 'https://example.com' },
+          requestType: 'body',
+          payload: { text: 'ignored' },
+        },
       },
     }),
   )

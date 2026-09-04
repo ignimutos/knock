@@ -2,7 +2,7 @@ import type { SourceRunCounts } from '../../domain/source_run.ts'
 import type {
   RunSourceItemPipelineLifecycleCounts,
   RunSourceItemPipelineResult,
-} from '../run_source_item_pipeline.ts'
+} from './run_source_item_pipeline.ts'
 import type { RunSourceLifecycleCounts } from './run_source_execution_types.ts'
 
 const EMPTY_ITEM_LIFECYCLE_COUNTS: RunSourceItemPipelineLifecycleCounts = {

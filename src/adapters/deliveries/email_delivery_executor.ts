@@ -15,21 +15,15 @@ export function createEmailDeliveryExecutor(deps: EmailDeliveryExecutorDeps): De
 
   return {
     async execute(plan: DeliveryAttemptPlan): Promise<void> {
-      if (plan.channel !== 'email') {
-        throw new Error(`email executor 不支持 channel=${plan.channel}`)
+      if (plan.renderedSnapshot.channel !== 'email') {
+        throw new Error(`email executor 不支持 channel=${plan.renderedSnapshot.channel}`)
       }
 
-      const payload = (plan.renderedSnapshot.payload ?? {}) as Record<string, unknown>
-      const smtp = payload.smtp
-      const message = payload.message
-      if (!smtp || typeof smtp !== 'object' || !message || typeof message !== 'object') {
-        throw new Error('email executor 缺少 smtp/message rendered payload')
-      }
-
+      const payload = plan.renderedSnapshot.payload
       await delivery.push({
         deliveryId: plan.deliveryId,
-        smtp: smtp as Parameters<EmailDelivery['push']>[0]['smtp'],
-        message: message as Parameters<EmailDelivery['push']>[0]['message'],
+        smtp: payload.smtp,
+        message: payload.message,
       })
     },
   }

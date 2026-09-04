@@ -114,12 +114,11 @@ async function runDaemonStartupOnce(input: StartDaemonProcessInput): Promise<voi
     httpFetcher: input.httpFetcher,
     httpProxyClientFactory: input.httpProxyClientFactory,
     emailTransportFactory: input.emailTransportFactory,
-    keepAlive: input.keepAlive,
-    keepAliveSignal: input.keepAliveSignal,
   })
 
   try {
     await daemon.recoverInterruptedAttempts()
+    await daemon.pruneFacts()
     await daemon.runImmediate()
   } finally {
     daemon.stop()

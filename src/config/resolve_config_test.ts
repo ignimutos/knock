@@ -457,6 +457,7 @@ test('[contract] resolveConfig: 缺省全局块时应收口为空数组、默认
       maxAge: '180d',
       maxEntriesPerSource: 1000,
       vacuum: 'off',
+      interval: '24h',
     },
   })
   assertEquals(resolved.logging, {

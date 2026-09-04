@@ -20,6 +20,7 @@ test('[contract] validateConfig: schema 静态默认值应在校验阶段生效'
       maxAge: '180d',
       maxEntriesPerSource: 1000,
       vacuum: 'off',
+      interval: '24h',
     },
   })
   assertEquals(validated.logging, {

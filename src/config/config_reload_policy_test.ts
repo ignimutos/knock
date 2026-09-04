@@ -17,6 +17,7 @@ function createConfig(sqlitePath: string): AppConfigResolved {
         maxAge: '7d',
         maxEntriesPerSource: 100,
         vacuum: 'off',
+        interval: '24h',
       },
     },
     deliveries: [],

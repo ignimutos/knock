@@ -1,4 +1,4 @@
-import type { DeduplicationRepository } from '../../workflow/ports/deduplication_repository.ts'
+import type { DeduplicationRepository } from '../../ports/deduplication_repository.ts'
 
 export interface DeduplicationStageInput {
   fingerprint: string

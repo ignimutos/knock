@@ -15,6 +15,7 @@ function resolveSqliteConfig(runtimeDir: string, input: SqliteConfigInput): Sqli
       maxAge: input.retention.maxAge,
       maxEntriesPerSource: input.retention.maxEntriesPerSource,
       vacuum: input.retention.vacuum,
+      interval: input.retention.interval,
     },
   }
 }

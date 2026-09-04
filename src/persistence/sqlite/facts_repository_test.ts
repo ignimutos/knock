@@ -1,13 +1,17 @@
 import { assertEquals } from '../../testing/assert.ts'
-import { createInMemoryDb } from '../../persistence/sqlite/client.ts'
-import { createSqliteRunFactsStore } from './run_facts_store.ts'
+import { createInMemoryDb } from './client.ts'
+import { createRunRepository } from './run_repository.ts'
+import { createItemRepository } from './item_repository.ts'
+import { createDeliveryAttemptRepository } from './delivery_attempt_repository.ts'
 import { test } from '../../testing/test_api.ts'
 
-test('[contract] sqlite run facts store: 应写入并更新 run/item/attempt 事实', async () => {
+test('[contract] sqlite facts repositories: 应写入并更新 run/item/attempt 事实', async () => {
   const db = createInMemoryDb()
-  const store = createSqliteRunFactsStore(db)
+  const runRepository = createRunRepository(db)
+  const itemRepository = createItemRepository(db)
+  const deliveryAttemptRepository = createDeliveryAttemptRepository(db)
 
-  await store.insertRun({
+  await runRepository.insert({
     runId: 'run-1',
     sourceId: 'rust',
     trigger: 'scheduled',
@@ -26,7 +30,7 @@ test('[contract] sqlite run facts store: 应写入并更新 run/item/attempt 事
       skippedCount: 0,
     },
   })
-  await store.setFeedSnapshot('run-1', {
+  await runRepository.setFeedSnapshot?.('run-1', {
     title: 'Rust Feed',
     link: 'https://example.com',
     description: '',
@@ -34,7 +38,7 @@ test('[contract] sqlite run facts store: 应写入并更新 run/item/attempt 事
     language: 'en',
     published: '2026-05-10T08:00:00.000Z',
   })
-  await store.insertItems([
+  await itemRepository.insertMany([
     {
       itemId: 'item-1',
       sourceRunId: 'run-1',
@@ -52,8 +56,8 @@ test('[contract] sqlite run facts store: 应写入并更新 run/item/attempt 事
       status: 'ready',
     },
   ])
-  await store.updateItemStatus('item-1', 'delivered')
-  await store.insertPlannedAttempt({
+  await itemRepository.updateStatus('item-1', 'delivered')
+  await deliveryAttemptRepository.insertPlanned({
     attemptId: 'attempt-1',
     itemId: 'item-1',
     sourceRunId: 'run-1',
@@ -64,12 +68,12 @@ test('[contract] sqlite run facts store: 应写入并更新 run/item/attempt 事
     status: 'planned',
     plannedAt: '2026-05-10T08:00:01.000Z',
   })
-  await store.finishAttempt('attempt-1', {
+  await deliveryAttemptRepository.finish('attempt-1', {
     status: 'delivered',
     startedAt: '2026-05-10T08:00:02.000Z',
     finishedAt: '2026-05-10T08:00:03.000Z',
   })
-  await store.updateRun({
+  await runRepository.update({
     runId: 'run-1',
     sourceId: 'rust',
     trigger: 'scheduled',

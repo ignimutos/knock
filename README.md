@@ -237,6 +237,7 @@ logging:
 - `sqlite.retention.maxAge`
 - `sqlite.retention.maxEntriesPerSource`
 - `sqlite.retention.vacuum`
+- `sqlite.retention.interval`
 - `ai`
 - `deliveries`
 - `sources`
@@ -361,7 +362,7 @@ logging:
 - `sqlite.path` 默认 `knock.db`。
 - `sqlite.busyTimeout` 默认 `5s`。
 - `sqlite.journalMode` 支持 `WAL` / `DELETE`，默认 `WAL`。
-- `sqlite.retention.maxAge` 默认 `180d`，`maxEntriesPerSource` 默认 `1000`，`vacuum` 支持 `off` / `afterPrune`。
+- `sqlite.retention.maxAge` 默认 `180d`，`maxEntriesPerSource` 默认 `1000`，`vacuum` 支持 `off` / `afterPrune`，`interval` 默认 `24h`（daemon 周期清理间隔，含启动时执行一次）。
 
 ### `logging`
 
@@ -915,7 +916,7 @@ CI 真实凭据（Docker Hub 用户名/令牌、Telegram bot token/chat id）不
 
 日志按显式 sink 配置输出：console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。JSONL 字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。
 
-当前 v2 执行点：source 抓取/解析日志来自 `src/adapters/sources/http_source_input_gateway.ts`、`src/adapters/sources/byparr_source_input_gateway.ts`、`src/adapters/sources/source_parser_gateway.ts`；pipeline 的 filter/dedupe/delivery/finalize 日志来自 `src/workflow/run_source_use_case.ts` 与 `src/workflow/stages/delivery_stage.ts`。
+当前 v2 执行点：source 抓取/解析日志来自 `src/adapters/sources/http_source_input_gateway.ts`、`src/adapters/sources/byparr_source_input_gateway.ts`、`src/adapters/sources/source_parser_gateway.ts`；pipeline 的 filter/dedupe/delivery/finalize 日志来自 `src/workflow/run_source_use_case.ts` 与 `src/workflow/run_source/stages/delivery_stage.ts`。
 
 Namespaced 关键字段示例：`source.id`、`source.run_id`、`pipeline.item_id`、`delivery.id`、`template.ai.provider`、`template.ai.model_ref`、`template.ai.outcome`。
 

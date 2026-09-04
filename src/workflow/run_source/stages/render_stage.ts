@@ -1,13 +1,13 @@
-import { attachAiEntryRuntime } from '../../core/ai_runtime.ts'
-import type { UnifiedFeedFields } from '../../config/types.ts'
+import { attachAiEntryRuntime } from '../../../core/ai_runtime.ts'
+import type { HttpPayload, UnifiedFeedFields } from '../../../config/types.ts'
 import {
   isEmailDeliveryDefinition,
   isFileDeliveryDefinition,
   isPushDeliveryDefinition,
-} from '../../domain/delivery_definition.ts'
-import type { PipelineItem } from '../../domain/pipeline_item.ts'
-import type { DeliveryBinding } from '../../domain/run_plan.ts'
-import type { DeliveryAttemptPlan } from '../../workflow/ports/delivery_executor.ts'
+} from '../../../domain/delivery_definition.ts'
+import type { PipelineItem } from '../../../domain/pipeline_item.ts'
+import type { DeliveryBinding } from '../../../domain/run_plan.ts'
+import type { DeliveryAttemptPlan } from '../../ports/delivery_executor.ts'
 
 export interface RenderStageInput {
   item: PipelineItem
@@ -82,7 +82,10 @@ export class RenderStage {
 
     if (isPushDeliveryDefinition(input.binding.definition)) {
       const pushDefinition = input.binding.definition
-      const pushPayload = await this.deps.renderPayload(pushDefinition.payloadTemplate, context)
+      const pushPayload = (await this.deps.renderPayload(
+        pushDefinition.payloadTemplate,
+        context,
+      )) as HttpPayload
 
       return {
         attemptId: this.deps.createAttemptId({

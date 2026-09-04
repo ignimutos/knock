@@ -76,6 +76,8 @@ sqlite:
     maxEntriesPerSource: 1000
     # SQLite 清理后 vacuum 策略（可选；默认: off）
     vacuum: off
+    # daemon 周期执行 retention 清理的间隔（可选；默认: 24h）
+    interval: 24h
 
 # 投递目标定义（可选）
 # - deliveries.<id> 定义 canonical delivery

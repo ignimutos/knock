@@ -18,25 +18,19 @@ export function createHttpDeliveryExecutor(deps: HttpDeliveryExecutorDeps): Deli
 
   return {
     async execute(plan: DeliveryAttemptPlan): Promise<void> {
-      if (plan.channel !== 'push') {
-        throw new Error(`http executor 不支持 channel=${plan.channel}`)
+      if (plan.renderedSnapshot.channel !== 'push') {
+        throw new Error(`http executor 不支持 channel=${plan.renderedSnapshot.channel}`)
       }
 
-      const payload = (plan.renderedSnapshot.payload ?? {}) as Record<string, unknown>
-      const http = payload.http
-      const requestType = payload.requestType
-      if (!http || typeof http !== 'object' || typeof requestType !== 'string') {
-        throw new Error('http executor 缺少 http/requestType rendered payload')
-      }
-
+      const payload = plan.renderedSnapshot.payload
       await delivery.push({
         deliveryId: plan.deliveryId,
-        http: http as Parameters<HttpDelivery['push']>[0]['http'],
+        http: payload.http,
         request: {
-          type: requestType as Parameters<HttpDelivery['push']>[0]['request']['type'],
-          payload: payload.payload as Parameters<HttpDelivery['push']>[0]['request']['payload'],
+          type: payload.requestType,
+          payload: payload.payload,
         },
-        response: payload.response as Parameters<HttpDelivery['push']>[0]['response'],
+        response: payload.response,
       })
     },
   }

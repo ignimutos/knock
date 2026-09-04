@@ -50,7 +50,7 @@
   expected_guardrail: entry marked skipped with deterministic reason
   required_layer: flow+contract
   owner_tests:
-    - src/workflow/run_source_item_pipeline_test.ts
+    - src/workflow/run_source/run_source_item_pipeline_test.ts
 
 - id: R07
   domain: delivery
@@ -61,7 +61,7 @@
     - src/adapters/deliveries/http_test.ts
     - src/adapters/deliveries/email_test.ts
     - src/workflow/run_source_use_case_test.ts
-    - src/workflow/run_source_item_pipeline_test.ts
+    - src/workflow/run_source/run_source_item_pipeline_test.ts
 
 - id: R08
   domain: delivery
@@ -88,7 +88,6 @@
   owner_tests:
     - src/persistence/sqlite/client_test.ts
     - src/persistence/sqlite/recovery_test.ts
-    - src/persistence/sqlite/source_run_query_service_test.ts
 
 - id: R11
   domain: logging

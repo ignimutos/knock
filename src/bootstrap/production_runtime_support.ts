@@ -1,5 +1,4 @@
 import { PruneFactsUseCase } from '../workflow/prune_facts_use_case.ts'
-import { QueryRunsUseCase } from '../workflow/query_runs_use_case.ts'
 import type { CreateTransport } from '../platform/nodemailer.ts'
 import type { AppConfigResolved, ResolvedSourceConfig } from '../config/types.ts'
 import type { Fetcher, ProxyClientFactory } from '../core/http_client.ts'
@@ -14,7 +13,6 @@ import { createFileDeliveryExecutor } from '../adapters/deliveries/file_delivery
 import { createHttpDeliveryExecutor } from '../adapters/deliveries/http_delivery_executor.ts'
 import { createPruneFactsRepository } from '../persistence/sqlite/prune_facts_repository.ts'
 import { markInterruptedAttempts } from '../persistence/sqlite/recovery.ts'
-import { createSourceRunQueryService } from '../persistence/sqlite/source_run_query_service.ts'
 import { createRuntimeKernel } from './assembly/runtime_kernel_builder.ts'
 import {
   createProductionRuntimePipeline,
@@ -50,7 +48,6 @@ export interface ProductionRuntimeServices {
   factsDb: FactsDbClient
   scheduler: ReturnType<typeof createScheduler>
   runDueSourcesUseCase: ReturnType<typeof createRuntimeKernel>['runDueSourcesUseCase']
-  queryRunsUseCase: QueryRunsUseCase
   pruneFactsUseCase: PruneFactsUseCase
   recoverInterruptedAttempts: () => Promise<void>
 }
@@ -177,7 +174,6 @@ function createProductionRunSourceUseCase(input: {
         core.shared.contentRuntime.buildContext(item, feed, createRuntimeFilterSource(source)),
       ),
     logger: input.loggers.scheduler,
-    requireFullPipeline: true,
   })
 }
 
@@ -212,9 +208,6 @@ export function createProductionRuntimeServices(
     factsDb,
     scheduler: createScheduler(loggers.scheduler),
     runDueSourcesUseCase: kernel.runDueSourcesUseCase,
-    queryRunsUseCase: new QueryRunsUseCase({
-      sourceRunQueryService: createSourceRunQueryService(factsDb),
-    }),
     pruneFactsUseCase: new PruneFactsUseCase({
       now: input.now,
       pruneFactsRepository: createPruneFactsRepository(factsDb),

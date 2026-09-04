@@ -1,14 +1,41 @@
 import type { EffectDomain } from './run_profile.ts'
+import type {
+  EmailConfig,
+  EmailMessageConfig,
+  FileRotationConfig,
+  HttpPayload,
+  HttpRequestType,
+  PushHttpConfig,
+  PushResponseConfig,
+} from '../config/schema.ts'
 
 export type DeliveryChannel = 'file' | 'push' | 'email'
 
 export type DeliveryAttemptStatus =
   'planned' | 'running' | 'delivered' | 'failed' | 'skipped' | 'interrupted'
 
-export interface RenderedSnapshot {
-  channel: DeliveryChannel
-  payload?: Record<string, unknown>
+export interface FileRenderedPayload {
+  path: string
+  content: string
+  rotation?: FileRotationConfig
 }
+
+export interface HttpPushRenderedPayload {
+  http: PushHttpConfig
+  requestType: HttpRequestType
+  payload: HttpPayload
+  response?: PushResponseConfig
+}
+
+export interface EmailRenderedPayload {
+  smtp: EmailConfig['smtp']
+  message: EmailMessageConfig
+}
+
+export type RenderedSnapshot =
+  | { channel: 'file'; payload: FileRenderedPayload }
+  | { channel: 'push'; payload: HttpPushRenderedPayload }
+  | { channel: 'email'; payload: EmailRenderedPayload }
 
 export interface DeliveryAttempt {
   attemptId: string

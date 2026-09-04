@@ -1,14 +1,5 @@
 import type { EffectDomain } from './run_profile.ts'
-
-export interface NormalizedEntrySnapshot {
-  id: string
-  title: string
-  link: string
-  description: string
-  content: string
-  published: string
-  updated: string
-}
+import type { UnifiedEntryFields } from '../config/types.ts'
 
 export type PipelineItemStatus =
   'ready' | 'filtered' | 'duplicate' | 'skipped' | 'delivered' | 'failed'
@@ -20,7 +11,7 @@ export interface PipelineItem {
   sourceRunId: string
   sourceId: string
   effectDomain: EffectDomain
-  normalized: NormalizedEntrySnapshot
+  normalized: UnifiedEntryFields
   status: PipelineItemStatus
   skippedReason?: PipelineItemSkippedReason
 }
@@ -30,7 +21,7 @@ export interface CreatePipelineItemInput {
   sourceRunId: string
   sourceId: string
   effectDomain: EffectDomain
-  normalized: NormalizedEntrySnapshot
+  normalized: UnifiedEntryFields
 }
 
 export function createPipelineItem(input: CreatePipelineItemInput): PipelineItem {

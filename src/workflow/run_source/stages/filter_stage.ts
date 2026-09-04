@@ -1,4 +1,4 @@
-import type { PipelineItem } from '../../domain/pipeline_item.ts'
+import type { PipelineItem } from '../../../domain/pipeline_item.ts'
 
 export interface FilterStageInput {
   item: PipelineItem

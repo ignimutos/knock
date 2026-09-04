@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '../../testing/assert.ts'
+import { assertEquals } from '../../testing/assert.ts'
 import { createEmailDeliveryExecutor } from './email_delivery_executor.ts'
 import { test } from '../../testing/test_api.ts'
 
@@ -72,42 +72,6 @@ test('[unit] emailDeliveryExecutor: 应只消费 rendered plan 的 smtp/message'
   ])
 })
 
-test('[unit] emailDeliveryExecutor: rendered payload 缺少 smtp/message 时应拒绝执行', async () => {
-  const executor = createEmailDeliveryExecutor({
-    delivery: {
-      push: () => Promise.resolve(),
-    } as never,
-  })
-
-  await assertRejects(
-    () =>
-      executor.execute({
-        attemptId: 'attempt-missing-message',
-        sourceRunId: 'run-1',
-        itemId: 'item-1',
-        deliveryId: 'mailer',
-        effectDomain: 'production',
-        channel: 'email',
-        plannedAt: '2026-04-13T12:03:00.000Z',
-        renderedSnapshot: {
-          channel: 'email',
-          payload: {
-            smtp: {
-              host: 'smtp.example.com',
-              port: 587,
-              security: 'starttls',
-            },
-            from: 'bot@example.com',
-            to: ['ops@example.com'],
-            subject: 'Hello',
-            text: 'Desc',
-          },
-        },
-      }),
-    Error,
-    'email executor 缺少 smtp/message rendered payload',
-  )
-})
 export const testMeta = [
   {
     title: '__file__',

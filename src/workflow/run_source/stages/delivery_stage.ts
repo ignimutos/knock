@@ -1,9 +1,6 @@
-import type { Logger } from '../../core/logger.ts'
-import type { FinishDeliveryAttemptInput } from '../../workflow/ports/delivery_attempt_repository.ts'
-import type {
-  DeliveryExecutor,
-  DeliveryAttemptPlan,
-} from '../../workflow/ports/delivery_executor.ts'
+import type { Logger } from '../../../core/logger.ts'
+import type { FinishDeliveryAttemptInput } from '../../ports/delivery_attempt_repository.ts'
+import type { DeliveryExecutor, DeliveryAttemptPlan } from '../../ports/delivery_executor.ts'
 
 export interface DeliveryStageDeps {
   now: () => string

@@ -26,6 +26,7 @@ test('createDbClient: 使用 sqlite facts 初始化并可执行查询', () => {
         maxAge: '180d',
         maxEntriesPerSource: 1000,
         vacuum: 'off',
+        interval: '24h',
       },
     },
   })
@@ -56,6 +57,7 @@ test('createDbClient: 初始化时应记录结构化日志', () => {
         maxAge: '180d',
         maxEntriesPerSource: 1000,
         vacuum: 'off',
+        interval: '24h',
       },
     },
     logger,
@@ -108,6 +110,7 @@ test('createDbClient: 应在 sqlite.path 指定位置创建数据库并应用 pr
         maxAge: '180d',
         maxEntriesPerSource: 1000,
         vacuum: 'off',
+        interval: '24h',
       },
     },
   })
@@ -133,6 +136,7 @@ test('createDbClient: 应初始化 facts 表', () => {
         maxAge: '180d',
         maxEntriesPerSource: 1000,
         vacuum: 'off',
+        interval: '24h',
       },
     },
   })
@@ -183,6 +187,7 @@ test('createDbClient: vacuum=afterPrune 时应保持数据库可初始化', () =
         maxAge: '180d',
         maxEntriesPerSource: 1000,
         vacuum: 'afterPrune',
+        interval: '24h',
       },
     },
   })
@@ -202,6 +207,7 @@ test('createDbClient: 应初始化 facts 索引', () => {
         maxAge: '180d',
         maxEntriesPerSource: 1000,
         vacuum: 'off',
+        interval: '24h',
       },
     },
   })

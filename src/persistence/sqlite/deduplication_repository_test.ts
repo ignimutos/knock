@@ -1,11 +1,11 @@
 import { assertEquals } from '../../testing/assert.ts'
-import { createInMemoryDb } from '../../persistence/sqlite/client.ts'
-import { createSqliteDedupeFactsStore } from './dedupe_facts_store.ts'
+import { createInMemoryDb } from './client.ts'
+import { createApplicationDeduplicationRepository } from './deduplication_repository.ts'
 import { test } from '../../testing/test_api.ts'
 
-test('[contract] sqlite dedupe facts store: 应登记并查询 item 与 delivery 指纹', async () => {
+test('[contract] sqlite deduplication repository: 应登记并查询 item 与 delivery 指纹', async () => {
   const db = createInMemoryDb()
-  const store = createSqliteDedupeFactsStore(db)
+  const store = createApplicationDeduplicationRepository(db)
 
   assertEquals(
     await store.isItemDuplicate({

@@ -17,21 +17,15 @@ export function createFileDeliveryExecutor(deps: FileDeliveryExecutorDeps): Deli
 
   return {
     async execute(plan: DeliveryAttemptPlan): Promise<void> {
-      if (plan.channel !== 'file') {
-        throw new Error(`file executor 不支持 channel=${plan.channel}`)
+      if (plan.renderedSnapshot.channel !== 'file') {
+        throw new Error(`file executor 不支持 channel=${plan.renderedSnapshot.channel}`)
       }
 
-      const payload = (plan.renderedSnapshot.payload ?? {}) as Record<string, unknown>
-      const path = payload.path
-      const content = payload.content
-      if (typeof path !== 'string' || typeof content !== 'string') {
-        throw new Error('file executor 缺少 path/content rendered payload')
-      }
-
+      const payload = plan.renderedSnapshot.payload
       await delivery.push({
-        path,
-        content,
-        rotation: payload.rotation as Parameters<FileDelivery['push']>[0]['rotation'],
+        path: payload.path,
+        content: payload.content,
+        rotation: payload.rotation,
       })
     },
   }
