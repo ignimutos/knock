@@ -905,6 +905,12 @@ CI 已收敛为 `verify` → `image` → `publish` 三层：先跑 `bun run veri
 
 Docker Hub 镜像页说明文档维护在 `docker/README.md`，并在 `main` 镜像发布时由 `.github/workflows/docker.yml` 一并同步。
 
+CI 真实凭据（Docker Hub 用户名/令牌、Telegram bot token/chat id）不存放在 GitHub secrets，改由 workflow 在 `publish` / `notify` job 中通过 Infisical OIDC 拉取（`Infisical/secrets-action`），仓库内不保留长时凭据。需要配置：
+
+- **Infisical 项目**：在目标环境（默认 `dev`，可用 `INFISICAL_ENV_SLUG` 覆盖）内建 4 个 secret，名字必须与 workflow 引用一致：`DOCKERHUB_USER`、`DOCKERHUB_TOKEN`、`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`。
+- **Infisical**：创建 OIDC Machine Identity，绑定 `repo:ignimutos/knock`，并授予项目读取权限。
+- **GitHub vars**（非敏感）：`INFISICAL_IDENTITY_ID`、`INFISICAL_PROJECT_SLUG`；可选 `INFISICAL_ENV_SLUG`（默认 `dev`）、`INFISICAL_DOMAIN`（默认 `https://app.infisical.com`）、`INFISICAL_SECRET_PATH`（默认 `/`）、`INFISICAL_RECURSIVE`（默认 `true`）。
+
 ## 日志
 
 日志按显式 sink 配置输出：console 支持 `pretty|jsonl`，file 第一版支持 `jsonl`。JSONL 字段遵循 OTel 风格结构：`severityText`、`severityNumber`、`body`、`attributes`、`resource.attributes`、`scope.name`、`trace_id/span_id/trace_flags`。

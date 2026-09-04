@@ -89,12 +89,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      IMAGE_NAME: knock
-      IMAGE_REPOSITORY: ${{ secrets.DOCKERHUB_USERNAME }}/knock
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 凭据来自 Infisical 而非 GitHub secrets：OIDC machine identity 绑定
+      # repo:ignimutos/knock，action 会注入 DOCKERHUB_USER / DOCKERHUB_TOKEN 等
+      # job 级环境变量，仓库内不保留长时凭据。
+      - name: Load secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.17
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG || 'dev' }}
+          domain: ${{ vars.INFISICAL_DOMAIN || 'https://app.infisical.com' }}
+          secret-path: ${{ vars.INFISICAL_SECRET_PATH || '/' }}
+          recursive: ${{ vars.INFISICAL_RECURSIVE || 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -103,7 +115,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_REPOSITORY }}
+          images: ${{ env.DOCKERHUB_USER }}/knock
           tags: |
             type=raw,value=latest
             type=sha,format=short,prefix=sha-
@@ -111,8 +123,8 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USER }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
 
       - name: Build and push image for main
         uses: docker/build-push-action@v6
@@ -132,9 +144,9 @@ jobs:
       - name: Update Docker Hub description
         uses: peter-evans/dockerhub-description@v5
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.IMAGE_REPOSITORY }}
+          username: ${{ env.DOCKERHUB_USER }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_USER }}/knock
           short-description: Knock is a Bun + TypeScript subscription fetch and delivery daemon.
           readme-filepath: ./docker/README.md
 
@@ -145,11 +157,26 @@ jobs:
       - image
       - publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
+      # Telegram 凭据同样来自 Infisical（见 publish job 注释）。
+      - name: Load secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.17
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG || 'dev' }}
+          domain: ${{ vars.INFISICAL_DOMAIN || 'https://app.infisical.com' }}
+          secret-path: ${{ vars.INFISICAL_SECRET_PATH || '/' }}
+          recursive: ${{ vars.INFISICAL_RECURSIVE || 'true' }}
+
       - name: Telegram Notify
         uses: proDreams/actions-telegram-notifier@main
         with:
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          chat_id: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ env.TELEGRAM_BOT_TOKEN }}
+          chat_id: ${{ env.TELEGRAM_CHAT_ID }}
           status: ${{ (needs.verify.result == 'success' && needs.image.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')) && 'success' || 'failure' }}
           notify_fields: "actor,repository,workflow,branch,commit"
