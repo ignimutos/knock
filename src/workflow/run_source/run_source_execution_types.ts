@@ -1,4 +1,4 @@
-import type { UnifiedEntryFields } from '../../config/types.ts'
+import type { UnifiedEntryFields } from '../../contracts/content.ts'
 import type { Logger } from '../../core/logger.ts'
 import type { DeliveryAttemptRepository } from '../../workflow/ports/delivery_attempt_repository.ts'
 import type { DeduplicationRepository } from '../../workflow/ports/deduplication_repository.ts'

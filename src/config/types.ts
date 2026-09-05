@@ -5,8 +5,6 @@ import {
   type AiProviderType,
   type DeliveryConfigInput,
   type EmailMessageConfig as SchemaEmailMessageConfig,
-  ENTRY_FIELD_KEYS,
-  FEED_FIELD_KEYS,
   type FileDeliveryConfig,
   type HttpPayload as SchemaHttpPayload,
   type LogConsoleFormat as SchemaLogConsoleFormat,
@@ -78,28 +76,6 @@ export interface ResolvedDeliveryConfig extends Omit<DeliveryConfig, 'id'> {
   id: string
   sourceId: string
   deliveryId: DeliveryConfig['id']
-}
-
-export type UnifiedFeedField = (typeof FEED_FIELD_KEYS)[number]
-export type UnifiedEntryField = (typeof ENTRY_FIELD_KEYS)[number]
-
-export interface UnifiedFeedFields {
-  title: string
-  link: string
-  description: string
-  generator: string
-  language: string
-  published: string
-}
-
-export interface UnifiedEntryFields {
-  id: string
-  title: string
-  link: string
-  description: string
-  content: string
-  published: string
-  updated: string
 }
 
 export type AiModelVariantResolved = AiModelVariantConfig

@@ -1,10 +1,7 @@
 import { z } from 'zod'
 import type { HttpPayload } from '../config/schema.ts'
-import type {
-  ResolvedSourceConfig,
-  UnifiedEntryFields,
-  UnifiedFeedFields,
-} from '../config/types.ts'
+import type { ResolvedSourceConfig } from '../config/types.ts'
+import type { UnifiedEntryFields, UnifiedFeedFields } from '../contracts/content.ts'
 import { parseWithFirstIssue } from '../zod_utils.ts'
 import type { AiEntryRuntime, AiRuntime } from './ai_runtime.ts'
 import { attachAiEntryRuntime } from './ai_runtime.ts'

@@ -1,4 +1,4 @@
-import type { UnifiedEntryFields, UnifiedFeedFields } from '../../config/types.ts'
+import type { UnifiedEntryFields, UnifiedFeedFields } from '../../contracts/content.ts'
 import type { RunPlan } from '../../domain/run_plan.ts'
 import type { FetchedSourceInput } from './source_input_gateway.ts'
 

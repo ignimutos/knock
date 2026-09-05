@@ -5,7 +5,7 @@ import type {
   UnifiedEntryFields,
   UnifiedFeedField,
   UnifiedFeedFields,
-} from '../../config/types.ts'
+} from '../../contracts/content.ts'
 import type { AiEntryRuntime, AiRuntime } from '../../core/ai_runtime.ts'
 import { attachAiEntryRuntime } from '../../core/ai_runtime.ts'
 import { createLiquidRuntime } from '../../core/liquid_runtime.ts'

@@ -1,4 +1,4 @@
-import type { UnifiedFeedFields } from '../../config/types.ts'
+import type { UnifiedFeedFields } from '../../contracts/content.ts'
 import type { SourceRun } from '../../domain/source_run.ts'
 
 export interface RunRepository {

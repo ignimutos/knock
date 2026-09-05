@@ -9,6 +9,7 @@ const SRC_DIR = join(TEST_DIR, '..')
 const MODERN_ROOTS = [
   join(SRC_DIR, 'bootstrap'),
   join(SRC_DIR, 'config'),
+  join(SRC_DIR, 'contracts'),
   join(SRC_DIR, 'workflow'),
   join(SRC_DIR, 'persistence'),
   join(SRC_DIR, 'adapters'),

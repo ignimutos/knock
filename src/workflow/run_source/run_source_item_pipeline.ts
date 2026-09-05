@@ -1,4 +1,4 @@
-import type { UnifiedFeedFields } from '../../config/types.ts'
+import type { UnifiedFeedFields } from '../../contracts/content.ts'
 import type { Logger } from '../../core/logger.ts'
 import { createDeliveryAttempt } from '../../domain/delivery_attempt.ts'
 import type { PipelineItem, PipelineItemSkippedReason } from '../../domain/pipeline_item.ts'

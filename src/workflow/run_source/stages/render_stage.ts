@@ -1,5 +1,6 @@
 import { attachAiEntryRuntime } from '../../../core/ai_runtime.ts'
-import type { HttpPayload, UnifiedFeedFields } from '../../../config/types.ts'
+import type { HttpPayload } from '../../../config/types.ts'
+import type { UnifiedFeedFields } from '../../../contracts/content.ts'
 import {
   isEmailDeliveryDefinition,
   isFileDeliveryDefinition,

@@ -1,5 +1,5 @@
 import { assertEquals } from '../../testing/assert.ts'
-import type { UnifiedFeedFields } from '../../config/types.ts'
+import type { UnifiedFeedFields } from '../../contracts/content.ts'
 import { createLogger, type Logger } from '../../core/logger.ts'
 import type { DeliveryAttempt, RenderedSnapshot } from '../../domain/delivery_attempt.ts'
 import { createPipelineItem, type PipelineItem } from '../../domain/pipeline_item.ts'

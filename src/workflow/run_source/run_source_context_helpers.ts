@@ -1,5 +1,5 @@
 import type { HttpPayload } from '../../config/schema.ts'
-import type { UnifiedEntryFields } from '../../config/types.ts'
+import type { UnifiedEntryFields } from '../../contracts/content.ts'
 import {
   renderContent as renderContentFallback,
   renderPayload as renderPayloadFallback,

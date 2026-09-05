@@ -1,5 +1,5 @@
 import { assertEquals } from '../../testing/assert.ts'
-import type { UnifiedEntryFields } from '../../config/types.ts'
+import type { UnifiedEntryFields } from '../../contracts/content.ts'
 import type { SourceRun } from '../../domain/source_run.ts'
 import { test } from '../../testing/test_api.ts'
 import { createRunSourceLifecycle } from './create_run_source_lifecycle.ts'

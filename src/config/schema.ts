@@ -21,24 +21,7 @@ import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilit
 import { assertLiquidCapability } from './liquid_capabilities.ts'
 import { isRuntimeDuration } from './runtime_semantics.ts'
 import { assertLiquidTemplateSyntax } from '../core/liquid_validation.ts'
-
-export const FEED_FIELD_KEYS = [
-  'title',
-  'link',
-  'description',
-  'generator',
-  'language',
-  'published',
-] as const
-export const ENTRY_FIELD_KEYS = [
-  'id',
-  'title',
-  'link',
-  'description',
-  'content',
-  'published',
-  'updated',
-] as const
+import { ENTRY_FIELD_KEYS, FEED_FIELD_KEYS } from '../contracts/content.ts'
 
 function requiredString() {
   return z.string({ error: ISSUE_REQUIRED }).superRefine((value, ctx) => {

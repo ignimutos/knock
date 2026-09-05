@@ -1,8 +1,5 @@
-import type {
-  ResolvedSourceConfig,
-  UnifiedEntryFields,
-  UnifiedFeedFields,
-} from '../../config/types.ts'
+import type { ResolvedSourceConfig } from '../../config/types.ts'
+import type { UnifiedEntryFields, UnifiedFeedFields } from '../../contracts/content.ts'
 import type { ContentRuntime } from '../../core/content_runtime.ts'
 import type { AiRuntime } from '../../core/ai_runtime.ts'
 import type { FactsReadModel } from '../../persistence/read_model.ts'

@@ -1,5 +1,5 @@
 import type { EffectDomain } from './run_profile.ts'
-import type { UnifiedEntryFields } from '../config/types.ts'
+import type { UnifiedEntryFields } from '../contracts/content.ts'
 
 export type PipelineItemStatus =
   'ready' | 'filtered' | 'duplicate' | 'skipped' | 'delivered' | 'failed'
