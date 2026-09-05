@@ -67,6 +67,7 @@ sqlite:
   # SQLite busy 等待超时（可选；默认: 5s）
   busyTimeout: 5s
   # SQLite journal 模式（可选；默认: WAL）
+  # 在容器 bind mount / 网络盘等易出现文件损坏的环境，可显式改用 DELETE 规避 WAL 依赖共享内存与锁语义的损坏风险
   journalMode: WAL
   # SQLite 清理保留策略（可选；默认: 内置默认值）
   retention:

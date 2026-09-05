@@ -362,6 +362,7 @@ logging:
 - `sqlite.path` 默认 `knock.db`。
 - `sqlite.busyTimeout` 默认 `5s`。
 - `sqlite.journalMode` 支持 `WAL` / `DELETE`，默认 `WAL`。
+- 启动时会先执行一次 `PRAGMA integrity_check`：facts 数据库损坏或非法时进程以 `fatal` 中止并提示恢复路径，而不是延迟到抓取/清理阶段崩溃。facts 库是派生缓存数据，删除后（连同同名 `-wal` / `-shm`）可重建。
 - `sqlite.retention.maxAge` 默认 `180d`，`maxEntriesPerSource` 默认 `1000`，`vacuum` 支持 `off` / `afterPrune`，`interval` 默认 `24h`（daemon 周期清理间隔，含启动时执行一次）。
 
 ### `logging`

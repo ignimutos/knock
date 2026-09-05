@@ -1,5 +1,6 @@
-import { assertEquals, assertExists } from '../../testing/assert.ts'
+import { assertEquals, assertExists, assertThrows } from '../../testing/assert.ts'
 import { join } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createLogger } from '../../core/logger.ts'
 import { cwd, statPath } from '../../platform/fs.ts'
 import { withOwnedRuntime } from '../../test_runtime.ts'
@@ -239,4 +240,98 @@ test('createDbClient: 应初始化 facts 索引', () => {
     true,
   )
   db.$client.close()
+})
+
+function createTestSqliteConfig(path: string): Parameters<typeof createDbClient>[0]['sqlite'] {
+  return {
+    path,
+    busyTimeout: '5s',
+    journalMode: 'WAL',
+    retention: {
+      maxAge: '180d',
+      maxEntriesPerSource: 1000,
+      vacuum: 'off',
+      interval: '24h',
+    },
+  }
+}
+
+function seedDatabase(path: string): void {
+  // 用 DELETE 模式种子，确保数据真实写入主文件；WAL 种子 close 后数据可能仍留在 -wal，
+  // 截断主文件会被 WAL 回放掩盖，无法稳定构造损坏现场。
+  const db = createDbClient({
+    sqlite: { ...createTestSqliteConfig(path), journalMode: 'DELETE' },
+  })
+  db.$client.exec('CREATE TABLE IF NOT EXISTS seed_rows (id INTEGER PRIMARY KEY, value TEXT)')
+  const insert = db.$client.prepare('INSERT INTO seed_rows VALUES (?, ?)')
+  for (let i = 0; i < 500; i++) insert.run(i, `value-${i}`)
+  db.$client.close()
+}
+
+function createCapturingLogger(logs: string[]) {
+  return createLogger({
+    enabled: true,
+    level: 'info',
+    module: 'db.sqlite',
+    now: () => new Date('2026-03-24T21:45:12.345Z'),
+    writeStdout: (line: string) => logs.push(line),
+    writeWarn: (line: string) => logs.push(line),
+    writeStderr: (line: string) => logs.push(line),
+  })
+}
+
+function findFatalCorruptRecord(logs: string[]): Record<string, unknown> {
+  const record = logs
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .find((item) => {
+      const scope = (item.scope ?? {}) as Record<string, unknown>
+      const attributes = (item.attributes ?? {}) as Record<string, unknown>
+      return (
+        scope.name === 'db.sqlite' &&
+        attributes['db.outcome'] === 'failure' &&
+        attributes['db.integrity'] === 'corrupt'
+      )
+    })
+  assertExists(record)
+  return record
+}
+
+test('createDbClient: 数据库文件损坏时应记录 fatal 并抛出可执行报错', () => {
+  const databasePath = join(TEST_RUNTIME, 'corrupt.db')
+  seedDatabase(databasePath)
+  // 截断到 page1 中间，制造页面级损坏
+  writeFileSync(databasePath, readFileSync(databasePath).subarray(0, 2000))
+
+  const logs: string[] = []
+  const error = assertThrows(
+    () =>
+      createDbClient({
+        sqlite: createTestSqliteConfig(databasePath),
+        logger: createCapturingLogger(logs),
+      }),
+    'sqlite 数据库无法通过完整性校验',
+  )
+  assertEquals((error as { code?: string }).code, 'SQLITE_CORRUPT')
+
+  const attributes = (findFatalCorruptRecord(logs).attributes ?? {}) as Record<string, unknown>
+  assertEquals(attributes['db.path'], databasePath)
+  // error_name / error_message 会被规范化到 OTel exception.type / exception.message
+  assertEquals(attributes['exception.type'], 'SQLITE_CORRUPT')
+})
+
+test('createDbClient: 非法 sqlite 文件也应中止启动并记录 fatal', () => {
+  const databasePath = join(TEST_RUNTIME, 'not-a-db.db')
+  writeFileSync(databasePath, 'this is not a sqlite database file at all, just plain text content')
+
+  const logs: string[] = []
+  const error = assertThrows(
+    () =>
+      createDbClient({
+        sqlite: createTestSqliteConfig(databasePath),
+        logger: createCapturingLogger(logs),
+      }),
+    'sqlite 数据库无法通过完整性校验',
+  )
+  assertExists(error)
+  findFatalCorruptRecord(logs)
 })

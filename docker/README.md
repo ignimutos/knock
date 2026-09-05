@@ -47,6 +47,12 @@ sources:
 
 `config.yml` 支持 `${ENV_VAR}` 展开；`sqlite.path` 与 `deliveries.*.file.path` 的相对路径都相对 `/app/runtime` 解析。
 
+### SQLite 数据与损坏恢复
+
+- facts 库默认落在 `/app/runtime/<sqlite.path>`，是派生缓存数据：损坏后删除文件（连同同名 `-wal` / `-shm`）重启即可重建，或从备份恢复。
+- 启动时会先做一次页面级完整性校验；数据库损坏/非法会以 `fatal` 中止并给出恢复提示，而不是延迟到抓取/清理阶段才崩溃。
+- 若把 `/app/runtime` bind mount 到不可靠文件系统（网络盘、跨主机共享、部分虚拟化挂载）并反复出现 `SQLITE_CORRUPT`，建议在配置中显式设置 `sqlite.journalMode: DELETE`，并保证单实例运行与优雅停止。
+
 容器启动相关环境变量：
 
 - 镜像内置：`KNOCK_RUNTIME_DIR=/app/runtime`
