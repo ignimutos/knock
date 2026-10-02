@@ -177,6 +177,10 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # notify 也使用本地 composite action，需要先 checkout 才能解析 action.yml。
+      - name: Checkout
+        uses: actions/checkout@v7
+
       # Telegram 凭据同样来自 Infisical（见 publish job 注释）。
       - name: Load secrets from Infisical
         uses: ./.github/actions/load-secrets
