@@ -1,0 +1,1624 @@
+import { CronPattern } from 'croner'
+import { TokenKind } from 'liquidjs'
+import { z } from 'zod'
+import {
+  createInvalidIssueMessage,
+  ISSUE_BODY_PAYLOAD_FORBIDDEN,
+  ISSUE_BOOLEAN,
+  ISSUE_ILLEGAL,
+  ISSUE_INTEGER,
+  ISSUE_OBJECT,
+  ISSUE_REQUIRED,
+  ISSUE_SOURCE_PARSER_CONFLICT,
+  ISSUE_SOURCE_PUSH_FORBIDDEN,
+  ISSUE_SOURCE_TRANSPORT_CONFLICT,
+  ISSUE_SOURCE_TRANSPORT_REQUIRED,
+  ISSUE_STRING_ARRAY,
+  ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED,
+  ISSUE_ENV_EXPANSION_FORBIDDEN,
+} from './issue_codes.ts'
+import { CONFIG_FIELD_CAPABILITIES, getConfigFieldCapability } from './capabilities.ts'
+import { assertLiquidCapability } from './liquid_capabilities.ts'
+import { isRuntimeDuration } from './runtime_semantics.ts'
+import { assertLiquidTemplateSyntax } from '../core/liquid_validation.ts'
+import { ENTRY_FIELD_KEYS, FEED_FIELD_KEYS } from '../contracts/content.ts'
+
+function requiredString() {
+  return z.string({ error: ISSUE_REQUIRED }).superRefine((value, ctx) => {
+    if (value.trim() === '') {
+      ctx.addIssue({ code: 'custom', message: ISSUE_REQUIRED, input: value })
+    }
+  })
+}
+
+function optionalBoolean() {
+  return z.boolean({ error: ISSUE_BOOLEAN }).optional()
+}
+
+function stringArraySchema(options: { minLength?: number } = {}) {
+  return z.custom<string[]>(
+    (value) => {
+      return (
+        Array.isArray(value) &&
+        value.length >= (options.minLength ?? 0) &&
+        value.every((item) => typeof item === 'string' && item.trim() !== '')
+      )
+    },
+    { message: ISSUE_STRING_ARRAY },
+  )
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function objectRecordSchema<T extends Record<string, unknown>>() {
+  return z.custom<T>((value) => isPlainObject(value), { message: ISSUE_OBJECT })
+}
+
+function addIllegalKeyIssues(
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  ctx: z.RefinementCtx,
+) {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) {
+      ctx.addIssue({
+        path: [key],
+        code: 'custom',
+        message: ISSUE_ILLEGAL,
+      })
+    }
+  }
+}
+
+function createDurationSchema(path: string, options: { allowDays?: boolean } = {}) {
+  return z.string().superRefine((value, ctx) => {
+    if (!isRuntimeDuration(value, options)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `${path} 配置非法: ${String(value)}`,
+      })
+    }
+  })
+}
+
+function createEnumSchema<const T extends readonly [string, ...string[]]>(
+  values: T,
+): z.ZodType<T[number]> {
+  return z.string().superRefine((value, ctx) => {
+    if (!values.includes(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  }) as unknown as z.ZodType<T[number]>
+}
+
+function createLiteralSchema<T extends string>(expected: T): z.ZodType<T> {
+  return z.string().superRefine((value, ctx) => {
+    if (value !== expected) {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  }) as unknown as z.ZodType<T>
+}
+
+function createProxySchema() {
+  const allowedProtocols = ['http:', 'https:', 'socks5:'] as const
+
+  return z.string().superRefine((value, ctx) => {
+    try {
+      const parsed = new URL(value)
+      if (!allowedProtocols.includes(parsed.protocol as (typeof allowedProtocols)[number])) {
+        ctx.addIssue({
+          code: 'custom',
+          message: createInvalidIssueMessage(value),
+        })
+      }
+    } catch {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  })
+}
+
+function validateHttpUrl(value: string, ctx: z.RefinementCtx, path: Array<string | number>) {
+  try {
+    const parsed = new URL(value)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  } catch {
+    ctx.addIssue({
+      path,
+      code: 'custom',
+      message: createInvalidIssueMessage(value),
+    })
+  }
+}
+
+export const httpPayloadSchema: z.ZodType<
+  string | number | boolean | null | Array<unknown> | Record<string, unknown>
+> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(httpPayloadSchema),
+    z.record(z.string(), httpPayloadSchema),
+  ]),
+)
+
+function validateLiquidTemplate(
+  template: string,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  capabilityPath?: string,
+): void {
+  if (capabilityPath) {
+    const capability = getConfigFieldCapability(capabilityPath)
+    if (capability && !capability.allowEnv && template.includes('${')) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: ISSUE_ENV_EXPANSION_FORBIDDEN,
+      })
+      return
+    }
+
+    try {
+      assertLiquidCapability(capabilityPath, template)
+    } catch (error) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: createInvalidIssueMessage(error instanceof Error ? error.message : String(error)),
+      })
+      return
+    }
+
+    if (capability && !capability.allowLiquid) {
+      return
+    }
+  }
+
+  try {
+    assertLiquidTemplateSyntax(template)
+  } catch (error) {
+    ctx.addIssue({
+      path,
+      code: 'custom',
+      message: createInvalidIssueMessage(error instanceof Error ? error.message : String(error)),
+    })
+  }
+}
+
+function getParsedLiquidTemplate(template: string): unknown {
+  return assertLiquidTemplateSyntax(template)
+}
+
+function validateLiquidPayload(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  capabilityPath?: string,
+): void {
+  if (typeof value === 'string') {
+    validateLiquidTemplate(value, ctx, path, capabilityPath)
+    return
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      validateLiquidPayload(item, ctx, [...path, index], capabilityPath)
+    })
+    return
+  }
+
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      validateLiquidPayload(child, ctx, [...path, key], capabilityPath)
+    }
+  }
+}
+
+function validateHttpPayloadShape(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+): boolean {
+  const parsed = httpPayloadSchema.safeParse(value)
+  if (parsed.success) {
+    return true
+  }
+
+  for (const issue of parsed.error.issues) {
+    ctx.addIssue({
+      path: [...path, ...issue.path],
+      code: 'custom',
+      message: issue.message,
+    })
+  }
+
+  return false
+}
+
+function validateRequiredTemplateOverride(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  capabilityPath: string,
+): void {
+  const parsed = requiredString().safeParse(value)
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue({
+        path: [...path, ...issue.path],
+        code: 'custom',
+        message: issue.message,
+      })
+    }
+    return
+  }
+
+  validateLiquidTemplate(parsed.data, ctx, path, capabilityPath)
+}
+
+function hasForbiddenBodyPayload(
+  method: string | undefined,
+  requestType: string | undefined,
+  payload: unknown,
+): boolean {
+  return (method === 'GET' || method === 'HEAD') && requestType === 'body' && payload !== undefined
+}
+
+function createMappingSchema(
+  allowedKeys?: readonly string[],
+  options: { validateLiquid?: boolean; capabilityPath?: string } = {},
+) {
+  return z.record(z.string(), z.string()).superRefine((mapping, ctx) => {
+    for (const [key, value] of Object.entries(mapping)) {
+      if (options.validateLiquid) {
+        validateLiquidTemplate(value, ctx, [key], options.capabilityPath)
+      }
+
+      if (allowedKeys && !allowedKeys.includes(key)) {
+        ctx.addIssue({
+          path: [key],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+    }
+  })
+}
+
+export const timezoneSchema = requiredString().superRefine((value, ctx) => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
+  } catch {
+    ctx.addIssue({
+      code: 'custom',
+      message: `timezone 配置非法: ${String(value)}`,
+    })
+  }
+})
+
+export const languageSchema = requiredString()
+  .superRefine((value, ctx) => {
+    try {
+      const [canonical] = Intl.getCanonicalLocales(value)
+      if (!canonical) {
+        ctx.addIssue({
+          code: 'custom',
+          message: createInvalidIssueMessage(value),
+        })
+      }
+    } catch {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(value),
+      })
+    }
+  })
+  .transform((value) => Intl.getCanonicalLocales(value)[0] ?? value)
+
+const logConsoleFormatSchema = createEnumSchema(['pretty', 'jsonl']).default('pretty')
+const logFileFormatSchema = createLiteralSchema('jsonl').default('jsonl')
+const logTimeRotationIntervalSchema = createEnumSchema(['hourly', 'daily', 'weekly'])
+
+export const loggingConsoleSchema = z
+  .object({
+    type: createLiteralSchema('console').default('console'),
+    format: logConsoleFormatSchema,
+  })
+  .strict()
+
+const loggingFileRotationSizeSchema = z
+  .object({
+    type: createLiteralSchema('size'),
+    maxSize: requiredString(),
+    maxFiles: z.number().int().min(1),
+  })
+  .strict()
+
+const loggingFileRotationTimeSchema = z
+  .object({
+    type: createLiteralSchema('time'),
+    interval: logTimeRotationIntervalSchema,
+    maxAge: createDurationSchema('logging.sinks.file.rotation.maxAge', {
+      allowDays: true,
+    }),
+  })
+  .strict()
+
+export const loggingFileSchema = z
+  .object({
+    type: createLiteralSchema('file').default('file'),
+    format: logFileFormatSchema,
+    path: requiredString(),
+    rotation: z.union([loggingFileRotationSizeSchema, loggingFileRotationTimeSchema]).optional(),
+  })
+  .strict()
+
+export const loggingSchema = z
+  .object({
+    level: createEnumSchema(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+    sinks: z
+      .object({
+        console: loggingConsoleSchema.optional(),
+        file: loggingFileSchema.optional(),
+      })
+      .strict()
+      .prefault({}),
+  })
+  .strict()
+  .prefault({})
+
+export const sqliteRetentionSchema = z
+  .object({
+    maxAge: createDurationSchema('sqlite.retention.maxAge', { allowDays: true }).default('180d'),
+    maxEntriesPerSource: z
+      .number()
+      .superRefine((value, ctx) => {
+        if (!Number.isInteger(value) || value <= 0) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `sqlite.retention.maxEntriesPerSource 配置非法: ${String(value)}`,
+          })
+        }
+      })
+      .default(1000),
+    vacuum: createEnumSchema(['off', 'afterPrune']).default('off'),
+    interval: createDurationSchema('sqlite.retention.interval', { allowDays: true }).default('24h'),
+  })
+  .strict()
+  .prefault({})
+
+export const sqliteSchema = z
+  .object({
+    path: requiredString().default('knock.db'),
+    busyTimeout: createDurationSchema('sqlite.busyTimeout').default('5s'),
+    journalMode: createEnumSchema(['WAL', 'DELETE']).default('WAL'),
+    retention: sqliteRetentionSchema,
+  })
+  .strict()
+  .prefault({})
+
+export const rotationSchema = z
+  .object({
+    enabled: optionalBoolean(),
+    size: z
+      .string()
+      .superRefine((value, ctx) => {
+        if (
+          !value
+            .trim()
+            .toLowerCase()
+            .match(/^(\d+)(b|k|m|g)$/)
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `delivery.file.rotation.size 配置非法: ${String(value)}`,
+          })
+        }
+      })
+      .optional(),
+    age: createDurationSchema('delivery.file.rotation.age', { allowDays: true }).optional(),
+    backups: z
+      .number()
+      .optional()
+      .superRefine((value, ctx) => {
+        if (value !== undefined && (!Number.isInteger(value) || value < 1)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'delivery.file.rotation.backups 必须是正整数',
+          })
+        }
+      }),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.enabled === true && value.size === undefined && value.age === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'delivery.file.rotation 启用时必须至少配置 size 或 age',
+      })
+    }
+  })
+
+export const fileSchema = z
+  .object({
+    path: requiredString(),
+    content: requiredString(),
+    rotation: rotationSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validateLiquidTemplate(value.content, ctx, ['content'], 'deliveries.*.file.content')
+  })
+
+function createTemplateStringSchema(capabilityPath: string, options: { required?: boolean } = {}) {
+  const baseSchema = options.required === false ? z.string() : requiredString()
+  return baseSchema.superRefine((value, ctx) => {
+    validateLiquidTemplate(value, ctx, [], capabilityPath)
+  })
+}
+
+function createTemplateStringArraySchema(capabilityPath: string) {
+  return stringArraySchema().superRefine((items, ctx) => {
+    items.forEach((item, index) => {
+      validateLiquidTemplate(item, ctx, [index], capabilityPath)
+    })
+  })
+}
+
+function createTemplateStringRecordSchema(capabilityPath: string) {
+  return z.record(z.string(), z.string()).superRefine((record, ctx) => {
+    for (const [key, value] of Object.entries(record)) {
+      validateLiquidTemplate(value, ctx, [key], capabilityPath)
+    }
+  })
+}
+
+function addSchemaIssues<T>(
+  parsed: z.ZodSafeParseResult<T>,
+  ctx: z.RefinementCtx,
+  path: Array<string | number> = [],
+): boolean {
+  if (parsed.success) {
+    return true
+  }
+
+  for (const issue of parsed.error.issues) {
+    ctx.addIssue({
+      path: [...path, ...issue.path],
+      code: 'custom',
+      message: issue.message,
+    })
+  }
+
+  return false
+}
+
+const emailSmtpAuthSchema = z
+  .object({
+    username: requiredString(),
+    password: requiredString(),
+  })
+  .strict()
+
+export const emailSmtpSchema = z
+  .object({
+    host: requiredString(),
+    port: z
+      .number({ error: ISSUE_INTEGER })
+      .int({ message: ISSUE_INTEGER })
+      .superRefine((value, ctx) => {
+        if (value < 1 || value > 65535) {
+          ctx.addIssue({
+            code: 'custom',
+            message: createInvalidIssueMessage(String(value)),
+          })
+        }
+      }),
+    security: createEnumSchema(['implicit', 'starttls', 'none']),
+    auth: emailSmtpAuthSchema.optional(),
+  })
+  .strict()
+
+const emailMessageFieldSchemas = {
+  from: createTemplateStringSchema('deliveries.*.email.message.from'),
+  to: createTemplateStringArraySchema('deliveries.*.email.message.to[]'),
+  cc: createTemplateStringArraySchema('deliveries.*.email.message.cc[]'),
+  bcc: createTemplateStringArraySchema('deliveries.*.email.message.bcc[]'),
+  replyTo: createTemplateStringArraySchema('deliveries.*.email.message.replyTo[]'),
+  subject: createTemplateStringSchema('deliveries.*.email.message.subject'),
+  text: createTemplateStringSchema('deliveries.*.email.message.text', { required: false }),
+  html: createTemplateStringSchema('deliveries.*.email.message.html', { required: false }),
+  headers: createTemplateStringRecordSchema('deliveries.*.email.message.headers.*'),
+} as const
+
+export const emailMessageSchema = z
+  .object({
+    from: emailMessageFieldSchemas.from,
+    to: emailMessageFieldSchemas.to,
+    cc: emailMessageFieldSchemas.cc.optional(),
+    bcc: emailMessageFieldSchemas.bcc.optional(),
+    replyTo: emailMessageFieldSchemas.replyTo.optional(),
+    subject: emailMessageFieldSchemas.subject,
+    text: emailMessageFieldSchemas.text.optional(),
+    html: emailMessageFieldSchemas.html.optional(),
+    headers: emailMessageFieldSchemas.headers.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.text === undefined && value.html === undefined) {
+      ctx.addIssue({
+        path: [],
+        code: 'custom',
+        message: ISSUE_EMAIL_MESSAGE_CONTENT_REQUIRED,
+      })
+    }
+  })
+
+export const emailSchema = z
+  .object({
+    smtp: emailSmtpSchema,
+    message: emailMessageSchema,
+  })
+  .strict()
+
+const sourceDeliveriesSchema = objectRecordSchema<
+  Record<string, Record<string, unknown>>
+>().superRefine((value, ctx) => {
+  for (const [key, child] of Object.entries(value)) {
+    if (!isPlainObject(child)) {
+      ctx.addIssue({
+        path: [key],
+        code: 'custom',
+        message: ISSUE_OBJECT,
+      })
+    }
+  }
+})
+
+const sourceFileDeliveryOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, ['content'], ctx)
+
+    if (value.content !== undefined) {
+      validateRequiredTemplateOverride(value.content, ctx, ['content'], 'deliveries.*.file.content')
+    }
+  },
+)
+
+const sourcePushDeliveryOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, ['payload'], ctx)
+
+    if (value.payload !== undefined) {
+      if (validateHttpPayloadShape(value.payload, ctx, ['payload'])) {
+        validateLiquidPayload(
+          value.payload,
+          ctx,
+          ['payload'],
+          'deliveries.*.push.request.payload.**',
+        )
+      }
+    }
+  },
+)
+
+const sourceEmailMessageOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, Object.keys(emailMessageFieldSchemas), ctx)
+
+    const optionalFieldSchemas = {
+      from: emailMessageFieldSchemas.from.optional(),
+      to: emailMessageFieldSchemas.to.optional(),
+      cc: emailMessageFieldSchemas.cc.optional(),
+      bcc: emailMessageFieldSchemas.bcc.optional(),
+      replyTo: emailMessageFieldSchemas.replyTo.optional(),
+      subject: emailMessageFieldSchemas.subject.optional(),
+      text: emailMessageFieldSchemas.text.optional(),
+      html: emailMessageFieldSchemas.html.optional(),
+      headers: emailMessageFieldSchemas.headers.optional(),
+    } as const
+
+    for (const [key, schema] of Object.entries(optionalFieldSchemas)) {
+      if (value[key] === undefined) continue
+      addSchemaIssues((schema as z.ZodType<unknown>).safeParse(value[key]), ctx, [key])
+    }
+  },
+)
+
+const sourceEmailDeliveryOverrideSchema = objectRecordSchema<Record<string, unknown>>().superRefine(
+  (value, ctx) => {
+    addIllegalKeyIssues(value, ['message'], ctx)
+
+    if (value.message !== undefined) {
+      const parsed = sourceEmailMessageOverrideSchema.safeParse(value.message)
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({
+            path: ['message', ...issue.path],
+            code: 'custom',
+            message: issue.message,
+          })
+        }
+      }
+    }
+  },
+)
+
+const retryStatusCodeSchema = z
+  .number({ error: ISSUE_INTEGER })
+  .int({ message: ISSUE_INTEGER })
+  .superRefine((value, ctx) => {
+    if (value < 100 || value > 599) {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(String(value)),
+      })
+    }
+  })
+
+export const transportRetrySchema = z
+  .object({
+    limit: z
+      .number({ error: ISSUE_INTEGER })
+      .int({ message: ISSUE_INTEGER })
+      .superRefine((value, ctx) => {
+        if (value < 1) {
+          ctx.addIssue({
+            code: 'custom',
+            message: createInvalidIssueMessage(String(value)),
+          })
+        }
+      })
+      .default(2),
+    statusCodes: z.array(retryStatusCodeSchema).default([408, 429, 500, 502, 503, 504]),
+    retryOnTimeout: z.boolean({ error: ISSUE_BOOLEAN }).default(true),
+    backoffLimit: createDurationSchema('transport.retry.backoffLimit').default('3s'),
+  })
+  .strict()
+
+export const transportSchema = z
+  .object({
+    timeout: createDurationSchema('transport.timeout').optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    proxy: createProxySchema().optional(),
+    retry: transportRetrySchema.optional(),
+  })
+  .strict()
+
+export const pushHttpSchema = transportSchema
+  .extend({
+    method: createEnumSchema(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'])
+      .optional()
+      .default('POST'),
+    url: requiredString(),
+  })
+  .superRefine((value, ctx) => {
+    validateLiquidTemplate(value.url, ctx, ['url'], 'deliveries.*.push.http.url')
+    if (value.headers) {
+      for (const [key, headerValue] of Object.entries(value.headers)) {
+        validateLiquidTemplate(
+          headerValue,
+          ctx,
+          ['headers', key],
+          'deliveries.*.push.http.headers.*',
+        )
+      }
+    }
+  })
+
+export const sourceHttpSchema = transportSchema
+  .extend({
+    url: requiredString(),
+  })
+  .superRefine((value, ctx) => {
+    validateLiquidTemplate(value.url, ctx, ['url'], 'sources.*.http.url')
+    if (value.headers) {
+      for (const [key, headerValue] of Object.entries(value.headers)) {
+        validateLiquidTemplate(headerValue, ctx, ['headers', key], 'sources.*.http.headers.*')
+      }
+    }
+  })
+
+export const byparrSchema = z
+  .object({
+    endpoint: requiredString().default('http://byparr:8191/v1'),
+    cmd: createLiteralSchema('request.get').default('request.get'),
+    url: requiredString(),
+    maxTimeout: createDurationSchema('source.byparr.maxTimeout').default('60s'),
+    proxy: createProxySchema().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validateLiquidTemplate(value.url, ctx, ['url'], 'sources.*.byparr.url')
+  })
+
+export const pushRequestSchema = z
+  .object({
+    type: createEnumSchema(['query', 'form', 'body']).optional().default('body'),
+    payload: httpPayloadSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validateLiquidPayload(value.payload, ctx, ['payload'], 'deliveries.*.push.request.payload.**')
+  })
+
+export const pushResponseSchema = z
+  .object({
+    predicate: z.string().optional(),
+    message: z.string().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.predicate !== undefined) {
+      validateLiquidTemplate(
+        value.predicate,
+        ctx,
+        ['predicate'],
+        'deliveries.*.push.response.predicate',
+      )
+    }
+    if (value.message !== undefined) {
+      validateLiquidTemplate(value.message, ctx, ['message'], 'deliveries.*.push.response.message')
+    }
+  })
+
+export const pushSchema = z
+  .object({
+    http: pushHttpSchema,
+    request: pushRequestSchema.optional().default({ type: 'body' }),
+    response: pushResponseSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (hasForbiddenBodyPayload(value.http.method, value.request.type, value.request.payload)) {
+      ctx.addIssue({
+        path: ['request', 'payload'],
+        code: 'custom',
+        message: ISSUE_BODY_PAYLOAD_FORBIDDEN,
+      })
+    }
+  })
+
+export const syndicationSchema = z
+  .object({
+    feed: createMappingSchema(undefined, {
+      validateLiquid: true,
+      capabilityPath: 'sources.*.syndication.feed.*',
+    }).optional(),
+    entry: createMappingSchema(undefined, {
+      validateLiquid: true,
+      capabilityPath: 'sources.*.syndication.entry.*',
+    }).optional(),
+  })
+  .strict()
+
+export const summarySchema = z
+  .object({
+    sources: stringArraySchema({ minLength: 1 }),
+    feed: createMappingSchema(FEED_FIELD_KEYS, {
+      validateLiquid: true,
+      capabilityPath: 'sources.*.summary.feed.*',
+    }).optional(),
+    entry: createMappingSchema(ENTRY_FIELD_KEYS, {
+      validateLiquid: true,
+      capabilityPath: 'sources.*.summary.entry.*',
+    }).optional(),
+  })
+  .strict()
+
+export const xquerySchema = z
+  .object({
+    locate: requiredString().optional(),
+    feed: z.union([createMappingSchema(FEED_FIELD_KEYS), requiredString()]).optional(),
+    entry: z.union([createMappingSchema(ENTRY_FIELD_KEYS), requiredString()]).optional(),
+    namespaces: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!value.entry) {
+      ctx.addIssue({
+        path: ['entry', 'id'],
+        code: 'custom',
+        message: ISSUE_REQUIRED,
+      })
+      return
+    }
+
+    if (typeof value.entry === 'string') {
+      return
+    }
+
+    if (!value.entry.id || value.entry.id.trim() === '') {
+      ctx.addIssue({
+        path: ['entry', 'id'],
+        code: 'custom',
+        message: ISSUE_REQUIRED,
+      })
+    }
+  })
+
+export const deliverySchema = z
+  .object({
+    enabled: optionalBoolean(),
+    file: fileSchema.optional(),
+    push: pushSchema.optional(),
+    email: emailSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const targetCount = [value.file, value.push, value.email].filter(Boolean).length
+
+    if (targetCount > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'delivery 不能同时配置 file、push 与 email',
+      })
+      return
+    }
+
+    if (!value.file && !value.push && !value.email) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'delivery 未配置投递目标',
+      })
+      return
+    }
+  })
+
+function isAiFilterName(name: unknown): boolean {
+  return (
+    typeof name === 'string' &&
+    (name === 'ai_translate' || name === 'ai_summarize' || name.startsWith('llm_'))
+  )
+}
+
+function containsAiFilterToken(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false
+
+  const maybeToken = (node as { token?: { kind?: number; name?: unknown } }).token
+  if (maybeToken?.kind === TokenKind.Filter && isAiFilterName(maybeToken.name)) {
+    return true
+  }
+
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      if (value.some((item) => containsAiFilterToken(item))) return true
+      continue
+    }
+    if (value && typeof value === 'object' && containsAiFilterToken(value)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function detectAiFilterUsage(template: string): boolean {
+  try {
+    return containsAiFilterToken(getParsedLiquidTemplate(template))
+  } catch {
+    return false
+  }
+}
+
+function matchesAiFilterCapabilityPath(
+  capabilityPath: string,
+  path: Array<string | number>,
+  capabilityIndex = 0,
+  pathIndex = 0,
+): boolean {
+  const capabilitySegments = capabilityPath.split('.')
+
+  if (capabilityIndex === capabilitySegments.length) {
+    return pathIndex === path.length
+  }
+
+  const segment = capabilitySegments[capabilityIndex]
+
+  if (segment === '**') {
+    if (capabilityIndex === capabilitySegments.length - 1) return true
+    for (let nextPathIndex = pathIndex; nextPathIndex <= path.length; nextPathIndex += 1) {
+      if (matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, nextPathIndex)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  if (pathIndex >= path.length) return false
+
+  const pathSegment = path[pathIndex]
+
+  if (segment === '*') {
+    return (
+      typeof pathSegment === 'string' &&
+      matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, pathIndex + 1)
+    )
+  }
+
+  if (segment === '*[]') {
+    if (typeof pathSegment !== 'string') return false
+    const nextPathSegment = path[pathIndex + 1]
+    const nextPathIndex = typeof nextPathSegment === 'number' ? pathIndex + 2 : pathIndex + 1
+    return matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, nextPathIndex)
+  }
+
+  if (segment.endsWith('[]')) {
+    if (pathSegment !== segment.slice(0, -2)) return false
+    const nextPathSegment = path[pathIndex + 1]
+    const nextPathIndex = typeof nextPathSegment === 'number' ? pathIndex + 2 : pathIndex + 1
+    return matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, nextPathIndex)
+  }
+
+  return (
+    pathSegment === segment &&
+    matchesAiFilterCapabilityPath(capabilityPath, path, capabilityIndex + 1, pathIndex + 1)
+  )
+}
+
+const AI_FILTER_STATIC_CHECK_PATHS = CONFIG_FIELD_CAPABILITIES.filter(
+  (capability) => capability.allowLiquid,
+).map((capability) => capability.path)
+
+function collectAiFilterTemplatePaths(
+  value: unknown,
+  currentPath: Array<string | number>,
+  matches: Array<Array<string | number>>,
+): void {
+  if (typeof value === 'string') {
+    if (
+      detectAiFilterUsage(value) &&
+      AI_FILTER_STATIC_CHECK_PATHS.some((capabilityPath) =>
+        matchesAiFilterCapabilityPath(capabilityPath, currentPath),
+      )
+    ) {
+      matches.push(currentPath)
+    }
+    return
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      collectAiFilterTemplatePaths(item, [...currentPath, index], matches)
+    })
+    return
+  }
+
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      collectAiFilterTemplatePaths(child, [...currentPath, key], matches)
+    }
+  }
+}
+
+const aiOpenAiReasoningEffortSchema = requiredString()
+
+const aiOpenAiModelOptionsSchema = z
+  .object({
+    reasoningEffort: aiOpenAiReasoningEffortSchema.optional(),
+    json: z.boolean({ error: ISSUE_BOOLEAN }).optional(),
+  })
+  .catchall(z.unknown())
+  .superRefine((value, ctx) => {
+    for (const key of Object.keys(value)) {
+      if (!['reasoningEffort', 'json'].includes(key)) {
+        ctx.addIssue({
+          path: [key],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+    }
+  })
+
+const aiNumericTemperatureSchema = z.number().superRefine((value, ctx) => {
+  if (!Number.isFinite(value)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: createInvalidIssueMessage(String(value)),
+    })
+  }
+})
+
+const aiPositiveIntegerSchema = z
+  .number({ error: ISSUE_INTEGER })
+  .int({ message: ISSUE_INTEGER })
+  .superRefine((value, ctx) => {
+    if (value < 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: createInvalidIssueMessage(String(value)),
+      })
+    }
+  })
+
+const aiModelVariantSchema = z
+  .object({
+    temperature: aiNumericTemperatureSchema.optional(),
+    maxOutputTokens: aiPositiveIntegerSchema.optional(),
+    options: z.record(z.string(), z.unknown()).optional(),
+  })
+  .catchall(z.unknown())
+  .superRefine((value, ctx) => {
+    for (const key of Object.keys(value)) {
+      if (!['temperature', 'maxOutputTokens', 'options'].includes(key)) {
+        ctx.addIssue({
+          path: [key],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+    }
+  })
+
+const aiModelSchema = z
+  .object({
+    model: requiredString(),
+    context: aiPositiveIntegerSchema.optional(),
+    temperature: aiNumericTemperatureSchema.optional(),
+    maxOutputTokens: aiPositiveIntegerSchema.optional(),
+    options: z.record(z.string(), z.unknown()).optional(),
+    variants: z.record(z.string(), aiModelVariantSchema).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    validateLiquidTemplate(value.model, ctx, ['model'], 'ai.providers.*.models.*.model')
+  })
+
+function validateAiModelOptions(
+  providerType: z.output<typeof aiProviderTypeSchema>,
+  options: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number>,
+  level: 'model' | 'variant',
+): void {
+  if (options === undefined) return
+
+  if (providerType === 'openai') {
+    const parsed = aiOpenAiModelOptionsSchema.safeParse(options)
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({
+          path: [...path, ...issue.path],
+          code: 'custom',
+          message: issue.message,
+        })
+      }
+    }
+    return
+  }
+
+  if (
+    options &&
+    typeof options === 'object' &&
+    Object.keys(options as Record<string, unknown>).length > 0
+  ) {
+    ctx.addIssue({
+      path,
+      code: 'custom',
+      message: createInvalidIssueMessage(`${providerType} ${level} 不支持 options`),
+    })
+  }
+}
+
+const aiProviderTypeSchema = createEnumSchema(['openai', 'anthropic', 'gemini'])
+
+const aiProviderSchema = z
+  .object({
+    type: aiProviderTypeSchema,
+    apiKey: z.string().optional(),
+    baseURL: z.string().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    models: z.record(z.string(), aiModelSchema),
+    options: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.apiKey !== undefined) {
+      validateLiquidTemplate(value.apiKey, ctx, ['apiKey'], 'ai.providers.*.apiKey')
+    }
+    if (value.baseURL !== undefined) {
+      validateLiquidTemplate(value.baseURL, ctx, ['baseURL'], 'ai.providers.*.baseURL')
+      validateHttpUrl(value.baseURL, ctx, ['baseURL'])
+    }
+    if (value.headers) {
+      for (const [key, headerValue] of Object.entries(value.headers)) {
+        validateLiquidTemplate(headerValue, ctx, ['headers', key], 'ai.providers.*.headers.*')
+      }
+    }
+
+    const optionKeys = Object.keys(value.options ?? {})
+    const allowedOptionKeys =
+      value.type === 'openai'
+        ? ['organization', 'project']
+        : value.type === 'anthropic'
+          ? ['authToken']
+          : []
+
+    for (const [modelId, model] of Object.entries(value.models)) {
+      validateAiModelOptions(
+        value.type,
+        model.options,
+        ctx,
+        ['models', modelId, 'options'],
+        'model',
+      )
+
+      for (const [variantId, variant] of Object.entries(model.variants ?? {})) {
+        validateAiModelOptions(
+          value.type,
+          variant.options,
+          ctx,
+          ['models', modelId, 'variants', variantId, 'options'],
+          'variant',
+        )
+      }
+    }
+
+    for (const key of optionKeys) {
+      if (!allowedOptionKeys.includes(key)) {
+        const detail =
+          value.type === 'gemini'
+            ? 'gemini provider 不支持 options'
+            : `${value.type} provider 不支持 options.${key}`
+        ctx.addIssue({
+          path: ['options'],
+          code: 'custom',
+          message: createInvalidIssueMessage(detail),
+        })
+        break
+      }
+
+      const optionValue = value.options?.[key]
+      if (typeof optionValue !== 'string' || optionValue.trim() === '') {
+        ctx.addIssue({
+          path: ['options', key],
+          code: 'custom',
+          message: ISSUE_REQUIRED,
+        })
+        continue
+      }
+
+      validateLiquidTemplate(optionValue, ctx, ['options', key], `ai.providers.*.options.${key}`)
+    }
+  })
+
+export const aiSchema = z
+  .object({
+    defaultModel: requiredString().optional(),
+    providers: z.record(z.string(), aiProviderSchema),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.defaultModel !== undefined) {
+      validateLiquidTemplate(value.defaultModel, ctx, ['defaultModel'], 'ai.defaultModel')
+    }
+
+    const modelProviders = new Map<string, string[]>()
+
+    for (const [providerId, provider] of Object.entries(value.providers)) {
+      for (const modelId of Object.keys(provider.models)) {
+        modelProviders.set(modelId, [...(modelProviders.get(modelId) ?? []), providerId])
+      }
+    }
+
+    if (!value.defaultModel) return
+
+    if (value.defaultModel.includes('/')) {
+      const [providerId, modelId, ...rest] = value.defaultModel.split('/')
+      if (
+        !providerId ||
+        !modelId ||
+        rest.length > 0 ||
+        !value.providers[providerId]?.models[modelId]
+      ) {
+        ctx.addIssue({
+          path: ['defaultModel'],
+          code: 'custom',
+          message: createInvalidIssueMessage(`未找到模型 ${value.defaultModel}`),
+        })
+      }
+      return
+    }
+
+    const providers = modelProviders.get(value.defaultModel) ?? []
+    if (providers.length === 0) {
+      ctx.addIssue({
+        path: ['defaultModel'],
+        code: 'custom',
+        message: createInvalidIssueMessage(`未找到模型 ${value.defaultModel}`),
+      })
+      return
+    }
+
+    if (providers.length > 1) {
+      ctx.addIssue({
+        path: ['defaultModel'],
+        code: 'custom',
+        message: createInvalidIssueMessage(
+          `裸 modelId ${value.defaultModel} 存在多个 provider，请改用 providerId/modelId`,
+        ),
+      })
+    }
+  })
+
+export const sourceSchema = z
+  .object({
+    name: z.string().optional(),
+    enabled: optionalBoolean(),
+    schedule: z.string().optional(),
+    deliveries: sourceDeliveriesSchema.optional(),
+    filter: z.string().optional(),
+    http: sourceHttpSchema.optional(),
+    byparr: byparrSchema.optional(),
+    syndication: syndicationSchema.optional(),
+    summary: summarySchema.optional(),
+    xquery: xquerySchema.optional(),
+    push: z.unknown().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.push !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: ISSUE_SOURCE_PUSH_FORBIDDEN,
+      })
+      return
+    }
+
+    if (value.schedule !== undefined) {
+      if (value.schedule.trim() === '') {
+        ctx.addIssue({
+          path: ['schedule'],
+          code: 'custom',
+          message: ISSUE_REQUIRED,
+        })
+        return
+      }
+
+      try {
+        new CronPattern(value.schedule)
+      } catch {
+        ctx.addIssue({
+          path: ['schedule'],
+          code: 'custom',
+          message: `source.schedule 配置非法: ${value.schedule}`,
+        })
+        return
+      }
+    }
+
+    if (value.filter !== undefined && value.filter.trim() !== '') {
+      validateLiquidTemplate(value.filter, ctx, ['filter'], 'sources.*.filter')
+    }
+
+    if (value.summary) {
+      if (value.schedule === undefined) {
+        ctx.addIssue({
+          path: ['schedule'],
+          code: 'custom',
+          message: ISSUE_REQUIRED,
+        })
+      }
+
+      if (value.http !== undefined) {
+        ctx.addIssue({
+          path: ['http'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      if (value.byparr !== undefined) {
+        ctx.addIssue({
+          path: ['byparr'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      if (value.syndication !== undefined) {
+        ctx.addIssue({
+          path: ['syndication'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      if (value.xquery !== undefined) {
+        ctx.addIssue({
+          path: ['xquery'],
+          code: 'custom',
+          message: ISSUE_ILLEGAL,
+        })
+      }
+
+      return
+    }
+
+    if (value.syndication && value.xquery) {
+      ctx.addIssue({
+        code: 'custom',
+        message: ISSUE_SOURCE_PARSER_CONFLICT,
+      })
+    }
+
+    if (value.http && value.byparr) {
+      ctx.addIssue({
+        code: 'custom',
+        message: ISSUE_SOURCE_TRANSPORT_CONFLICT,
+      })
+      return
+    }
+
+    if (!value.http && !value.byparr) {
+      ctx.addIssue({
+        code: 'custom',
+        message: ISSUE_SOURCE_TRANSPORT_REQUIRED,
+      })
+    }
+  })
+
+export const deliveriesSchema = z.record(z.string(), deliverySchema)
+export const sourcesSchema = z.record(z.string(), sourceSchema)
+
+function hasResolvableAiModel(ai: AiConfigInput | undefined): boolean {
+  if (!ai) return false
+
+  for (const provider of Object.values(ai.providers)) {
+    if (Object.keys(provider.models).length > 0) return true
+  }
+
+  return false
+}
+
+function validateAppConfigReferences(
+  value: {
+    deliveries?: Record<string, DeliveryConfigInput>
+    sources?: Record<string, SourceConfigInput>
+    ai?: AiConfigInput
+  },
+  ctx: z.core.$RefinementCtx,
+) {
+  const deliveries = value.deliveries ?? {}
+  const deliveryIds = new Set(Object.keys(deliveries))
+
+  const sourceIds = new Set(Object.keys(value.sources ?? {}))
+
+  for (const [sourceId, source] of Object.entries(value.sources ?? {})) {
+    for (const summarySourceId of source.summary?.sources ?? []) {
+      if (!sourceIds.has(summarySourceId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `source.${sourceId}.summary.sources 引用了未定义 source: ${summarySourceId}`,
+        })
+      }
+    }
+
+    for (const [deliveryId, override] of Object.entries(source.deliveries ?? {})) {
+      if (!deliveryIds.has(deliveryId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `source.${sourceId}.deliveries 引用了未定义 delivery: ${deliveryId}`,
+        })
+        continue
+      }
+
+      const target = deliveries[deliveryId]
+      const parsed = target?.file
+        ? sourceFileDeliveryOverrideSchema.safeParse(override)
+        : target?.push
+          ? sourcePushDeliveryOverrideSchema.safeParse(override)
+          : target?.email
+            ? sourceEmailDeliveryOverrideSchema.safeParse(override)
+            : undefined
+
+      if (
+        target?.push &&
+        parsed?.success &&
+        hasForbiddenBodyPayload(
+          target.push.http.method,
+          target.push.request.type,
+          parsed.data.payload,
+        )
+      ) {
+        ctx.addIssue({
+          path: ['sources', sourceId, 'deliveries', deliveryId, 'payload'],
+          code: 'custom',
+          message: ISSUE_BODY_PAYLOAD_FORBIDDEN,
+        })
+      }
+
+      if (!parsed || parsed.success) {
+        continue
+      }
+
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({
+          path: ['sources', sourceId, 'deliveries', deliveryId, ...issue.path],
+          code: 'custom',
+          message: issue.message,
+        })
+      }
+    }
+  }
+
+  if (!hasResolvableAiModel(value.ai)) {
+    const aiFilterTemplatePaths: Array<Array<string | number>> = []
+    collectAiFilterTemplatePaths(value, [], aiFilterTemplatePaths)
+
+    for (const path of aiFilterTemplatePaths) {
+      ctx.addIssue({
+        path,
+        code: 'custom',
+        message: createInvalidIssueMessage('模板使用了 AI filter，但未解析到可用模型'),
+      })
+    }
+  }
+
+  for (const [providerId, provider] of Object.entries(value.ai?.providers ?? {})) {
+    if (provider.type === 'anthropic' && provider.apiKey && provider.options?.authToken) {
+      ctx.addIssue({
+        path: ['ai', 'providers', providerId],
+        code: 'custom',
+        message: `ai.providers.${providerId} 不能同时配置 apiKey 与 options.authToken`,
+      })
+    }
+  }
+}
+
+const userAppConfigShape = {
+  language: languageSchema.optional(),
+  timezone: timezoneSchema.optional(),
+  timestampFormat: requiredString().default('yyyy-MM-dd HH:mm:ss'),
+  sqlite: sqliteSchema,
+  ai: aiSchema.optional(),
+  deliveries: deliveriesSchema.optional(),
+  sources: sourcesSchema.optional(),
+  logging: loggingSchema,
+} satisfies z.ZodRawShape
+
+export const userAppConfigContractSchema = z.object(userAppConfigShape).strict()
+
+export const userAppConfigSchema = userAppConfigContractSchema.superRefine(
+  validateAppConfigReferences,
+)
+
+export const appConfigSchema = z
+  .object({
+    runtimeDir: z.string(),
+    ...userAppConfigShape,
+  })
+  .strict()
+  .superRefine(validateAppConfigReferences)
+
+export const appConfigValidatedSchema = appConfigSchema.transform((input) => ({
+  __validated: true as const,
+  runtimeDir: input.runtimeDir,
+  language: input.language,
+  timezone: input.timezone,
+  timestampFormat: input.timestampFormat,
+  sqlite: input.sqlite,
+  ai: input.ai,
+  deliveries: input.deliveries ?? {},
+  sources: input.sources ?? {},
+  logging: input.logging,
+}))
+
+export const rawConfigSyntaxSchema = z.string().superRefine((raw, ctx) => {
+  const lines = raw.split('\n')
+  const blockPaths = [
+    { path: 'deliveries', indent: 0 },
+    { path: 'sources', indent: 0 },
+  ]
+
+  for (const block of blockPaths) {
+    const blockKey = block.path.split('.').at(-1)
+    if (!blockKey) continue
+
+    let startIndex = -1
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i]
+      const indent = line.match(/^\s*/)?.[0].length ?? 0
+      if (indent !== block.indent) continue
+      if (line.trim() === `${blockKey}:`) {
+        startIndex = i
+        break
+      }
+    }
+    if (startIndex === -1) continue
+
+    let hasArrayStyle = false
+    let hasObjectStyle = false
+    for (let i = startIndex + 1; i < lines.length; i += 1) {
+      const line = lines[i]
+      if (line.trim() === '') continue
+      const indent = line.match(/^\s*/)?.[0].length ?? 0
+      if (indent <= block.indent) break
+
+      const relative = line.slice(block.indent + 2)
+      if (/^-\s+/.test(relative)) hasArrayStyle = true
+      if (/^[A-Za-z0-9_-]+:\s*/.test(relative)) hasObjectStyle = true
+      if (hasArrayStyle && hasObjectStyle) {
+        ctx.addIssue({
+          code: 'custom',
+          message: '不允许混用对象写法和数组写法',
+        })
+        return
+      }
+    }
+  }
+})
+
+export type LogLevel = NonNullable<z.output<typeof loggingSchema>['level']>
+export type LogConsoleFormat = NonNullable<z.output<typeof loggingConsoleSchema>['format']>
+export type LogFileFormat = NonNullable<z.output<typeof loggingFileSchema>['format']>
+export type LogSinkType =
+  z.output<typeof loggingConsoleSchema>['type'] | z.output<typeof loggingFileSchema>['type']
+export type LogConsoleSinkConfig = z.output<typeof loggingConsoleSchema>
+export type LogFileSinkConfig = z.output<typeof loggingFileSchema>
+export type LogFileRotationConfig = NonNullable<z.output<typeof loggingFileSchema>['rotation']>
+export type LoggingConfigInput = z.output<typeof loggingSchema>
+
+export type SqliteJournalMode = NonNullable<z.output<typeof sqliteSchema>['journalMode']>
+export type SqliteRetentionVacuumMode = NonNullable<
+  z.output<typeof sqliteRetentionSchema>['vacuum']
+>
+export type SqliteConfigInput = z.output<typeof sqliteSchema>
+
+export type FileRotationConfig = z.output<typeof rotationSchema>
+export type FileDeliveryConfig = z.output<typeof fileSchema>
+export type EmailSmtpAuthConfig = z.output<typeof emailSmtpAuthSchema>
+export type EmailSmtpSecurity = z.output<typeof emailSmtpSchema>['security']
+export type EmailSmtpConfig = z.output<typeof emailSmtpSchema>
+export type EmailMessageConfig = z.output<typeof emailMessageSchema>
+export type EmailConfig = z.output<typeof emailSchema>
+
+export type HttpMethod = z.output<typeof pushHttpSchema>['method']
+export type HttpRequestType = z.output<typeof pushRequestSchema>['type']
+export type HttpPayload = z.output<typeof httpPayloadSchema>
+export type HttpRetryConfig = z.output<typeof transportRetrySchema>
+export type HttpTransportConfig = z.output<typeof transportSchema>
+export type SourceHttpConfig = z.output<typeof sourceHttpSchema>
+export type SourceByparrConfig = z.output<typeof byparrSchema>
+export type PushHttpConfig = z.output<typeof pushHttpSchema>
+export type PushRequestConfig = z.output<typeof pushRequestSchema>
+
+export type AiProviderType = z.output<typeof aiProviderTypeSchema>
+export type AiModelVariantConfig = z.output<typeof aiModelVariantSchema>
+export type AiModelConfigInput = z.output<typeof aiModelSchema>
+export type AiProviderConfigInput = z.output<typeof aiProviderSchema>
+export type AiConfigInput = z.output<typeof aiSchema>
+export type PushResponseConfig = z.output<typeof pushResponseSchema>
+export type PushConfig = z.output<typeof pushSchema>
+export type DeliveryConfigInput = z.output<typeof deliverySchema>
+export type SyndicationSourceConfig = z.output<typeof syndicationSchema>
+export type SummarySourceConfig = z.output<typeof summarySchema>
+export type XqueryMappingConfig = z.output<typeof xquerySchema>
+export type SourceConfigInput = z.output<typeof sourceSchema>
+export type AppConfigInput = z.input<typeof appConfigSchema>
+export type AppConfigValidated = z.output<typeof appConfigValidatedSchema>

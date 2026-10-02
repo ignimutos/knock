@@ -1,0 +1,156 @@
+- id: R01
+  domain: source
+  trigger: source fetch timeout
+  expected_guardrail: run marked failed with actionable reason
+  required_layer: contract
+  owner_tests:
+    - src/adapters/sources/http_source_input_gateway_test.ts
+    - src/adapters/sources/byparr_source_input_gateway_test.ts
+    - src/adapters/sources/syndication_test.ts
+
+- id: R02
+  domain: source
+  trigger: source response malformed feed
+  expected_guardrail: parser returns stable error contract
+  required_layer: contract
+  owner_tests:
+    - src/adapters/sources/syndication_test.ts
+
+- id: R03
+  domain: config
+  trigger: config parse failure
+  expected_guardrail: load path raises actionable validation error
+  required_layer: flow+contract
+  owner_tests:
+    - src/config/load_config_test.ts
+    - src/config/config_example_test.ts
+    - src/container_entrypoint_test.ts
+    - src/main_test.ts
+    - src/core/app_test.ts
+
+- id: R04
+  domain: config
+  trigger: unresolved environment variable in config
+  expected_guardrail: config loader rejects with exact field path
+  required_layer: contract
+  owner_tests:
+    - src/config/load_config_test.ts
+
+- id: R05
+  domain: scheduler
+  trigger: cron expression invalid
+  expected_guardrail: source registration fails before daemon run
+  required_layer: contract
+  owner_tests:
+    - src/core/scheduler_test.ts
+
+- id: R06
+  domain: pipeline
+  trigger: filter rule hit on incoming entry
+  expected_guardrail: entry marked skipped with deterministic reason
+  required_layer: flow+contract
+  owner_tests:
+    - src/workflow/run_source/run_source_item_pipeline_test.ts
+
+- id: R07
+  domain: delivery
+  trigger: delivery retry exhausted
+  expected_guardrail: final attempt persisted as failed with reason
+  required_layer: flow+contract
+  owner_tests:
+    - src/adapters/deliveries/http_test.ts
+    - src/adapters/deliveries/email_test.ts
+    - src/workflow/run_source_use_case_test.ts
+    - src/workflow/run_source/run_source_item_pipeline_test.ts
+
+- id: R08
+  domain: delivery
+  trigger: telegram payload render failure
+  expected_guardrail: delivery aborts safely and surfaces template cause
+  required_layer: flow+contract
+  owner_tests:
+    - src/core/liquid_runtime_test.ts
+    - src/core/content_runtime_test.ts
+    - src/workflow/run_source/run_source_item_pipeline_test.ts
+
+- id: R09
+  domain: delivery
+  trigger: file delivery write failure
+  expected_guardrail: run records failed delivery and keeps process alive
+  required_layer: flow
+  owner_tests:
+    - src/adapters/deliveries/file_test.ts
+
+- id: R10
+  domain: db
+  trigger: sqlite connection open failure
+  expected_guardrail: bootstrap exits with stable diagnostics
+  required_layer: contract
+  owner_tests:
+    - src/persistence/sqlite/client_test.ts
+    - src/persistence/sqlite/recovery_test.ts
+
+- id: R11
+  domain: logging
+  trigger: error event emitted
+  expected_guardrail: otel record includes stable severity and scope fields
+  required_layer: contract
+  owner_tests:
+    - src/core/logger_test.ts
+    - src/core/logging_runtime_test.ts
+
+- id: R12
+  domain: dedupe
+  trigger: repeated entry id in same effect domain
+  expected_guardrail: dedupe hit prevents duplicate delivery attempts
+  required_layer: contract
+  owner_tests:
+    - src/persistence/sqlite/schema_test.ts
+
+- id: R13
+  domain: source
+  trigger: xquery evaluation runtime error
+  expected_guardrail: source run fails with bounded error surface
+  required_layer: contract
+  owner_tests:
+    - src/adapters/sources/xquery_test.ts
+
+- id: R14
+  domain: source
+  trigger: source parser receives empty result set
+  expected_guardrail: pipeline ends with info-level empty-result outcome
+  required_layer: flow
+  owner_tests:
+    - src/adapters/sources/source_parser_gateway_test.ts
+
+- id: R15
+  domain: app
+  trigger: daemon tick executes due source
+  expected_guardrail: run due sources use case invoked once per tick
+  required_layer: flow
+  owner_tests:
+    - src/workflow/run_due_sources_use_case_test.ts
+
+- id: R16
+  domain: template
+  trigger: invalid liquid filter usage or runtime precondition failure
+  expected_guardrail: template runtime rejects invalid usage with stable error classification
+  required_layer: contract
+  owner_tests:
+    - src/core/liquid_runtime_test.ts
+
+- id: R17
+  domain: summary
+  trigger: summary source aggregates upstream entries in window
+  expected_guardrail: window boundaries and entry count stay deterministic
+  required_layer: flow+contract
+  owner_tests:
+    - src/adapters/sources/summary_test.ts
+
+- id: R18
+  domain: app
+  trigger: one due source fails during a daemon tick
+  expected_guardrail: failing source is isolated, other due sources still run, tick does not reject
+  required_layer: flow
+  owner_tests:
+    - src/workflow/run_due_sources_use_case_test.ts

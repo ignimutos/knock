@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {},
+  "permissions": {
+    "allow": [],
+    "deny": [],
+    "defaultMode": "acceptEdits"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/fmt.sh"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/skills/test-architecture-guard/scripts/guard.py"
+          }
+        ]
+      }
+    ]
+  }
+}

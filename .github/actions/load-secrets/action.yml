@@ -1,0 +1,18 @@
+name: Load secrets
+description: 可选地从 Infisical（OIDC）注入 CI secrets；未配置 identity 时跳过。
+
+runs:
+  using: composite
+  steps:
+    # 未配置 Infisical identity 时整步跳过：无 Infisical 的仓库仍可运行。
+    - name: Inject secrets from Infisical
+      if: ${{ vars.INFISICAL_IDENTITY_ID != '' && vars.INFISICAL_PROJECT_SLUG != '' }}
+      uses: Infisical/secrets-action@v1.0.18
+      with:
+        method: oidc
+        identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+        project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+        env-slug: ${{ vars.INFISICAL_ENV_SLUG || 'dev' }}
+        domain: ${{ vars.INFISICAL_DOMAIN || 'https://app.infisical.com' }}
+        secret-path: ${{ vars.INFISICAL_SECRET_PATH || '/project/knock' }}
+        recursive: ${{ vars.INFISICAL_RECURSIVE || 'false' }}
