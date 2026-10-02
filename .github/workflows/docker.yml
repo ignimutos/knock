@@ -202,7 +202,7 @@ jobs:
           done
 
       - name: Telegram Notify
-        uses: proDreams/actions-telegram-notifier@v3
+        uses: proDreams/actions-telegram-notifier@v3.0.0
         with:
           token: ${{ env.TELEGRAM_BOT_TOKEN }}
           chat_id: ${{ env.TELEGRAM_CHAT_ID }}
