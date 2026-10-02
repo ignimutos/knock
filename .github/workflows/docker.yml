@@ -99,8 +99,17 @@ jobs:
       # 凭据来自 Infisical 而非 GitHub secrets：OIDC machine identity 绑定
       # repo:ignimutos/knock。注入逻辑集中在 .github/actions/load-secrets，
       # 未配置 INFISICAL_IDENTITY_ID / INFISICAL_PROJECT_SLUG 时整步跳过。
+      # vars 只在 workflow 表达式里展开并作为 inputs 传入；composite manifest
+      # 不直接引用 vars（见 load-secrets/action.yml 注释）。
       - name: Load secrets from Infisical
         uses: ./.github/actions/load-secrets
+        with:
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          domain: ${{ vars.INFISICAL_DOMAIN }}
+          secret-path: ${{ vars.INFISICAL_SECRET_PATH }}
+          recursive: ${{ vars.INFISICAL_RECURSIVE }}
 
       # 仓库 secrets 覆盖层：本步在 Infisical 之后运行，写 GITHUB_ENV 覆盖注入值；
       # 未用 Infisical 时，仅凭 repo secrets 也能发布。
@@ -171,6 +180,13 @@ jobs:
       # Telegram 凭据同样来自 Infisical（见 publish job 注释）。
       - name: Load secrets from Infisical
         uses: ./.github/actions/load-secrets
+        with:
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          domain: ${{ vars.INFISICAL_DOMAIN }}
+          secret-path: ${{ vars.INFISICAL_SECRET_PATH }}
+          recursive: ${{ vars.INFISICAL_RECURSIVE }}
 
       # 仓库 secrets 覆盖层：本步在 Infisical 之后运行，写 GITHUB_ENV 覆盖注入值；
       # 未用 Infisical 时，仅凭 repo secrets 也能通知。
